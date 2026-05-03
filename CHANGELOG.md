@@ -2,16 +2,16 @@
 
 Splitted single configuration.nix file into multiple.
 
-**File Structure:**
+## **File Structure:**
 
-nixos-config/
-├── flake.nix
-├── configuration.nix      ← just imports
-├── hardware-configuration.nix
-└── modules/
-    ├── desktop.nix
-    ├── immich.nix
-    ├── audio.nix
-    ├── networking.nix
-    ├── users.nix
-    └── packages.nix
+nixos-config/<br/>
+├── flake.nix<br/>
+├── configuration.nix<br/>
+├── hardware-configuration.nix<br/>
+└── modules/<br/>
+&emsp;&emsp;├── desktop.nix<br/>
+&emsp;&emsp;├── immich.nix<br/>
+&emsp;&emsp;├── audio.nix<br/>
+&emsp;&emsp;├── networking.nix<br/>
+&emsp;&emsp;├── users.nix<br/>
+&emsp;&emsp;└── packages.nix<br/>
