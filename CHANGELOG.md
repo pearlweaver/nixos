@@ -1,17 +1,19 @@
 # Version 26.5.3.2
 
-Splitted single configuration.nix file into multiple.
-
+- Split single configuration.nix file into multiple.
+- Enabled Flatpak
+- Installed Discord, Spotify, Obsidian, VSCodium and Docker
 ## **File Structure:**
 
-nixos-config/<br/>
-├── flake.nix<br/>
-├── configuration.nix<br/>
-├── hardware-configuration.nix<br/>
-└── modules/<br/>
-&emsp;&emsp;├── desktop.nix<br/>
-&emsp;&emsp;├── immich.nix<br/>
-&emsp;&emsp;├── audio.nix<br/>
-&emsp;&emsp;├── networking.nix<br/>
-&emsp;&emsp;├── users.nix<br/>
-&emsp;&emsp;└── packages.nix<br/>
+nixos-config/
+├── flake.nix
+├── configuration.nix
+├── hardware-configuration.nix
+└── modules/
+	├── audio.nix
+	├── boot.nix
+	├── desktop.nix
+	├── locale.nix
+	├── networking.nix
+	├── packages.nix
+	└── users.nix
