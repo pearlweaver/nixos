@@ -12,4 +12,10 @@
     layout = "us";
     variant = "";
   };
+
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than-than 5";
+  };
 }

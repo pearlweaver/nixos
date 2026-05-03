@@ -9,6 +9,7 @@
     vscodium
     obsidian
     spotify
+    floorp-bin
   ];
 
   programs.firefox.enable = true;
