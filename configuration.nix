@@ -3,7 +3,7 @@
     ./hardware-configuration.nix
     ./modules/boot.nix
     ./modules/networking.nix
-    ./modules/desktop.nix
+    ./modules/services.nix
     ./modules/audio.nix
     ./modules/locale.nix
     ./modules/users.nix

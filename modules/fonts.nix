@@ -5,6 +5,5 @@
     noto-fonts-color-emoji
     liberation_ttf
     monocraft
-    nerd-fonts-jetbrains-mono
   ];
 }

@@ -1,6 +1,3 @@
-# Version 26.5.5.1
+# Version 26.5.5.2
 
--  Added Home Manager
-- Installed Multiple Applications
-- Uninstalled Floorp
-- Enabled flatpak
+-  Configured Manual Declarative Flatpak
