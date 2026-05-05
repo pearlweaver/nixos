@@ -8,6 +8,8 @@
     ./modules/locale.nix
     ./modules/users.nix
     ./modules/packages.nix
+    ./modules/fonts.nix
+    ./modules/flatpak.nix
   ];
 
   nixpkgs.config.allowUnfree = true;

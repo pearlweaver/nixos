@@ -1,5 +1,6 @@
-# Version 26.5.3.3
+# Version 26.5.5.1
 
--  Added Flakes
-- Installed Floorp
-- Added Nix Garbage Collector configuration. Deletes generations older than 5, runs weekly.
+-  Added Home Manager
+- Installed Multiple Applications
+- Uninstalled Floorp
+- Enabled flatpak

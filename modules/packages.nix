@@ -9,7 +9,12 @@
     vscodium
     obsidian
     spotify
-    floorp-bin
+    vlc
+    mpv
+    fastfetch
+    vesktop
+    kitty
+    neovim
   ];
 
   programs.firefox.enable = true;
