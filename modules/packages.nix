@@ -15,9 +15,14 @@
     vesktop
     kitty
     neovim
+    gcc
+    antigravity
+    raylib
+    steam
+    unityhub
+    heroic
   ];
 
   programs.firefox.enable = true;
-  services.printing.enable = true;
-  services.flatpak.enable = true;
+  programs.steam.enable = true;
 }

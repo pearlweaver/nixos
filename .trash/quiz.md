@@ -1,0 +1,25 @@
+- [x] Battle of Ahud was fought in which hijri?: **||3 Hijri||**
+- [x] Image Question: **||Suneo from Doraemon||**
+- [x] Which country starts with letter ‘A’ but doesn’t end with it? **||Afghanistan||**
+- [x] How many hearts does an octopus have? **||Three||**
+- [x] In which city does it rain fish? **||Yoro||**
+- [x] What chemical element does ‘Ag’ represent? **||Silver||**
+- [x] Which is the nearest galaxy to Milky Way? **||Andromeda||**
+- [x] Image Question: **||Naruto||**
+- [x] Image Question (pokemon): **||Charizard||**
+- [x] Image Question (actor): **||Scarlett Johansson||**
+- [x] In what year did the Berlin Wall fall? **||1989||**
+- [x] Why is Pluto not considered a Planet? **||It doesn't have a clear orbit||**
+- [x] What is the name of Mario's brother? **||Luigi||**
+- [x] What is the capital of Australia? **||Canberra||**
+- [x] Who is the first prime minister of Pakistan? **||Liaquat Ali Khan||**
+- [ ] 
+- [x] Image Question: **||Buttercup||**
+- [x] Image Question: **||Robert Pattinson||**
+- [x] How long ago did dinosaurs go extinct? **||66  Million Years||**
+- [x] Flag Question: **||Italy**||
+- [x] Image Question: **||Tanjiro||**
+- [x] Wuzu kay faraiz kitne hain? **||Four||**
+- [x] Which book was revealed to Hazrat Dawood A.S.? **||Zabur||**
+- [ ] Image Question: **||Swiper||**
+- [ ] Image Question: **||Optimus Prime||**

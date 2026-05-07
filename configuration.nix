@@ -10,6 +10,7 @@
     ./modules/packages.nix
     ./modules/fonts.nix
     ./modules/flatpak.nix
+    # ./modules/shell.nix
   ];
 
   nixpkgs.config.allowUnfree = true;
