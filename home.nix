@@ -20,7 +20,7 @@
   programs.git = {
     enable = true;
     settings.user.name = "pearlweaver";
-    settings.user.email = "thedreamdev@proton.me";
+    settings.user.email = "37861423-pearlweaver@users.noreply.gitlab.com";
   };
 
   programs.firefox = {
