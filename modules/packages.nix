@@ -5,22 +5,19 @@
     curl
     wget
     docker
-    discord
-    vscodium
-    obsidian
-    spotify
     vlc
     mpv
     fastfetch
-    vesktop
     kitty
     neovim
-    gcc
-    antigravity
     raylib
-    steam
-    unityhub
-    heroic
+    gcc
+    clang
+    clang-tools
+    btop
+    dotnet-sdk_8
+    mesa-demos
+    mono
   ];
 
   programs.firefox.enable = true;

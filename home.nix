@@ -4,7 +4,17 @@
   home.stateVersion = "25.11";
 
   home.packages = with pkgs; [
-
+    discord
+    vscodium
+    obsidian
+    spotify
+    vesktop
+    antigravity
+    steam
+    unityhub
+    heroic
+    opencode
+    love #love2d lua
   ];
 
   programs.git = {
@@ -25,4 +35,5 @@
   };
 
   programs.home-manager.enable = true;
+  nixpkgs.config.allowUnfree = true;
 }
