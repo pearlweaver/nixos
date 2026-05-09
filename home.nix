@@ -14,6 +14,7 @@
     unityhub
     heroic
     opencode
+    lua
     love #love2d lua
   ];
 
