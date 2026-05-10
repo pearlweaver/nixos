@@ -1,3 +1,3 @@
-# Version 26.5.10.2
+# Version 26.5.10.3
 
-- Configured Kitty configuration in Home Manager.
+- Installed LibreOffice

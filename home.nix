@@ -17,6 +17,7 @@
     lua
     love #love2d lua
     godot
+    libreoffice
   ];
 
   programs.git = {
