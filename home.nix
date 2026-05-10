@@ -25,6 +25,22 @@
     settings.user.email = "37861423-pearlweaver@users.noreply.gitlab.com";
   };
 
+  programs.kitty = {
+    enable = true;
+    settings = {
+      font_family = "Monocraft";
+      font_size = 12.0;
+      cursor_shape = "beam";
+      cursor_trail = 1;
+      background = "#1e1e2e";
+      scrollback_lines = -1; # Unlimited
+      enable_audio_bell = false;
+      window_margin_width = 21.75;
+      confirm_os_window_close = 0;
+      tab_bar_edge = "top";
+    };
+  };
+
   programs.firefox = {
     enable = true;
     configPath = "${config.xdg.configHome}/mozilla/firefox";
