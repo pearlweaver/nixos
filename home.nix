@@ -16,6 +16,7 @@
     opencode
     lua
     love #love2d lua
+    godot
   ];
 
   programs.git = {

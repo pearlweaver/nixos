@@ -1,3 +1,3 @@
-# Version 26.5.9.2
+# Version 26.5.10.1
 
-- Configured Lua and LOVE2D Lua Game Engine
+- Configured Python and Godot Game Engine

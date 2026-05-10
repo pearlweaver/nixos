@@ -18,6 +18,7 @@
     dotnet-sdk_8
     mesa-demos
     mono
+    python3
   ];
 
   programs.firefox.enable = true;
