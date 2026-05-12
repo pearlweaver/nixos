@@ -19,6 +19,9 @@
     mesa-demos
     mono
     python3
+    zip
+    unzip
+    unrar
   ];
 
   programs.firefox.enable = true;

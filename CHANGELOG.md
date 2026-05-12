@@ -1,3 +1,3 @@
-# Version 26.5.10.3
+# Version 26.5.12.1
 
-- Installed LibreOffice
+- Installed zip, unzip, unrar
