@@ -1,3 +1,3 @@
-# Version 26.5.12.1
+# Version 26.5.12.2
 
-- Installed zip, unzip, unrar
+- Installed and compiler Aseprite
