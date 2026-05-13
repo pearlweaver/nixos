@@ -22,8 +22,10 @@
     zip
     unzip
     unrar
+    waydroid
   ];
 
   programs.firefox.enable = true;
   programs.steam.enable = true;
+  virtualisation.waydroid.enable = true;
 }

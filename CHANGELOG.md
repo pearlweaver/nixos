@@ -1,3 +1,3 @@
-# Version 26.5.12.2
+# Version 26.5.13.1
 
-- Installed and compiler Aseprite
+- Configured ip tables for waydroid
