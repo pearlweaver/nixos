@@ -1,3 +1,3 @@
-# Version 26.5.13.1
+# Version 26.5.15.1
 
-- Configured ip tables for waydroid
+- Installed some applications

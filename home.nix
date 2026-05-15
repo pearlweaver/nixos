@@ -19,6 +19,8 @@
     godot
     libreoffice
     aseprite
+    qbittorrent
+    uget
   ];
 
   programs.git = {
