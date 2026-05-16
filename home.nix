@@ -25,26 +25,22 @@
     lua
     love
     lua-language-server
-    gcc
     clang
     clang-tools
     dotnet-sdk_8
-    neovim
 
     # Hyprland
     hyprland
     hyprpicker
     eww
-    swww
+    awww
     grim
     slurp
     wl-clipboard
     wofi
     dunst
+    hyprlock
     libnotify
-
-    # Fonts
-    (nerdfonts.override { fonts = [ "Monaspace" ]; })
   ];
 
   # Git
@@ -112,6 +108,7 @@
   # Firefox
   programs.firefox = {
     enable = true;
+    configPath = "${config.xdg.configHome}/mozilla/firefox";
     package = pkgs.firefox.override {
       extraPrefsFiles = [(builtins.fetchurl {
         url = "https://raw.githubusercontent.com/MrOtherGuy/fx-autoconfig/master/program/config.js";
@@ -129,5 +126,6 @@
     withRuby = false;
     withPython3 = false;
   };
+
   programs.home-manager.enable = true;
 }
