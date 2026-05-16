@@ -5,7 +5,6 @@ let
   # 1. Declare the Flatpaks you *want* on your system
   desiredFlatpaks = [
     "org.vinegarhq.Sober"
-    "org.jdownloader.JDownloader"
   ];
 in {
   system.userActivationScripts.flatpakManagement = {

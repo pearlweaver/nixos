@@ -23,9 +23,11 @@
     unzip
     unrar
     waydroid
+    gnome-system-monitor
   ];
 
   programs.firefox.enable = true;
   programs.steam.enable = true;
   virtualisation.waydroid.enable = true;
+  programs.hyprland.enable = true;
 }
