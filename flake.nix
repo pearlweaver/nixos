@@ -17,13 +17,13 @@
       # NixOS config
       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
         inherit system;
-        modules = [ ./configuration.nix ];
+        modules = [ ./system/configuration.nix ];
       };
 
       # Home Manager config
       homeConfigurations.thedreamdev = home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
-        modules = [ ./home.nix ];
+        modules = [ ./home/home.nix ];
       };
 
       # Dev shell

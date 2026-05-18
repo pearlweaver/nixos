@@ -1,3 +1,3 @@
-# Version 26.5.18.1
+# Version 26.5.18.2
 
-- GIMP
+- Separated Folders
