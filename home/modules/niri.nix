@@ -15,7 +15,7 @@ in {
         keyboard.xkb.layout = "us";
         touchpad = {
           tap = true;
-          natural-scroll = false;    # turned off
+          natural-scroll = false;
         };
         focus-follows-mouse = {
           enable = true;
@@ -44,7 +44,7 @@ in {
         };
         focus-ring = {
           enable = true;
-          active.color = "#a884d6";
+          active.color = "#e8b8fc";
           inactive.color = "#00000000";
         };
       };
@@ -67,6 +67,25 @@ in {
           }
       ];
 
+      layer-rules = [
+        {
+          matches = [
+            {
+              namespace = "noctalia-wallpaper-eDP-1";
+            }
+          ];
+          place-within-backdrop = true;
+        }
+      ];
+
+      layout = {
+        background-color = "transparent";
+      };
+
+      overview = {
+        backdrop-color = "#181825";
+      };
+
       gestures = {
         hot-corners.enable = false;
       };
@@ -74,7 +93,7 @@ in {
       binds = with config.lib.niri.actions; {
         # Apps
         "Mod+T".action.spawn = [ "kitty" ];
-        "Mod+E".action.spawn = [ "nemo" ];
+        "Mod+E".action.spawn = [ "kitty" "-e" "yazi" ];
         "Mod+B".action.spawn = [ "firefox" ];
 
         # Window management
@@ -86,6 +105,7 @@ in {
         "Alt+Space".action.spawn = noctalia "launcher toggle";
         "Mod+L".action.spawn = noctalia "lockScreen lock";
         "Ctrl+Alt+Delete".action.spawn = noctalia "sessionMenu toggle";
+        "Mod+Shift+S".action = { screenshot = {}; };
 
         # Focus with arrow keys
         "Mod+Left".action.focus-column-left = {};

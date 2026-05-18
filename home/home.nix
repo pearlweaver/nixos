@@ -10,6 +10,10 @@
   home.homeDirectory = "/home/thedreamdev";
   home.stateVersion = "25.11";
 
+  home.sessionVariables = {
+    QT_QPA_PLATFORMTHEME = "gtk3";
+  };
+
   nixpkgs.config.allowUnfree = true;
 
   home.packages = with pkgs; [
@@ -24,6 +28,8 @@
     qbittorrent
     uget
     nemo
+    nwg-look
+    adw-gtk3
 
     # Terminal Apps
     yazi

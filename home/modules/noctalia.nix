@@ -67,7 +67,7 @@
       wallpaper = {
         enabled = true;
         directory = "/home/thedreamdev/Pictures/Wallpapers";
-        fillMode = "fit";
+        fillMode = "crop";
         automationEnabled = false;
         wallpaperChangeMode = "random";
         randomIntervalSec = 300;
@@ -84,7 +84,7 @@
       };
 
       colorSchemes = {
-        useWallpaperColors = true;
+        useWallpaperColors = false;
         predefinedScheme = "Catppuccin";
         darkMode = true;
         syncGsettings = true;
@@ -95,6 +95,7 @@
         position = "bottom";
         displayMode = "auto_hide";
         dockType = "floating";
+        dockIndicator = true;
       };
 
       noctaliaPerformance = {
