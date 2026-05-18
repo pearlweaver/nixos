@@ -15,7 +15,7 @@ in {
         "Mod+T".action.spawn = [ "kitty" ];
         "Alt+Space".action.spawn = noctalia "launcher toggle";
         "Mod+Q".action.close-window = {};
-        "Mod+L".action.spawn = noctalia "lockScreen lock";
+        "Mod+P".action.spawn = noctalia "lockScreen lock";
 
         # Volume
         "XF86AudioRaiseVolume".action.spawn = noctalia "volume increase";
@@ -60,7 +60,7 @@ in {
         };
       };
 
-      output."eDP-1" = {
+      outputs."eDP-1" = {
         scale = 1.0;
       };
     };
