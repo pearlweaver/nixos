@@ -1,3 +1,3 @@
-# Version 26.5.18.2
+# Version 26.5.18.3
 
-- Separated Folders
+- Installed Niri and Noctalia

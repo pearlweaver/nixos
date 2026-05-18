@@ -1,6 +1,7 @@
-programs.kitty = {
-  enable = true;
-  settings = {
+{ config, pkgs, ... }: {
+  programs.kitty = {
+    enable = true;
+    settings = {
       font_family = "Monocraft";
       font_size = 12;
       cursor_shape = "beam";
@@ -11,5 +12,6 @@ programs.kitty = {
       window_margin_width = 21;
       confirm_os_window_close = 0;
       tab_bar_edge = "top";
+    };
   };
-};
+}

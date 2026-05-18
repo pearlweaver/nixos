@@ -2,6 +2,8 @@
   imports = [
     ./modules/kitty.nix
     ./modules/git.nix
+    ./modules/niri.nix
+    ./modules/noctalia.nix
   ]
 
   home.username = "thedreamdev";

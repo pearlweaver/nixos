@@ -12,6 +12,7 @@
     ./modules/flatpak.nix
     # ./modules/shell.nix
     ./modules/compatibility.nix
+    ./modules/bluetooth.nix
   ];
 
   nixpkgs.config.allowUnfree = true;

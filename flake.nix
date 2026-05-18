@@ -7,26 +7,45 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    noctalia = {
+      url = "github:noctalia-dev/noctalia-shell";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    niri-flake = {
+      url = "github:sodiboo/niri-flake";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, home-manager, ... }:
+  nixConfig = {
+    extra-substituters = [ "https://noctalia.cachix.org" ];
+    extra-trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
+  };
+
+  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, ... }@inputs:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
     in {
-      # NixOS config
       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
         inherit system;
-        modules = [ ./system/configuration.nix ];
+        specialArgs = { inherit inputs; };
+        modules = [
+          ./system/configuration.nix
+          niri-flake.nixosModules.niri
+        ];
       };
 
-      # Home Manager config
       homeConfigurations.thedreamdev = home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
-        modules = [ ./home/home.nix ];
+        extraSpecialArgs = { inherit inputs; };
+        modules = [
+          ./home/home.nix
+          noctalia.homeModules.default
+          niri-flake.homeModules.niri
+        ];
       };
 
-      # Dev shell
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [
           raylib
@@ -39,37 +58,9 @@
           libxinerama
           libxrandr
         ];
-
         shellHook = ''
           export PKG_CONFIG_PATH="${pkgs.raylib}/lib/pkgconfig"
         '';
       };
     };
 }
-
-# {
-#   description = "NixOS Flake Configuration";
-#
-#   inputs = {
-#     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable"; # or nixos-23.11
-#     home-manager = {
-#       url = "github:nix-community/home-manager";
-#       inputs.nixpkgs.follows = "nixpkgs";
-#     };
-#   };
-#
-#   outputs = { self, nixpkgs, home-manager, ... }: {
-#     # nixos config
-#     nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
-#       system = "x86_64-linux";
-#       modules = [ ./configuration.nix ];
-#     };
-#
-#     # homemanager config
-#     homeConfigurations.thedreamdev = home-manager.lib.homeManagerConfiguration {
-#       pkgs = nixpkgs.legacyPackages.x86_64-linux;
-#       modules = [ ./home.nix ];
-#     };
-#   };
-# }
-#
