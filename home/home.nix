@@ -4,6 +4,7 @@
     ./modules/git.nix
     ./modules/niri.nix
     ./modules/noctalia.nix
+    ./modules/nvim.nix
   ];
 
   home.username = "thedreamdev";
@@ -33,6 +34,7 @@
 
     # Terminal Apps
     yazi
+    cava
 
     # Dev
     godot_4

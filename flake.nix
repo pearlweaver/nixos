@@ -15,6 +15,11 @@
       url = "github:sodiboo/niri-flake";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Add NixVim input
+    nixvim = {
+      url = "github:nix-community/nixvim";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   nixConfig = {
@@ -22,7 +27,7 @@
     extra-trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
   };
 
-  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, ... }@inputs:
+  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, ... }@inputs:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
@@ -43,6 +48,8 @@
           ./home/home.nix
           noctalia.homeModules.default
           niri-flake.homeModules.niri
+          # Add NixVim module for home-manager
+          nixvim.homeManagerModules.nixvim
         ];
       };
 
