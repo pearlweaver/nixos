@@ -23,6 +23,10 @@
     libreoffice
     qbittorrent
     uget
+    nemo
+
+    # Terminal Apps
+    yazi
 
     # Dev
     godot_4

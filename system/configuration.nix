@@ -1,4 +1,4 @@
-{ config, pkgs, ... }: {
+{ config, pkgs, inputs, ... }: {
   imports = [
     ./hardware-configuration.nix
     ./modules/boot.nix
@@ -13,6 +13,7 @@
     # ./modules/shell.nix
     ./modules/compatibility.nix
     ./modules/bluetooth.nix
+    ./modules/desktop.nix
   ];
 
   nixpkgs.config.allowUnfree = true;
