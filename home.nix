@@ -28,6 +28,7 @@
     clang
     clang-tools
     dotnet-sdk_8
+    gimp
 
     # Hyprland
     hyprland

@@ -1,3 +1,3 @@
-# Version 26.5.16.2
+# Version 26.5.18.1
 
-- Configuring Hyprland
+- GIMP
