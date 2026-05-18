@@ -1,3 +1,3 @@
-# Version 26.5.18.4
+# Version 26.5.18.5
 
 - Configuring Niri and Noctalia

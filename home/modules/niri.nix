@@ -19,7 +19,7 @@ in {
         };
         focus-follows-mouse = {
           enable = true;
-          max-scroll-amount = "0%";
+          max-scroll-amount = "100%";
         };
       };
 
@@ -31,17 +31,20 @@ in {
       layout = {
         gaps = 5;
         border = {
-          enable = false;
+          enable = true;
+          width = 2;
+          active.color = "#00000000";
+          inactive.color = "#00000000";
         };
         shadow = {
-          enable = true;
+          enable = false;
           softness = 40;
           offset = { x = 0; y = 3; };
           color = "#1a1a1aee";
         };
         focus-ring = {
           enable = true;
-          active.color = "#1793d1";
+          active.color = "#a884d6";
           inactive.color = "#00000000";
         };
       };
@@ -49,16 +52,24 @@ in {
       prefer-no-csd = true;
 
       window-rules = [
-        {
-          geometry-corner-radius = {
-            top-left = 10.0;
-            top-right = 10.0;
-            bottom-left = 10.0;
-            bottom-right = 10.0;
-          };
-          clip-to-geometry = true;
-        }
+          {
+            geometry-corner-radius = {
+                top-left = 10.0;
+                top-right = 10.0;
+                bottom-left = 10.0;
+                bottom-right = 10.0;
+            };
+            clip-to-geometry = true;
+          }
+          {
+            matches = [{ is-focused = false; }];
+            opacity = 0.95;
+          }
       ];
+
+      gestures = {
+        hot-corners.enable = false;
+      };
 
       binds = with config.lib.niri.actions; {
         # Apps
