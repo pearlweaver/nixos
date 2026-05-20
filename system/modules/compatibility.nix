@@ -15,7 +15,11 @@
       vulkan-loader
     ];
   };
-
+  
+  xdg.portal.config.niri = {
+    "org.freedesktop.impl.portal.FileChooser" = [ "gtk" ]; # or "kde"
+  }; 
+  
   # intel shaders stuff
   hardware.graphics = {
     enable = true;

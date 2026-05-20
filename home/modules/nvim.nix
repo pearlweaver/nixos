@@ -11,6 +11,7 @@
       enable = true;
       settings = {
         flavour = "mocha";
+        transparent_background = true;
         integrations = {
           airline = true;
         };
@@ -25,11 +26,13 @@
 
       airline = {
         enable = true;
-        theme = "catppuccin";
-        detectTheme = true;
-        sectionX = [];
-        sectionY = [ "filetype" ];
-        sectionZ = [ "%p%% %l:%v" ];
+        settings = {
+          airline_theme = "catppuccin_mocha";
+          airline_section_x = "";
+          airline_section_y = "%y";
+          airline_section_z = "%p%% %l:%v";
+          "airline#parts#virtualcol#enabled" = 0;
+        };
       };
 
       nerdtree = {
@@ -40,7 +43,6 @@
       ale.enable = true;
       smoothie.enable = true;
 
-      # LSP Config
       lsp = {
         enable = true;
         servers = {
@@ -52,35 +54,25 @@
         };
       };
 
-      # Treesitter
       treesitter = {
         enable = true;
         settings = {
-          highlight = {
-            enable = true;
-          };
+          highlight.enable = true;
         };
       };
     };
 
     # =========================
-    # CORE SETTINGS & GLOBALS
+    # OPTIONS
     # =========================
-    globals = {
-      "airline#parts#virtualcol#enabled" = 0;
-    };
-
     opts = {
       termguicolors = true;
-
       mouse = "a";
       number = true;
       relativenumber = true;
-
       shiftwidth = 4;
       tabstop = 4;
       expandtab = true;
-
       scrolloff = 10;
       wrap = false;
       incsearch = true;
@@ -91,7 +83,6 @@
       showmatch = true;
       hlsearch = true;
       history = 1000;
-
       wildmenu = true;
       wildmode = "list:longest";
       wildignore = [
@@ -101,6 +92,16 @@
     };
 
     syntax = "on";
+
+    # =========================
+    # HIGHLIGHTS
+    # =========================
+    highlights = {
+      Normal = { guibg = "NONE"; ctermbg = "NONE"; };
+      Type = { guifg = "#89B4FA"; bold = true; };
+      Constant = { guifg = "#F9E2AF"; };
+      Identifier = { guifg = "#BAC2DE"; };
+    };
 
     # =========================
     # AUTOCOMMANDS
@@ -116,104 +117,47 @@
     # =========================
     # KEYMAPPINGS
     # =========================
-    keyMaps = [
-      # NERDTree Toggle (Matches `map <F4>` across modes)
+    keymaps = [
       {
         mode = "";
         key = "<F4>";
         action = ":NERDTreeToggle<CR>";
       }
-      # Insert Pairs
-      {
-        mode = "i";
-        key = "(";
-        action = "()<Left>";
-      }
-      {
-        mode = "i";
-        key = "{";
-        action = "{}<Left>";
-      }
-      {
-        mode = "i";
-        key = "[";
-        action = "[]<Left>";
-      }
-      {
-        mode = "i";
-        key = "\"";
-        action = "\"\"<Left>";
-      }
-      {
-        mode = "i";
-        key = "'";
-        action = "''<Left>";
-      }
+      { mode = "i"; key = "("; action = "()<Left>"; }
+      { mode = "i"; key = "{"; action = "{}<Left>"; }
+      { mode = "i"; key = "["; action = "[]<Left>"; }
+      { mode = "i"; key = "\""; action = "\"\"<Left>"; }
+      { mode = "i"; key = "'"; action = "''<Left>"; }
     ];
 
     # =========================
-    # HIGHLIGHTS
-    # =========================
-    highlights = {
-      Normal = {
-        guibg = "NONE";
-        ctermbg = "NONE";
-      };
-      Type = {
-        guifg = "#89B4FA";
-        gui = "bold";
-      };
-      Constant = {
-        guifg = "#F9E2AF";
-      };
-      Identifier = {
-        guifg = "#BAC2DE";
-      };
-    };
-
-    # =========================
-    # C++ COMPILE & RUN FUNCTION
+    # C++ COMPILE & RUN
     # =========================
     extraConfigVim = ''
+      autocmd VimEnter * AirlineTheme catppuccin_mocha
       function! CompileRunCpp()
-          " 1. Working file and path info
           let l:dir_path   = expand('%:p:h')
           let l:sourcefile = expand('%:t')
           let l:executable = expand('%:t:r')
-
-          " 2. Setup build directory
-          let l:build_dir = l:dir_path . '/.build'
+          let l:build_dir  = l:dir_path . '/.build'
           if !isdirectory(l:build_dir)
               call mkdir(l:build_dir, 'p', 0700)
           endif
-
-          " 3. Full paths (handle spaces)
-          let l:src = fnameescape(l:dir_path . '/' . l:sourcefile)
-          let l:out_shell = shellescape(l:build_dir . '/' . l:executable)
-          let l:out_fname = fnameescape(l:build_dir . '/' . l:executable)
-
-          " 4. Compile Command
           let l:src_shell = shellescape(l:dir_path . '/' . l:sourcefile)
+          let l:out_shell = shellescape(l:build_dir . '/' . l:executable)
           let l:cmd = 'g++ -std=c++20 -Wall -Wextra -O2 ' . l:src_shell . ' -o ' . l:out_shell . ' 2>&1'
-          
           echo 'Compiling ' . l:sourcefile . '...'
           cexpr system(l:cmd)
-
-          " 5. Check for Compilation Errors
           if len(getqflist()) > 0
               copen
-              echohl ErrorMsg | echo 'Compilation FAILED. See quickfix list.' | echohl None
+              echohl ErrorMsg | echo 'Compilation FAILED.' | echohl None
               return
           endif
-          
           echohl WarningMsg | echo 'Compilation successful!' | echohl None
-
-          " 6. Run Executable
           execute 'lcd ' . fnameescape(l:dir_path)
           execute 'botright split | terminal ' . l:out_shell
       endfunction
 
-      " Set mapping for C++ files
       autocmd FileType cpp nnoremap <buffer> <F5> :call CompileRunCpp()<CR>
     '';
   };

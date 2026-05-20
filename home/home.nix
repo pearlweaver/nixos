@@ -46,6 +46,8 @@
     clang-tools
     dotnet-sdk_8
     gimp
+    opencode
+    nodejs
   ];
 
   programs.home-manager.enable = true;

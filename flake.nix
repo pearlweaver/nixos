@@ -49,7 +49,7 @@
           noctalia.homeModules.default
           niri-flake.homeModules.niri
           # Add NixVim module for home-manager
-          nixvim.homeManagerModules.nixvim
+          nixvim.homeModules.nixvim
         ];
       };
 
