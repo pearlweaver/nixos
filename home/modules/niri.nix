@@ -30,8 +30,9 @@ in {
       # Rounded corners + focus border
       layout = {
         gaps = 5;
+        background-color = "transparent";
         border = {
-          enable = true;
+          enable = false;
           width = 2;
           active.color = "#00000000";
           inactive.color = "#00000000";
@@ -44,6 +45,7 @@ in {
         };
         focus-ring = {
           enable = true;
+          width = 2;
           active.color = "#e8b8fc";
           inactive.color = "#00000000";
         };
@@ -77,10 +79,6 @@ in {
           place-within-backdrop = true;
         }
       ];
-
-      layout = {
-        background-color = "transparent";
-      };
 
       overview = {
         backdrop-color = "#181825";

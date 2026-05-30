@@ -8,7 +8,7 @@
         barType = "floating";
         position = "top";
         density = "default";
-        showCapsule = true;
+        showCapsule = false;
         backgroundOpacity = 0.93;
         marginVertical = 4;
         marginHorizontal = 4;
@@ -19,7 +19,7 @@
         widgets = {
           left = [
             { id = "Launcher"; useDistroLogo = true; }
-            { id = "ActiveWindow"; }
+            { id = "ActiveWindow"; showIcon = false; }
           ];
           center = [
             { id = "Workspace"; }

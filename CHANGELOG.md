@@ -1,3 +1,4 @@
-# Version 26.5.20.1
+# Version 26.5.30.1
 
-- Pushing remaining stuff
+- Fixed the active window boundary gap
+- Disabled Capsule in Bar

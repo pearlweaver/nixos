@@ -35,6 +35,7 @@
     # Terminal Apps
     yazi
     cava
+    ani-cli
 
     # Dev
     godot_4
