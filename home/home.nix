@@ -5,6 +5,7 @@
     ./modules/niri.nix
     ./modules/noctalia.nix
     ./modules/nvim.nix
+    ./modules/yt-dlp.nix
   ];
 
   home.username = "thedreamdev";
