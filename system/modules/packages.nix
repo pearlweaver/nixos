@@ -30,4 +30,5 @@
   programs.steam.enable = true;
   virtualisation.waydroid.enable = true;
   programs.hyprland.enable = true;
+  programs.xwayland.enable = true;
 }

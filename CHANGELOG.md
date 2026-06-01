@@ -1,3 +1,4 @@
-# Version 26.5.31.1
+# Version 26.6.1.1
 
-- yt-dlp configuration
+- Configuring prism launcher (cracked version)
+- Also configuring enviorment for xwayland display (wip)

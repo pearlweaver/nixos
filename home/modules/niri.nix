@@ -9,6 +9,7 @@ in {
     settings = {
       spawn-at-startup = [
         { command = [ "noctalia-shell" ]; }
+        { command = [ "Xwayland" ":0" "-rootless" "-terminate" ]; }
       ];
 
       input = {

@@ -14,6 +14,7 @@
     ./modules/compatibility.nix
     ./modules/bluetooth.nix
     ./modules/desktop.nix
+    ./modules/appimage.nix
   ];
 
   nixpkgs.config.allowUnfree = true;

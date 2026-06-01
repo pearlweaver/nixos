@@ -16,7 +16,7 @@
     layout = "us";
     variant = "";
   };
-
+ 
   nix.gc = {
     automatic = true;
     dates = "weekly";

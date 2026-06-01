@@ -6,6 +6,7 @@
     ./modules/noctalia.nix
     ./modules/nvim.nix
     ./modules/yt-dlp.nix
+    ./modules/prismlauncher.nix
   ];
 
   home.username = "thedreamdev";
@@ -14,6 +15,7 @@
 
   home.sessionVariables = {
     QT_QPA_PLATFORMTHEME = "gtk3";
+    DISPLAY = ":0";
   };
 
   nixpkgs.config.allowUnfree = true;
