@@ -8,6 +8,7 @@
     ./modules/yt-dlp.nix
     ./modules/prismlauncher.nix
     ./modules/fish.nix
+    ./modules/fastfetch.nix
   ];
 
   home.username = "thedreamdev";

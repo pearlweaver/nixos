@@ -1,3 +1,4 @@
-# Version 26.6.2.3
+# Version 26.6.3.1
 
-- Configuring Fish Shell
+- Made Fish the default shell
+

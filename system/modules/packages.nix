@@ -1,4 +1,4 @@
-{ config, pkgs, ... }: {
+{ pkgs, ... }: {
   environment.systemPackages = with pkgs; [
     vim
     git
@@ -31,4 +31,15 @@
   virtualisation.waydroid.enable = true;
   programs.hyprland.enable = true;
   programs.xwayland.enable = true;
+  programs.fish.enable = true;
+
+  programs.bash = {
+    interactiveShellInit = ''
+      if grep -qv fish /proc/$PPID/comm && [[ $SHLVL == 1 ]]; then
+        # Dynamically updates your environment path mapping pointers
+        SHELL=${pkgs.fish}/bin/fish
+        exec fish
+      fi
+    '';
+  };
 }
