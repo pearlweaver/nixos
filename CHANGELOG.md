@@ -1,4 +1,3 @@
-# Version 26.6.3.2
+# Version 26.6.3.3
 
-- Made fastfetch automatically run on new terminal window
-- Configured Starship and customized end4 config file
+- Configured Fish and added some aliases

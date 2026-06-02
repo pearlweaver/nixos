@@ -5,14 +5,15 @@
     enable = true;
 
     interactiveShellInit = ''
-      set fish_greeting # Clear default friendly greeting text
+      set fish_greeting
       clear
       fastfetch
     '';
 
     shellAliases = {
       ll = "ls -l";
-      rebuild = "sudo nixos-rebuild switch --flake .#nixos";
+      rebuild-nix = "cd ~/nixos-config && sudo nixos-rebuild switch --flake .#nixos";
+      rebuild-home = "cd ~/nixos-config && home-manager switch --flake .#thedreamdev";
     };
   };
 
@@ -21,7 +22,7 @@
     enableFishIntegration = true;
 
     settings = {
-      add_newline = false;
+      add_newline = true;
 
       palette = "catppuccin_mocha";
 
