@@ -1,4 +1,4 @@
-# Version 26.6.3.1
+# Version 26.6.3.2
 
-- Made Fish the default shell
-
+- Made fastfetch automatically run on new terminal window
+- Configured Starship and customized end4 config file
