@@ -1,4 +1,3 @@
-# Version 26.6.1.1
+# Version 26.6.2.1
 
-- Configuring prism launcher (cracked version)
-- Also configuring enviorment for xwayland display (wip)
+- Configured Python Shell and listed the libraries in flake.nix

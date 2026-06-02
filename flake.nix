@@ -22,7 +22,6 @@
       url = "github:nix-community/nixvim";
       # removed follows to fix version mismatch
     };
-
   };
 
   nixConfig = {
@@ -55,21 +54,38 @@
         ];
       };
 
-      devShells.${system}.default = pkgs.mkShell {
-        packages = with pkgs; [
-          raylib
-          gcc
-          pkg-config
-          libGL
-          libx11
-          libxcursor
-          libxi
-          libxinerama
-          libxrandr
-        ];
-        shellHook = ''
-          export PKG_CONFIG_PATH="${pkgs.raylib}/lib/pkgconfig"
-        '';
+      devShells.${system} = {
+        # C++ / Raylib shell
+        default = pkgs.mkShell {
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+          ];
+
+          buildInputs = with pkgs; [
+            raylib
+            libGL
+            xorg.libX11
+            xorg.libXcursor
+            xorg.libXi
+            xorg.libXinerama
+            xorg.libXrandr
+          ];
+        };
+
+        # Python shell
+        python = pkgs.mkShell {
+          packages = [
+            (pkgs.python3.withPackages (python-pkgs: with python-pkgs; [
+              pandas
+              requests
+              numpy
+              matplotlib
+              scipy
+              scikit-image
+              scikit-learn
+            ]))
+          ];
+        };
       };
     };
 }
