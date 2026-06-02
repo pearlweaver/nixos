@@ -12,9 +12,9 @@
       settings = {
         flavour = "mocha";
         transparent_background = true;
-        integrations = {
-          airline = true;
-        };
+        # integrations = {
+        #   lualine = true;
+        # };
       };
     };
 
@@ -24,14 +24,20 @@
     plugins = {
       startify.enable = true;
 
-      airline = {
+      lualine = {
         enable = true;
         settings = {
-          airline_theme = "catppuccin_mocha";
-          airline_section_x = "";
-          airline_section_y = "%y";
-          airline_section_z = "%p%% %l:%v";
-          "airline#parts#virtualcol#enabled" = 0;
+          options = {
+            theme = "auto";
+            globalstatus = true;
+            component_separators = { left = ""; right = ""; };
+            section_separators = { left = ""; right = ""; };
+          };
+          sections = {
+            lualine_x = [ "" ];
+            lualine_y = [ "filetype" ];
+            lualine_z = [ "progress" "location" ];
+          };
         };
       };
 
@@ -112,6 +118,15 @@
         pattern = [ "*" ];
         command = ":%s/\\s\\+$//e";
       }
+      {
+        event = [ "FileType" ];
+        pattern = [ "cpp" ];
+        callback.__raw = ''
+          function()
+            vim.api.nvim_buf_set_keymap(0, 'n', '<F5>', ':LuaCompileRunCpp<CR>', { silent = true, noremap = true })
+          end
+        '';
+      }
     ];
 
     # =========================
@@ -131,34 +146,36 @@
     ];
 
     # =========================
-    # C++ COMPILE & RUN
+    # MODERN C++ USER COMMAND
     # =========================
-    extraConfigVim = ''
-      autocmd VimEnter * AirlineTheme catppuccin_mocha
-      function! CompileRunCpp()
-          let l:dir_path   = expand('%:p:h')
-          let l:sourcefile = expand('%:t')
-          let l:executable = expand('%:t:r')
-          let l:build_dir  = l:dir_path . '/.build'
-          if !isdirectory(l:build_dir)
-              call mkdir(l:build_dir, 'p', 0700)
-          endif
-          let l:src_shell = shellescape(l:dir_path . '/' . l:sourcefile)
-          let l:out_shell = shellescape(l:build_dir . '/' . l:executable)
-          let l:cmd = 'g++ -std=c++20 -Wall -Wextra -O2 ' . l:src_shell . ' -o ' . l:out_shell . ' 2>&1'
-          echo 'Compiling ' . l:sourcefile . '...'
-          cexpr system(l:cmd)
-          if len(getqflist()) > 0
-              copen
-              echohl ErrorMsg | echo 'Compilation FAILED.' | echohl None
-              return
-          endif
-          echohl WarningMsg | echo 'Compilation successful!' | echohl None
-          execute 'lcd ' . fnameescape(l:dir_path)
-          execute 'botright split | terminal ' . l:out_shell
-      endfunction
+    extraConfigLua = ''
+      vim.api.nvim_create_user_command('LuaCompileRunCpp', function()
+        local dir_path = vim.fn.expand('%:p:h')
+        local sourcefile = vim.fn.expand('%:t')
+        local executable = vim.fn.expand('%:t:r')
+        local build_dir = dir_path .. '/.build'
 
-      autocmd FileType cpp nnoremap <buffer> <F5> :call CompileRunCpp()<CR>
+        if vim.fn.isdirectory(build_dir) == 0 then
+          vim.fn.mkdir(build_dir, 'p', 448) -- 448 is 0700 octal
+        end
+
+        local src_shell = vim.fn.shellescape(dir_path .. '/' .. sourcefile)
+        local out_shell = vim.fn.shellescape(build_dir .. '/' .. executable)
+        local cmd = 'g++ -std=c++20 -Wall -Wextra -O2 ' .. src_shell .. ' -o ' .. out_shell .. ' 2>&1'
+
+        print('Compiling ' .. sourcefile .. '...')
+        vim.fn.cexpr(vim.fn.system(cmd))
+
+        if #vim.fn.getqflist() > 0 then
+          vim.cmd('copen')
+          vim.api.nvim_echo({{ 'Compilation FAILED.', 'ErrorMsg' }}, true, {})
+          return
+        end
+
+        vim.api.nvim_echo({{ 'Compilation successful!', 'WarningMsg' }}, true, {})
+        vim.cmd('lcd ' .. vim.fn.fnameescape(dir_path))
+        vim.cmd('botright split | terminal ' .. build_dir .. '/' .. executable)
+      end, {})
     '';
   };
 }

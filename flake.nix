@@ -55,8 +55,8 @@
       };
 
       devShells.${system} = {
-        # C++ / Raylib shell
-        default = pkgs.mkShell {
+        # C++ / Raylib graphics shell mapped to .#cpp
+        cpp = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
             pkg-config
           ];
@@ -72,7 +72,7 @@
           ];
         };
 
-        # Python shell
+        # Python shell mapped to .#python
         python = pkgs.mkShell {
           packages = [
             (pkgs.python3.withPackages (python-pkgs: with python-pkgs; [
@@ -86,6 +86,10 @@
             ]))
           ];
         };
+
+        # Keeping a fallback pointer so running just `nix develop` doesn't break
+        # Defaulted to cpp enviorment
+        default = self.devShells.${system}.cpp;
       };
     };
 }

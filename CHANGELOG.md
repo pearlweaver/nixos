@@ -1,3 +1,3 @@
-# Version 26.6.2.1
+# Version 26.6.2.2
 
-- Configured Python Shell and listed the libraries in flake.nix
+- Switched from Airline to LuaLine in NeoVim because theme wasn't working in Airline.

@@ -15,7 +15,6 @@
 
   home.sessionVariables = {
     QT_QPA_PLATFORMTHEME = "gtk3";
-    DISPLAY = ":0";
   };
 
   nixpkgs.config.allowUnfree = true;
@@ -39,6 +38,9 @@
     yazi
     cava
     ani-cli
+
+    # Important
+    xwayland-satellite
 
     # Dev
     godot_4
