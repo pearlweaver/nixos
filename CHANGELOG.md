@@ -1,3 +1,3 @@
-# Version 26.6.2.2
+# Version 26.6.2.3
 
-- Switched from Airline to LuaLine in NeoVim because theme wasn't working in Airline.
+- Configuring Fish Shell

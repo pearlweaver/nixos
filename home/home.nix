@@ -7,6 +7,7 @@
     ./modules/nvim.nix
     ./modules/yt-dlp.nix
     ./modules/prismlauncher.nix
+    ./modules/fish.nix
   ];
 
   home.username = "thedreamdev";

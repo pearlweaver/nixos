@@ -6,12 +6,12 @@
 
     home-manager = {
       url = "github:nix-community/home-manager";
-    #   inputs.nixpkgs.follows = "nixpkgs";
+      # inputs.nixpkgs.follows = "nixpkgs";
     };
 
     noctalia = {
       url = "github:noctalia-dev/noctalia-shell";
-      #inputs.nixpkgs.follows = "nixpkgs";
+      # inputs.nixpkgs.follows = "nixpkgs";
     };
 
     niri-flake = {
@@ -22,6 +22,8 @@
       url = "github:nix-community/nixvim";
       # removed follows to fix version mismatch
     };
+
+    catppuccin.url = "github:catppuccin/nix";
   };
 
   nixConfig = {
@@ -29,7 +31,7 @@
     extra-trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
   };
 
-  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, ... }@inputs:
+  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, catppuccin, ... }@inputs:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
@@ -48,6 +50,7 @@
         extraSpecialArgs = { inherit inputs; };
         modules = [
           ./home/home.nix
+          catppuccin.homeModules.catppuccin
           noctalia.homeModules.default
           niri-flake.homeModules.niri
           nixvim.homeModules.nixvim
