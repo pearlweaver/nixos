@@ -16,11 +16,15 @@
     layout = "us";
     variant = "";
   };
- 
-  nix.gc = {
-    automatic = true;
-    dates = "weekly";
-    options = "--delete-older-than-than 5";
+
+  services.nginx = {
+    enable = true;
+    virtualHosts."notebook.local" = {
+      locations."/" = {
+        proxyPass = "http://127.0.0.1:8502";
+        proxyWebsockets = true;
+      };
+    };
   };
 }
 

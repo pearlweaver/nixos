@@ -15,8 +15,11 @@
     ./modules/bluetooth.nix
     ./modules/desktop.nix
     ./modules/appimage.nix
-  ];
+    ./modules/docker.nix
+    inputs.home-manager.nixosModules.home-manager
+];
 
   nixpkgs.config.allowUnfree = true;
   system.stateVersion = "25.11";
+  home-manager.backupFileExtension = "bak";
 }

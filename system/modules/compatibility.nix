@@ -11,15 +11,22 @@
       libxrandr
       libxi
       icu
+      nss
+      nspr
+      atk
+      cups
+      libdrm
+      expat
+      libxcb
+      libxkbcommon
       mesa
-      vulkan-loader
     ];
   };
-  
+
   xdg.portal.config.niri = {
     "org.freedesktop.impl.portal.FileChooser" = [ "gtk" ]; # or "kde"
-  }; 
-  
+  };
+
   # intel shaders stuff
   hardware.graphics = {
     enable = true;

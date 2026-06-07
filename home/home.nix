@@ -9,15 +9,13 @@
     ./modules/prismlauncher.nix
     ./modules/fish.nix
     ./modules/fastfetch.nix
+    ./modules/gtk.nix
+    ./modules/qt6.nix
   ];
 
   home.username = "thedreamdev";
   home.homeDirectory = "/home/thedreamdev";
   home.stateVersion = "25.11";
-
-  home.sessionVariables = {
-    QT_QPA_PLATFORMTHEME = "gtk3";
-  };
 
   nixpkgs.config.allowUnfree = true;
 
@@ -35,14 +33,13 @@
     nemo
     nwg-look
     adw-gtk3
+    mousai
+    komikku
 
     # Terminal Apps
     yazi
     cava
     ani-cli
-
-    # Important
-    xwayland-satellite
 
     # Dev
     godot_4
@@ -56,6 +53,13 @@
     gimp
     opencode
     nodejs
+
+    # Important / Others
+    xwayland-satellite
+    reversal-icon-theme
+    libsForQt5.qtstyleplugin-kvantum
+    kdePackages.qtstyleplugin-kvantum
+    kdePackages.qt6ct
   ];
 
   programs.home-manager.enable = true;

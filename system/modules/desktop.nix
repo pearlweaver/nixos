@@ -18,6 +18,6 @@
   nix.gc = {
     automatic = true;
     dates = "weekly";
-    options = "--delete-older-than-than 5";
+    options = "--delete-older-than 14d";
   };
 }
