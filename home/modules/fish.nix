@@ -111,10 +111,10 @@
       directory = {
         home_symbol = " ";
         read_only = "  ";
-        style = "bg:surface1 fg:lavender";
+        style = "bg:blue fg:surface1";
         truncation_length = 2;
         truncation_symbol = ".../";
-        format = "[](bold fg:surface1)[󰉋 → $path]($style)[](bold fg:surface1)";
+        format = "[](bold fg:blue)[󰉋 → $path]($style)[](bold fg:blue)";
 
         substitutions = {
           "Desktop" = "  ";
@@ -129,7 +129,7 @@
 
       cmd_duration = {
         min_time = 0;
-        format = "[](bold fg:peach)[󰪢 $duration](bold bg:peach fg:crust)[](bold fg:peach)";
+        format = "[](bold fg:pink)[󰪢 $duration](bold bg:pink fg:crust)[](bold fg:pink)";
       };
 
       palettes.catppuccin_mocha = {

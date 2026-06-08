@@ -1,11 +1,4 @@
-# Version 26.6.7.2
+# Version 26.6.8.1
 
-- Configured Docker
-- Using docker, set up open-notebook
-- Added a simple domain alias for the local host port for open-notebook
-- Fixed the garbage collector not working
-
-OLDER THAT I FORGOT:
-
-- Added configuration for gtk.nix and qt6.nix
-- qt6.nix is still broken, gtk works tho
+- Changed the colors for Fish Starfish Shell
+- Some other stuff that I forgot
