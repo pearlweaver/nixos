@@ -1,3 +1,4 @@
-# Version 26.6.9.1
+# Version 26.6.9.2
 
-- Configured Immich and sops secrets
+- Properfly Configured Immich (Use immich.local to access)
+- Installed Stremio

@@ -35,6 +35,7 @@
     adw-gtk3
     mousai
     komikku
+    stremio-linux-shell
 
     # Terminal Apps
     yazi

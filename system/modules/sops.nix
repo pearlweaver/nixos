@@ -3,7 +3,7 @@
     defaultSopsFile = ../../secrets/immich.yaml;
     defaultSopsFormat = "yaml";
 
-    age.sshKeyPaths = [ "~/.ssh/id_ed25519" ];
+    age.sshKeyPaths = [ "/home/thedreamdev/.ssh/id_ed25519" ];
 
     secrets = {
       "immich/db_password" = {};
