@@ -16,6 +16,8 @@
     ./modules/desktop.nix
     ./modules/appimage.nix
     ./modules/docker.nix
+    ./modules/sops.nix
+    ./modules/immich.nix
     inputs.home-manager.nixosModules.home-manager
 ];
 

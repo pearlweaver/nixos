@@ -23,6 +23,11 @@
       # removed follows to fix version mismatch
     };
 
+    sops-nix = {
+      url = "github:mic92/sops-nix";
+      # inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     catppuccin.url = "github:catppuccin/nix";
   };
 
@@ -31,7 +36,7 @@
     extra-trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
   };
 
-  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, catppuccin, ... }@inputs:
+  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, catppuccin, sops-nix, ... }@inputs:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
@@ -42,6 +47,7 @@
         modules = [
           ./system/configuration.nix
           niri-flake.nixosModules.niri
+          sops-nix.nixosModules.sops
         ];
       };
 

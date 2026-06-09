@@ -24,6 +24,9 @@
     unrar
     waydroid
     gnome-system-monitor
+    age
+    sops
+    ssh-to-age
   ];
 
   programs.firefox.enable = true;
