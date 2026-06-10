@@ -1,4 +1,4 @@
-{ pkgs, ... }: {
+{ inputs, pkgs, ... }: {
   environment.systemPackages = with pkgs; [
     vim
     git
@@ -27,6 +27,12 @@
     age
     sops
     ssh-to-age
+
+    inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default
+  ];
+
+  nixpkgs.config.permittedInsecurePackages = [
+     "electron-38.8.4"
   ];
 
   programs.firefox.enable = true;

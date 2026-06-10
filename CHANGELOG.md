@@ -1,4 +1,12 @@
-# Version 26.6.9.2
+# Version 26.6.10.1
 
-- Properfly Configured Immich (Use immich.local to access)
-- Installed Stremio
+## Upgraded to Noctalia Version 5
+
+Other than that, Installed multiple applications for general use,
+- Zotero
+- Stirling PDF
+- Strawberry Music Player
+- Stoat
+- Pinta
+- qimgv
+- Blanket

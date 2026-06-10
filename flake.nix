@@ -6,12 +6,17 @@
 
     home-manager = {
       url = "github:nix-community/home-manager";
-      # inputs.nixpkgs.follows = "nixpkgs";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     noctalia = {
-      url = "github:noctalia-dev/noctalia-shell";
-      # inputs.nixpkgs.follows = "nixpkgs";
+      url = "github:noctalia-dev/noctalia";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    quickshell = {
+      url = "github:outfoxxed/quickshell";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     niri-flake = {
@@ -31,10 +36,10 @@
     catppuccin.url = "github:catppuccin/nix";
   };
 
-  nixConfig = {
-    extra-substituters = [ "https://noctalia.cachix.org" ];
-    extra-trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
-  };
+  # nixConfig = {
+  #  extra-substituters = [ "https://noctalia.cachix.org" ];
+  #  extra-trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
+  #};
 
   outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, catppuccin, sops-nix, ... }@inputs:
     let
@@ -52,10 +57,10 @@
       };
 
       homeConfigurations.thedreamdev = home-manager.lib.homeManagerConfiguration {
-        inherit pkgs;
+         inherit pkgs;
         extraSpecialArgs = { inherit inputs; };
         modules = [
-          ./home/home.nix
+         ./home/home.nix
           catppuccin.homeModules.catppuccin
           noctalia.homeModules.default
           niri-flake.homeModules.niri

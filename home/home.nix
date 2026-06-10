@@ -1,4 +1,4 @@
-{ config, pkgs, ... }: {
+{ config, pkgs, inputs, ... }: {
   imports = [
     ./modules/kitty.nix
     ./modules/git.nix
@@ -36,6 +36,15 @@
     mousai
     komikku
     stremio-linux-shell
+    stoat-desktop
+    foliate
+    stirling-pdf-desktop
+    zathura
+    pinta
+    blanket
+    zotero
+    qimgv
+    strawberry
 
     # Terminal Apps
     yazi
@@ -62,6 +71,25 @@
     kdePackages.qtstyleplugin-kvantum
     kdePackages.qt6ct
   ];
+
+  nixpkgs.config.permittedInsecurePackages = [
+     "electron-38.8.4"
+  ];
+
+#   xdg.mimeApps = {
+#     enable = true;
+#     defaultApplications = {
+#       "image/jpeg" = "qimgv.desktop";
+#       "image/png" = "qimgv.desktop";
+#       "application/pdf" = "zathura.desktop";
+#       "text/html" = "firefox.desktop";
+#       "x-scheme-handler/http" = "firefox.desktop";
+#       "x-scheme-handler/https" = "firefox.desktop";
+#       "inode/directory" = "nemo.desktop";
+#       "video/mp4" = "mpv.desktop";
+#       "audio/mpeg" = "mpv.desktop";
+#     };
+#   };
 
   programs.home-manager.enable = true;
 }

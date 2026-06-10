@@ -1,5 +1,5 @@
 { config, pkgs, inputs, ... }: {
-  programs.noctalia-shell = {
+  programs.noctalia = {
     enable = true;
     settings = {
       settingsVersion = 59;

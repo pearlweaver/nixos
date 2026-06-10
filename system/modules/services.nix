@@ -41,20 +41,20 @@
       addresses = true;
       workstation = true;
     };
-    services = {
-      immich = {
-        name = "Immich";
-        serviceType = "_http._tcp";
-        port = 80;
-        domainName = "immich.local";
-      };
-      notebook = {
-        name = "Open Notebook";
-        serviceType = "_http._tcp";
-        port = 80;
-        domainName = "notebook.local";
-      };
-    };
+    #services = {
+    #  immich = {
+    #    name = "Immich";
+    #    serviceType = "_http._tcp";
+    #    port = 80;
+    #    domainName = "immich.local";
+    #  };
+    #  notebook = {
+    #    name = "Open Notebook";
+    #    serviceType = "_http._tcp";
+    #    port = 80;
+    #    domainName = "notebook.local";
+    #  };
+    # };
   };
 }
 
