@@ -1,12 +1,6 @@
-# Version 26.6.10.1
+# Version 26.6.10.2
 
-## Upgraded to Noctalia Version 5
+## Configured Noctalia Version 5
 
-Other than that, Installed multiple applications for general use,
-- Zotero
-- Stirling PDF
-- Strawberry Music Player
-- Stoat
-- Pinta
-- qimgv
-- Blanket
+Rewrote `home/modules/niri.nix` and `home/modules/noctalia.nix` because the old attributes of version 4 did not work with the new version 5.
+The lockscreen customization is still not declarative yet. I will change bunch of stuff in the future as well.

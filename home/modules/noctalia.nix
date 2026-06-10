@@ -2,135 +2,160 @@
   programs.noctalia = {
     enable = true;
     settings = {
-      settingsVersion = 59;
 
-      bar = {
-        barType = "floating";
-        position = "top";
-        density = "default";
-        showCapsule = false;
-        backgroundOpacity = 0.93;
-        marginVertical = 4;
-        marginHorizontal = 4;
-        frameRadius = 12;
-        outerCorners = true;
-        displayMode = "always_visible";
-        rightClickAction = "controlCenter";
-        widgets = {
-          left = [
-            { id = "Launcher"; useDistroLogo = true; }
-            { id = "ActiveWindow"; showIcon = false; }
-          ];
-          center = [
-            { id = "Workspace"; }
-          ];
-          right = [
-            { id = "SystemMonitor"; }
-            { id = "Tray"; }
-            { id = "Volume"; }
-            { id = "Brightness"; }
-            { id = "Battery"; }
-            { id = "NotificationHistory"; }
-            { id = "ControlCenter"; }
-            { id = "Clock"; useMonospacedFont = true; }
-          ];
+      shell = {
+        font_family = "Monocraft";
+        telemetry_enabled = false;
+        avatar_path = "/home/thedreamdev/Pictures/Random/stardust.jpg";
+
+        shadow = {
+            direction = "center";
+            alpha = 0.00; # No Shadow
+        };
+
+        animation = {
+          enabled = true;
+          speed = 1.66;
+        };
+
+        panel = {
+          transparency_mode = "soft";
+          launcher_categories = true;
         };
       };
 
-      general = {
-        avatarImage = "/home/thedreamdev/Pictures/Random/stardust.jpg";
-        dimmerOpacity = 0;
-        radiusRatio = 0.5;
-        animationSpeed = 1.66;
-        enableShadows = false;
-        enableBlurBehind = true;
-        lockOnSuspend = true;
-        clockStyle = "custom";
-        clockFormat = "hh\nmm";
-        telemetryEnabled = false;
+      theme = {
+        mode = "dark";
+        source = "builtin";
+        builtin = "Catppuccin";
       };
 
-      ui = {
-        fontDefault = "Monocraft";
-        fontFixed = "Monocraft";
-        translucentWidgets = true;
-        panelsAttachedToBar = true;
-      };
+      bar.default = {
+        style = "floating";
+        position = "top";
+        background_opacity = 0.93;
+        margin_vertical = 4;
+        margin_horizontal = 4;
+        frame_radius = 12;
+        outer_corners = true;
+        auto_hide = false;
 
-      location = {
-        name = "Lahore, Pakistan";
-        weatherEnabled = true;
-        use12hourFormat = false;
-        autoLocate = false;
-      };
+        start = [ 
+            "launcher" 
+            "workspaces" 
+            "audio_visualizer"
+        ];
+        
+        center = [ 
+            "media"
+            "clock"
+        ];
 
-      wallpaper = {
-        enabled = true;
-        directory = "/home/thedreamdev/Pictures/Wallpapers";
-        fillMode = "crop";
-        automationEnabled = false;
-        wallpaperChangeMode = "random";
-        randomIntervalSec = 300;
-        transitionDuration = 1500;
-        panelPosition = "center";
+        end = [ 
+            "tray" 
+            "notifications" 
+            "clipboard" 
+            "network" 
+            "bluetooth" 
+            "volume" 
+            "brightness" 
+            "battery" 
+            "control-center"
+            "session" 
+        ];
+        
       };
+      
+      widget = {
+        media = {
+            hide_when_no_media = true;
+            title_scroll = "on_hover";
+        };
 
-      appLauncher = {
-        terminalCommand = "kitty -e";
-        position = "center";
-        sortByMostUsed = true;
-        viewMode = "list";
-        showCategories = true;
-      };
+        workspaces = {
+            hide_when_empty = true;
+        };
 
-      colorSchemes = {
-        useWallpaperColors = false;
-        predefinedScheme = "Catppuccin";
-        darkMode = true;
-        syncGsettings = true;
+        volume = {
+            show_label = false;
+        };
+
+        audio_visualizer = {
+            low_color  = "primary";
+            high_color = "secondary";
+        };
+
+        battery = {
+            display_mode = "graphic";
+            show_label = false;
+        };
+
+        brightness = {
+            show_label = false;
+        };
+
+        tray = {
+            drawer = true;
+        };
+
+        audio = {
+            enable_overdrive = true;
+        };
+
+        notifications.hide_when_no_unread = true;
+        network.show_label = false;
       };
 
       dock = {
         enabled = true;
         position = "bottom";
-        displayMode = "auto_hide";
-        dockType = "floating";
-        dockIndicator = true;
+        auto_hide = true;
+        icon_size = 32;
       };
 
-      noctaliaPerformance = {
-        disableWallpaper = true;
-        disableDesktopWidgets = true;
+      launcher = {
+        terminal_command = "kitty -e";
+        position = "center";
+        sort_by_most_used = true;
+        view_mode = "list";
+      };
+
+      wallpaper = {
+        enabled = true;
+        fill_mode = "crop";
+        transition = ["fade" "wipe" "disc" "stripes" "zoom" "honeycomb"];
+        transition_duration = 1500;
+        edge_smoothness = 0.3;
+        transition_on_startup = true;
+        directory = "/home/thedreamdev/Pictures/Wallpapers";
+        default.path = "/home/thedreamdev/Pictures/Wallpapers/01.png";
+      };
+
+      location = {
+        address = "Lahore, PK";
+        auto_locate = false;
       };
 
       notifications = {
-        enabled = true;
-        location = "top_right";
-        overlayLayer = true;
-        lowUrgencyDuration = 3;
-        normalUrgencyDuration = 8;
-        criticalUrgencyDuration = 15;
-        enableBatteryToast = true;
-        enableKeyboardLayoutToast = true;
+        enable_daemon = true;
+        position = "top_right";
+        layer = "top"; # use 'overlay' if you want them to appear in fullscreen mode
+        duration_low = 3;
+        duration_normal = 8;
+        duration_critical = 15;
       };
 
       audio = {
-        volumeStep = 5;
-        volumeOverdrive = false;
+        volume_step = 5;
+        enable_overdrive = false;
       };
 
       brightness = {
-        brightnessStep = 5;
-        enforceMinimum = true;
-        enableDdcSupport = false;
+        brightness_step = 5;
+        enforce_minimum = true;
+        enable_ddc = false;
       };
 
-      nightLight = {
-        enabled = false;
-        autoSchedule = true;
-        nightTemp = "4000";
-        dayTemp = "6500";
-      };
     };
   };
 }
