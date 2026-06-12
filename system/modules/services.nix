@@ -17,44 +17,6 @@
     variant = "";
   };
 
-  services.nginx = {
-    enable = true;
-    virtualHosts."notebook.local" = {
-      locations."/" = {
-        proxyPass = "http://127.0.0.1:8502";
-        proxyWebsockets = true;
-      };
-    };
-    virtualHosts."immich.local" = {
-      locations."/" = {
-        proxyPass = "http://127.0.0.1:2283";
-        proxyWebsockets = true;
-      };
-    };
-  };
-
-  services.avahi = {
-    enable = true;
-    nssmdns = true;
-    publish = {
-      enable = true;
-      addresses = true;
-      workstation = true;
-    };
-    #services = {
-    #  immich = {
-    #    name = "Immich";
-    #    serviceType = "_http._tcp";
-    #    port = 80;
-    #    domainName = "immich.local";
-    #  };
-    #  notebook = {
-    #    name = "Open Notebook";
-    #    serviceType = "_http._tcp";
-    #    port = 80;
-    #    domainName = "notebook.local";
-    #  };
-    # };
-  };
+  # Bunch of networking services have been moved to networking.nix
 }
 

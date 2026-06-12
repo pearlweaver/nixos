@@ -45,6 +45,7 @@
     zotero
     qimgv
     strawberry
+    wine
 
     # Terminal Apps
     yazi
