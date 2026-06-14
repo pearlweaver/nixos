@@ -18,6 +18,7 @@
     ./modules/docker.nix
     ./modules/sops.nix
     ./modules/immich.nix
+    ./modules/security.nix
     inputs.home-manager.nixosModules.home-manager
 ];
 
