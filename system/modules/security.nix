@@ -40,7 +40,7 @@
 
   jails = {
       # Protect Immich login
-      immich = {
+      immich.settings = {
         enabled = true;
         filter = "immich";
         logpath = "/var/log/immich/*.log";
@@ -49,11 +49,11 @@
       };
 
       # Protect nginx
-      nginx-http-auth = {
+      nginx-http-auth.settings = {
         enabled = true;
       };
 
-      nginx-botsearch = {
+      nginx-botsearch.settings = {
         enabled = true;
       };
     };

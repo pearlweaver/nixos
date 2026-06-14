@@ -12,9 +12,4 @@
     "iptable_nat"
     "iptable_mangle"
   ];
-
-  boot.kernel.sysctl = {
-    "fs.inotify.max_user_watches" = 524288;
-    "fs.inotify.max_user_instances" = 512;
-  };
 }
