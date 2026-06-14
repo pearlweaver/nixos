@@ -1,15 +1,4 @@
-# Version 26.6.14.2
+# Version 26.6.14.3
 
-## Security updates (FIXED)
-- Fixed syntax error in `system/modules/security.nix`
-- Removed repeated lines from `system/modules/boot.nix` (related to file watcher)
-
-_Old Verios for reference because it had incorrect version number date:_
-
-# Old Version (14.1):
-## Added Security updates to the System
-- Created a new file called `security.nix` in `system/modules/`
-- Added Kernel Hardening
-- Added Fail2Ban
-- Added Memory Security
-
+- Added support for Screensharing
+- Removed tailscale ip block in 'networking.host' in `system/modules/networking.nix`. My IP was shown as 'notebook.home' on Adguard Home because of this, now it uses the proper host name.

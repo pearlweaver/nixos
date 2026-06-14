@@ -16,12 +16,6 @@
       "immich.local"
       "adguard.local"
     ];
-
-    "100.74.236.9" = [ # Tailscale ip
-      "notebook.home"
-      "immich.home"
-      "adguard.home"
-    ];
   };
 
   # Tailscale

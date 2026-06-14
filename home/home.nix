@@ -71,12 +71,17 @@
     libsForQt5.qtstyleplugin-kvantum
     kdePackages.qtstyleplugin-kvantum
     kdePackages.qt6ct
+    xdg-desktop-portal
+    xdg-desktop-portal-gnome
   ];
 
   nixpkgs.config.permittedInsecurePackages = [
      "electron-38.8.4"
   ];
 
+  home.sessionVariables = {
+    XDG_CURRENT_DESKTOP = "niri";
+  };
 #   xdg.mimeApps = {
 #     enable = true;
 #     defaultApplications = {
