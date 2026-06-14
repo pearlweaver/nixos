@@ -15,6 +15,55 @@
       rebuild-nix = "cd ~/nixos-config && sudo nixos-rebuild switch --flake .#nixos";
       rebuild-home = "cd ~/nixos-config && home-manager switch --flake .#thedreamdev";
     };
+
+    functions = {
+      mp3 = { # run as 'mp3 https://youtu.be/dQw4w9WgXcQ/'
+        description = "Download YouTube audio as MP3";
+        body = ''
+          yt-dlp --ignore-errors \
+                 --extract-audio \
+                 --audio-format mp3 \
+                 --audio-quality 0 \
+                 -o "%(title)s.%(ext)s" \
+                 $argv[1]
+        '';
+      };
+
+      mp3playlist = {
+        description = "Download YouTube playlist as MP3";
+        body = ''
+          yt-dlp --ignore-errors \
+                 --extract-audio \
+                 --audio-format mp3 \
+                 --audio-quality 0 \
+                 --yes-playlist \
+                 -o "%(title)s.%(ext)s" \
+                 $argv[1]
+        '';
+      };
+
+      spotifymp3 = {
+        description = "Download Spotify music as MP3";
+        body = ''
+          spotdl --output "{title}.{output-ext}" \
+                 --format mp3 \
+                 --bitrate 320k \
+                 --lyrics genius musixmatch \
+                 $argv[1]
+          '';
+      };
+
+      spotifyplaylist = {
+        description = "Download Spotify playlist as MP3";
+        body = ''
+          spotdl --output "{title}.{output-ext}" \
+                 --format mp3 \
+                 --lyrics genius musixmatch \
+                 --bitrate 320k \
+                 $argv[1]
+          '';
+      };
+    };
   };
 
   programs.starship = {

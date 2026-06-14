@@ -1,4 +1,7 @@
-# Version 26.6.14.3
+# Version 26.6.14.4
 
-- Added support for Screensharing
-- Removed tailscale ip block in 'networking.host' in `system/modules/networking.nix`. My IP was shown as 'notebook.home' on Adguard Home because of this, now it uses the proper host name.
+Added fish shell aliases for downloading mp3 from spotify and youtube:
+- spotifymp3 _single song/artist_
+- spotifyplaylist _playlist link_
+- mp3 _single youtube video_
+- mp3playlist _youtube playlist link_

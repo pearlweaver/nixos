@@ -51,6 +51,8 @@
     yazi
     cava
     ani-cli
+    spotdl
+    ffmpeg
 
     # Dev
     godot_4
