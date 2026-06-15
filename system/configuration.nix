@@ -1,4 +1,4 @@
-{ config, pkgs, inputs, ... }: {
+{ config, pkgs, inputs, lib, ... }: {
   imports = [
     ./hardware-configuration.nix
     ./modules/boot.nix
@@ -22,6 +22,7 @@
     inputs.home-manager.nixosModules.home-manager
 ];
 
+  systemd.services.navidrome.serviceConfig.ProtectHome = lib.mkForce false;
   nixpkgs.config.allowUnfree = true;
   system.stateVersion = "25.11";
   home-manager.backupFileExtension = "bak";

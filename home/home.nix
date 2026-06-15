@@ -33,7 +33,6 @@
     nemo
     nwg-look
     adw-gtk3
-    mousai
     komikku
     stremio-linux-shell
     stoat-desktop
@@ -66,6 +65,7 @@
     gimp
     opencode
     nodejs
+    obs-studio
 
     # Important / Others
     xwayland-satellite
@@ -75,6 +75,11 @@
     kdePackages.qt6ct
     xdg-desktop-portal
     xdg-desktop-portal-gnome
+
+    # Nemo extensions
+    nemo-preview
+    nemo-fileroller
+    nemo-emblems
   ];
 
   nixpkgs.config.permittedInsecurePackages = [

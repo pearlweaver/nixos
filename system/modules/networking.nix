@@ -15,6 +15,7 @@
       "notebook.local"
       "immich.local"
       "adguard.local"
+      "navidrome.local"
     ];
   };
 
@@ -42,6 +43,16 @@
     };
   };
 
+  # Navidrome
+  services.navidrome = {
+    enable = true;
+    openFirewall = true;
+    settings = {
+      MusicFolder = "/home/thedreamdev/Music";
+      Port = 4533;
+      Address = "0.0.0.0";
+    };
+  };
 
   # mDNS
   services.avahi = {
@@ -91,6 +102,13 @@
         };
       };
 
+      "navidrome.local" = {
+        locations."/" = {
+          proxyPass = "http://localhost:4533";
+          proxyWebsockets = true;
+        };
+      };
+
       # Home Server
 
       "immich.home" = {
@@ -114,6 +132,13 @@
       "notebook.home" = {
         locations."/" = {
           proxyPass = "http://127.0.0.1:8502";
+          proxyWebsockets = true;
+        };
+      };
+
+      "navidrome.home" = {
+        locations."/" = {
+          proxyPass = "http://localhost:4533";
           proxyWebsockets = true;
         };
       };
