@@ -29,33 +29,40 @@
     "kdeglobals".force = true;
     "kdeglobals".text = ''
       [General]
-      ColorScheme=CatppuccinMochaLavender
       Name=Catppuccin Mocha Lavender
 
-      [Background:Normal]
-      BackgroundNormal=30,30,46
+      [Icons]
+      Theme=reversal
 
       [Colors:View]
       BackgroundNormal=30,30,46
       ForegroundNormal=205,214,244
+      BackgroundAlternate=24,24,37
 
       [Colors:Window]
-      BackgroundNormal=17,17,27
+      BackgroundNormal=24,24,37
       ForegroundNormal=205,214,244
 
       [Colors:Button]
-      BackgroundNormal=43,44,66
+      BackgroundNormal=54,58,79
       ForegroundNormal=205,214,244
 
       [Colors:Selection]
       BackgroundNormal=180,190,254
-      ForegroundNormal=17,17,27
+      ForegroundNormal=30,30,46
+
+      [Colors:Tooltip]
+      BackgroundNormal=24,24,37
+      ForegroundNormal=205,214,244
     '';
   };
 
   home.sessionVariables = {
     QT_QPA_PLATFORM = "wayland;xcb";
     QT_QPA_PLATFORMTHEME = "qt6ct";
+    QT_STYLE_OVERRIDE = "kvantum";
+    KVANTUM_THEME = "catppuccin-mocha-lavender";
     QT_WAYLAND_DISABLE_WINDOWDECORATION = "1";
+    KDE_SESSION_VERSION = "6";
   };
 }

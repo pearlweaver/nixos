@@ -109,6 +109,7 @@
       dock = {
         enabled = true;
         position = "bottom";
+        reserve_space = false;
         auto_hide = true;
         icon_size = 32;
       };

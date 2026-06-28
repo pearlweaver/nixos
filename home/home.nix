@@ -30,21 +30,20 @@
     libreoffice
     qbittorrent
     uget
-    nemo
+    thunar
     nwg-look
     adw-gtk3
     komikku
     stremio-linux-shell
     stoat-desktop
     foliate
-    stirling-pdf-desktop
     zathura
     pinta
     blanket
-    zotero
     qimgv
-    strawberry
     wine
+    nocturne
+    proton-vpn
 
     # Terminal Apps
     yazi
@@ -66,6 +65,7 @@
     opencode
     nodejs
     obs-studio
+    antigravity
 
     # Important / Others
     xwayland-satellite
@@ -75,11 +75,6 @@
     kdePackages.qt6ct
     xdg-desktop-portal
     xdg-desktop-portal-gnome
-
-    # Nemo extensions
-    nemo-preview
-    nemo-fileroller
-    nemo-emblems
   ];
 
   nixpkgs.config.permittedInsecurePackages = [

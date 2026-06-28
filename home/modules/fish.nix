@@ -45,22 +45,22 @@
       spotifymp3 = {
         description = "Download Spotify music as MP3";
         body = ''
-          spotdl --output "{title}.{output-ext}" \
+          spotdl $argv[1] \
+                 --output "{title}.{output-ext}" \
                  --format mp3 \
                  --bitrate 320k \
-                 --lyrics genius musixmatch \
-                 $argv[1]
+                 --lyrics genius musixmatch
           '';
       };
 
       spotifyplaylist = {
         description = "Download Spotify playlist as MP3";
         body = ''
-          spotdl --output "{title}.{output-ext}" \
+          spotdl $argv[1] \
+                 --output "{title}.{output-ext}" \
                  --format mp3 \
                  --lyrics genius musixmatch \
-                 --bitrate 320k \
-                 $argv[1]
+                 --bitrate 320k
           '';
       };
     };

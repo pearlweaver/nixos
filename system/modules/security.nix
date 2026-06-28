@@ -34,11 +34,11 @@
   # I am already using tailscale for remote access, my services are not directly exposed to the internet.
   # This is mostly only useful if I ever decided to expose my services to the internet.
   services.fail2ban = {
-  enable = true;
-  maxretry = 5;
-  bantime = "1h";
+    enable = true;
+    maxretry = 5;
+    bantime = "1h";
 
-  jails = {
+    jails = {
       # Protect Immich login
       immich.settings = {
         enabled = true;

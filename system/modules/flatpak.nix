@@ -5,6 +5,8 @@ let
   # 1. Declare the Flatpaks you *want* on your system
   desiredFlatpaks = [
     "org.vinegarhq.Sober"
+    "io.github.tanaybhomia.Whisp"
+    "app.zen_browser.zen"
   ];
 in {
   system.userActivationScripts.flatpakManagement = {

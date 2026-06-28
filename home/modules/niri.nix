@@ -1,4 +1,4 @@
-{ config, pkgs, inputs, ... }:
+{ config, pkgs, inputs, lib, ... }:
 
 let
   noctalia = cmd: [ "noctalia" "msg" ] ++ (pkgs.lib.splitString " " cmd);
@@ -22,8 +22,15 @@ in {
         };
       };
 
-      outputs."eDP-1" = {
-        scale = 1.0;
+      outputs = {
+        "eDP-1" = {
+            scale = 1.0;
+            position = { x = 0; y = 0; };
+        };
+        "HDMI-A-1" = {
+            scale = 1.0;
+            position = { x = 0; y = 0; };
+        };
       };
 
       layout = {
@@ -87,20 +94,28 @@ in {
       };
 
       binds = with config.lib.niri.actions; {
-        # Apps
+				# Apps
         "Mod+T".action.spawn = [ "kitty" ];
-        "Mod+E".action.spawn = [ "nemo" ];
+        "Mod+E".action.spawn = [ "thunar" ];
         "Mod+Shift+E".action.spawn = [ "kitty" "-e" "yazi" ];
-        "Mod+B".action.spawn = [ "firefox" ];
+        "Mod+B".action.spawn = [ "app.zen_browser.zen" ];
         "Mod+D".action.spawn = [ "vesktop" ];
-        "Mod+M".action.spawn = [ "strawberry" ];
+        "Mod+M".action.spawn = [ "nocturne" ];
+        "Mod+C".action.spawn = [ "codium" ];
 
-        # Window management
+				# Window Management
         "Mod+Q".action.close-window = {};
         "Mod+X".action.toggle-window-floating = {};
         "Mod+F".action.maximize-column = {};
-        
-        # Noctalia 
+        "Mod+F11".action.fullscreen-window = {};
+
+        "Mod+R".action.switch-preset-column-width = {};
+        "Mod+Shift+R".action.switch-preset-window-height = {};
+        "Mod+Ctrl+Left".action.set-column-width = "-10%";
+        "Mod+Ctrl+Right".action.set-column-width = "+10%";
+        "Mod+Ctrl+Up".action.set-window-height = "-10%";
+        "Mod+Ctrl+Down".action.set-window-height = "+10%";
+
         "Alt+Space".action.spawn = noctalia "panel-toggle launcher";
         "Mod+L".action.spawn = noctalia "session lock";
         "Ctrl+Alt+Delete".action.spawn = noctalia "panel-toggle session";
