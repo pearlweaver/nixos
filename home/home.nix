@@ -21,6 +21,7 @@
 
   home.packages = with pkgs; [
     # Apps
+    brave-origin
     discord
     vscodium
     obsidian
@@ -35,7 +36,6 @@
     adw-gtk3
     komikku
     stremio-linux-shell
-    stoat-desktop
     foliate
     zathura
     pinta

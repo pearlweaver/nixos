@@ -58,6 +58,13 @@ in {
 
       prefer-no-csd = true;
 
+      # blur = {
+      #   passes = 2;
+      #   offset = 3.0;
+      #   noise = 0.03;
+      #   saturation = 1.0;
+      # };
+
       window-rules = [
         {
           geometry-corner-radius = {
@@ -102,6 +109,7 @@ in {
         "Mod+D".action.spawn = [ "vesktop" ];
         "Mod+M".action.spawn = [ "nocturne" ];
         "Mod+C".action.spawn = [ "codium" ];
+        "Mod+W".action.spawn = [ "libreoffice" ];
 
 				# Window Management
         "Mod+Q".action.close-window = {};

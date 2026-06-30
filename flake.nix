@@ -46,7 +46,12 @@
       system = "x86_64-linux";
       pkgs = import nixpkgs {
         inherit system;
-        overlays = [ niri-flake.overlays.niri ];
+        overlays = [
+          niri-flake.overlays.niri
+          (final: prev: {
+            brave-origin = final.callPackage ./pkgs/brave-origin { };
+          })
+        ];
       };
     in {
       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
