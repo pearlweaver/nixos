@@ -168,6 +168,9 @@ in {
         "XF86MonBrightnessDown".action.spawn = noctalia "brightness-down";
 
         # Media
+        "Mod+Shift+P".action.spawn = [ "playerctl" "play-pause" ];
+        "Mod+Shift+N".action.spawn = [ "playerctl" "next" ];
+        "Mod+Shift+B".action.spawn = [ "playerctl" "previous" ];
         "XF86AudioNext".action.spawn = [ "playerctl" "next" ];
         "XF86AudioPrev".action.spawn = [ "playerctl" "previous" ];
         "XF86AudioPlay".action.spawn = [ "playerctl" "play-pause" ];

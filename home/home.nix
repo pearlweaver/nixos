@@ -45,6 +45,8 @@
     nocturne
     proton-vpn
     protontricks
+    blender
+    krita
 
     # Terminal Apps
     yazi
@@ -69,6 +71,7 @@
     antigravity
 
     # Important / Others
+    playerctl
     xwayland-satellite
     reversal-icon-theme
     libsForQt5.qtstyleplugin-kvantum
@@ -85,6 +88,7 @@
   home.sessionVariables = {
     XDG_CURRENT_DESKTOP = "niri";
   };
+  xdg.configFile."mimeapps.list".force = true;
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
