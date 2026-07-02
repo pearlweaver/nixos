@@ -1,11 +1,13 @@
 { config, pkgs, lib, ... }: {
+  imports = [
+    ./printing.nix
+    ./power.nix
+  ];
+
   services.xserver.enable = true;
   services.displayManager.sddm.enable = true;
   services.desktopManager.plasma6.enable = true;
-  services.printing.enable = true;
   services.flatpak.enable = true;
-  services.power-profiles-daemon.enable = true;
-  services.upower.enable = true;
 
   nix.settings.experimental-features = [
     "flakes"
