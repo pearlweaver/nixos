@@ -5,6 +5,8 @@ let
     accents = [ "lavender" ]; # blue / lavender / mauve / peach / pink / red / etc
   };
 in {
+  catppuccin.gtk.icon.enable = false;
+
   xdg.configFile."gtk-3.0/settings.ini".force = true;
   xdg.configFile."gtk-4.0/settings.ini".force = true;
 

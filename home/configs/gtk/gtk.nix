@@ -1,3 +1,3 @@
 { ... }: {
-  imports = [ ./themes/custom.nix ];
+  imports = [ ./themes/catppuccin.nix ];
 }
