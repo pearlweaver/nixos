@@ -1,3 +1,8 @@
-# Version 26.7.2.2
+# Version 26.7.3.2
 
-- Trying to set up custom themes for GTK and Kvantum instead of just using Catppuccin 
+## Changed the Whole Nix config File Tree Structure
+
+- Split `home.nix` into `modules/`
+- Moved per-app configs to `home/configs/<app>/<app>.nix`
+- Similarily to home-manager, split `system/modules/` as well 
+- Moved `system/modules/shell.nix` to `shells/shell.nix`
