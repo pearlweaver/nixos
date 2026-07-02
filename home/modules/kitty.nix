@@ -1,3 +1,3 @@
 { ... }: {
-  imports = [ ./kitty_catppuccin.nix ];
+  imports = [ ./kitty_custom.nix ];
 }

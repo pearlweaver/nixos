@@ -1,3 +1,3 @@
 { ... }: {
-  imports = [ ./gtk_catppuccin.nix ];
+  imports = [ ./gtk_custom.nix ];
 }

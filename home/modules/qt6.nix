@@ -1,3 +1,3 @@
 { ... }: {
-  imports = [ ./qt6_catppuccin.nix ];
+  imports = [ ./qt6_custom.nix ];
 }
