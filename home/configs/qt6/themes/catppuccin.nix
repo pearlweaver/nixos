@@ -18,18 +18,26 @@
       [Appearance]
       custom_palette=false
       style=kvantum
+
+      [Fonts]
+      fixed="Monocraft,11,-1,0,400,0,0,0,0,0,0,0,0,0,0,1,Regular"
+      general="Monocraft,11,-1,0,400,0,0,0,0,0,0,0,0,0,0,1,Regular"
     '';
     "qt6ct/qt6ct.conf".text = ''
       [Appearance]
       custom_palette=false
       style=kvantum
       standard_dialogs=default
-    '';
 
+      [Fonts]
+      fixed="Monocraft,11,-1,0,400,0,0,0,0,0,0,0,0,0,0,1,Regular"
+      general="Monocraft,11,-1,0,400,0,0,0,0,0,0,0,0,0,0,1,Regular"
+    '';
     "kdeglobals".force = true;
     "kdeglobals".text = ''
       [General]
       Name=Catppuccin Mocha Lavender
+      font=Monocraft,11,-1,0,400,0,0,0,0,0,0,0,0,0,0,1
 
       [Icons]
       Theme=reversal

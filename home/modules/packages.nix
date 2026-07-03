@@ -30,6 +30,8 @@
     blender
     krita
     nautilus
+    kdePackages.dolphin
+    kdePackages.ark
 
     # Terminal Apps
     yazi
@@ -66,5 +68,6 @@
 
   nixpkgs.config.permittedInsecurePackages = [
      "electron-38.8.4"
+     "pnpm-10.29.2"
   ];
 }
