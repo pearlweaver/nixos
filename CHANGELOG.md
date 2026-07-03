@@ -1,3 +1,3 @@
-# Version 26.7.3.2
+# Version 26.7.3.3
 
-- Switched to Nautilus
+- Trying to make VSCodium Declarative. The setup is still broken and many stuff will be changed.

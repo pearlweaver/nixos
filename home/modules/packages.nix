@@ -5,7 +5,6 @@
     # Apps
     brave-origin
     discord
-    vscodium
     obsidian
     spotify
     vesktop
