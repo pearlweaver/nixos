@@ -2,7 +2,7 @@
 {
   qt = {
     enable = true;
-    platformTheme.name = "qt6ct";
+    platformTheme.name = "kde";
     style = {
       name = "kvantum";
       package = pkgs.kdePackages.qtstyleplugin-kvantum;
@@ -14,25 +14,6 @@
   catppuccin.kvantum.accent = "lavender";
 
   xdg.configFile = {
-    "qt5ct/qt5ct.conf".text = ''
-      [Appearance]
-      custom_palette=false
-      style=kvantum
-
-      [Fonts]
-      fixed="Monocraft,11,-1,0,400,0,0,0,0,0,0,0,0,0,0,1,Regular"
-      general="Monocraft,11,-1,0,400,0,0,0,0,0,0,0,0,0,0,1,Regular"
-    '';
-    "qt6ct/qt6ct.conf".text = ''
-      [Appearance]
-      custom_palette=false
-      style=kvantum
-      standard_dialogs=default
-
-      [Fonts]
-      fixed="Monocraft,11,-1,0,400,0,0,0,0,0,0,0,0,0,0,1,Regular"
-      general="Monocraft,11,-1,0,400,0,0,0,0,0,0,0,0,0,0,1,Regular"
-    '';
     "kdeglobals".force = true;
     "kdeglobals".text = ''
       [General]
@@ -67,7 +48,6 @@
 
   home.sessionVariables = {
     QT_QPA_PLATFORM = "wayland;xcb";
-    QT_QPA_PLATFORMTHEME = "qt6ct";
     QT_STYLE_OVERRIDE = "kvantum";
     KVANTUM_THEME = "catppuccin-mocha-lavender";
     QT_WAYLAND_DISABLE_WINDOWDECORATION = "1";

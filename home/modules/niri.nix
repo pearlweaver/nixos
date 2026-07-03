@@ -103,7 +103,7 @@ in {
       binds = with config.lib.niri.actions; {
 				# Apps
         "Mod+T".action.spawn = [ "kitty" ];
-        "Mod+E".action.spawn = [ "thunar" ];
+        "Mod+E".action.spawn = [ "nautilus" ];
         "Mod+Shift+E".action.spawn = [ "kitty" "-e" "yazi" ];
         "Mod+B".action.spawn = [ "app.zen_browser.zen" ];
         "Mod+D".action.spawn = [ "vesktop" ];
