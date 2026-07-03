@@ -1,3 +1,3 @@
-# Version 26.7.3.3
+# Version 26.7.3.4
 
-- Trying to make VSCodium Declarative. The setup is still broken and many stuff will be changed.
+- I give up on vscodium sob

@@ -12,7 +12,7 @@
     libreoffice
     qbittorrent
     uget
-    thunar
+    vscodium
     nwg-look
     adw-gtk3
     komikku

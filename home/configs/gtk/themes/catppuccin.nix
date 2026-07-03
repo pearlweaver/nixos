@@ -11,6 +11,7 @@ in {
   gtk = {
     enable = true;
     gtk2.enable = false;
+    gtk4.theme = config.gtk.theme;
     theme = {
       name = "catppuccin-mocha-lavender-standard";
       package = themePkg;

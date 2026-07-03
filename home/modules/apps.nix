@@ -9,6 +9,5 @@
     ../configs/fastfetch/fastfetch.nix
     ../configs/gtk/gtk.nix
     ../configs/qt6/qt6.nix
-    # ../configs/vscodium/vscodium.nix
   ];
 }
