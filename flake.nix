@@ -33,11 +33,6 @@
       # inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    helix-notes = {
-      url = "git+https://codeberg.org/ArkHost/HelixNotes";
-      # inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     catppuccin.url = "github:catppuccin/nix";
   };
 
@@ -46,7 +41,7 @@
   #  extra-trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
   #};
 
-  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, catppuccin, sops-nix, helix-notes, ... }@inputs:
+  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, catppuccin, sops-nix, ... }@inputs:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
@@ -63,7 +58,6 @@
         inherit system;
         specialArgs = {
           inherit inputs;
-          inherit helix-notes;
         };
         modules = [
           ./system/configuration.nix
