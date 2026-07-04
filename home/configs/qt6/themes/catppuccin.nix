@@ -2,7 +2,7 @@
 {
   qt = {
     enable = true;
-    platformTheme.name = "kde";
+    platformTheme.name = "qt5ct";
     style = {
       name = "kvantum";
       package = pkgs.kdePackages.qtstyleplugin-kvantum;
@@ -21,7 +21,7 @@
       font=Monocraft,11,-1,0,400,0,0,0,0,0,0,0,0,0,0,1
 
       [Icons]
-      Theme=reversal
+      Theme=Reversal-purple-dark
 
       [Colors:View]
       BackgroundNormal=30,30,46
@@ -48,7 +48,7 @@
 
   home.sessionVariables = {
     QT_QPA_PLATFORM = "wayland;xcb";
-    QT_STYLE_OVERRIDE = "kvantum";
+    # QT_STYLE_OVERRIDE = "kvantum";
     KVANTUM_THEME = "catppuccin-mocha-lavender";
     QT_WAYLAND_DISABLE_WINDOWDECORATION = "1";
     KDE_SESSION_VERSION = "6";

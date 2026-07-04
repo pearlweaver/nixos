@@ -1,34 +1,28 @@
-{ config, pkgs, ... }: {
+ { config, pkgs, ... }: {
   qt = {
     enable = true;
-    platformTheme.name = "qt6ct";
+    platformTheme.name = "qt6ct"; 
     style = {
-      name = "kvantum";
+      name = "qt6ct";
       package = pkgs.kdePackages.breeze;
     };
   };
 
   xdg.configFile = {
-    "qt5ct/qt5ct.conf".text = ''
-      [Appearance]
-      custom_palette=false
-      style=breeze
-    '';
-    "qt6ct/qt6ct.conf".text = ''
-      [Appearance]
-      custom_palette=false
-      style=breeze
-      standard_dialogs=default
-    '';
-
     "kdeglobals".force = true;
     "kdeglobals".text = ''
       [General]
-      Name=Rosé Pine
-      font=Monocraft,11,-1,0,400,0,0,0,0,0,0,0,0,0,0,1
+      Name=Rose Pine
+      font=Monocraft Regular,11,-1,0,400,0,0,0,0,0,0,0,0,0,0,1
 
       [Icons]
-      Theme=reversal
+      Theme=Reversal-purple-dark
+
+      [KDE]
+      LookAndFeelPackage=org.kde.breezedark.desktop
+
+      [UiSettings]
+      ColorScheme=Rose Pine
 
       [Colors:View]
       BackgroundNormal=25,23,36
@@ -55,7 +49,7 @@
 
   home.sessionVariables = {
     QT_QPA_PLATFORM = "wayland;xcb";
-    QT_QPA_PLATFORMTHEME = "qt6ct";
+    QT_STYLE_OVERRIDE = "qt6ct";
     QT_WAYLAND_DISABLE_WINDOWDECORATION = "1";
     KDE_SESSION_VERSION = "6";
   };

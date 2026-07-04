@@ -58,9 +58,13 @@
     playerctl
     xwayland-satellite
     reversal-icon-theme
+    monocraft
+    kdePackages.breeze
     libsForQt5.qtstyleplugin-kvantum
     kdePackages.qtstyleplugin-kvantum
     kdePackages.qt6ct
+    catppuccin-qt5ct
+    libsForQt5.qt5ct
     xdg-desktop-portal
     xdg-desktop-portal-gnome
   ];

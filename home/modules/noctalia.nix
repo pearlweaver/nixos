@@ -27,7 +27,7 @@
       theme = {
         mode = "dark";
         source = "builtin";
-        builtin = "Catppuccin";
+        builtin = "Rosé Pine";
       };
 
       bar.default = {
