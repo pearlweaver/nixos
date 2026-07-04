@@ -1,3 +1,3 @@
-# Version 26.7.3.4
+# Version 26.7.4.2
 
-- I give up on vscodium sob
+- Making custom generic Dark theme with purple accent. Renamed from `custom.nix` to `dark.nix`.

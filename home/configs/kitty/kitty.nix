@@ -1,3 +1,3 @@
 { ... }: {
-  imports = [ ./themes/catppuccin.nix ];
+  imports = [ ./themes/dark.nix ];
 }
