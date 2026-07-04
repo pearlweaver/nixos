@@ -1,3 +1,3 @@
-# Version 26.7.4.2
+# Version 26.7.4.3
 
-- Making custom generic Dark theme with purple accent. Renamed from `custom.nix` to `dark.nix`.
+- Adding rose-pine theme. (WIP)
