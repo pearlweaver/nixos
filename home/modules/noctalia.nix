@@ -157,6 +157,38 @@
         enable_ddc = false;
       };
 
+      idle = {
+        pre_action_fade_seconds = 2.0;
+        behavior = {
+          screen-off = {
+            timeout = 300;
+            action = "screen_off";
+            enable = true;
+          };
+          lock = {
+            timeout = 360;
+            action = "lock";
+            enable = true;
+          };
+          # Commented out because I want my tailscale and adguard setup to work when sleeping as well
+          # suspend = {
+          #   timeout = 600;
+          #   action = "lock_and_suspend";
+          #   enable = true;
+          # };
+        };
+      };
+
+      plugins = {
+        enabled = [ "noctalia/mpvpaper" ];
+        settings."noctalia/mpvpaper" = {
+          video_directory = "/home/thedreamdev/Pictures/Wallpapers";
+          mute = true;
+          hardware_decode = true;
+          auto_pause = true;
+          mpv_options = "vf=scale=1920:1080:flags=lanczos hwdec=vaapi";
+        };
+      };
     };
   };
 }

@@ -67,6 +67,7 @@
     libsForQt5.qt5ct
     xdg-desktop-portal
     xdg-desktop-portal-gnome
+    mpvpaper
   ];
 
   nixpkgs.config.permittedInsecurePackages = [

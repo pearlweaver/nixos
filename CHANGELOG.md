@@ -1,3 +1,5 @@
-# Version 26.7.4.4
+# Version 26.7.7.1
 
-- Made QT Apps finally work with the theme. Dolphin finally works correctly now. I am saying this about rose pine theme. Rest are not fixed yet but now I know what caused the error so I will fix it soon.
+- Implemented screen timeout and screen locking on idle
+- Added live wallpaper support using mpvpaper plugin
+- Added shortcut keys for wallpaper picker

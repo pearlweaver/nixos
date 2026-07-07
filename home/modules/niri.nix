@@ -90,6 +90,14 @@ in {
           ];
           place-within-backdrop = true;
         }
+        {
+          matches = [
+            {
+              namespace = "mpvpaper";
+            }
+          ];
+          place-within-backdrop = true;
+        }
       ];
 
       overview = {
@@ -110,6 +118,8 @@ in {
         "Mod+M".action.spawn = [ "nocturne" ];
         "Mod+C".action.spawn = [ "codium" ];
         "Mod+W".action.spawn = [ "libreoffice" ];
+        "Mod+A".action.spawn = [ "noctalia" "msg" "panel-toggle" "wallpaper" ];
+        "Mod+Shift+A".action.spawn = [ "noctalia" "msg" "panel-toggle" "noctalia/mpvpaper:picker" ];
 
 				# Window Management
         "Mod+Q".action.close-window = {};
