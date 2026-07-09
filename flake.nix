@@ -109,6 +109,8 @@
               scipy
               scikit-image
               scikit-learn
+              inquirerpy
+              tqdm
             ]))
           ];
         };
