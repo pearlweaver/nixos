@@ -6,7 +6,7 @@
       shell = {
         font_family = "Monocraft";
         telemetry_enabled = false;
-        avatar_path = "/home/thedreamdev/Pictures/Random/stardust.jpg";
+        avatar_path = "/home/thedreamdev/Pictures/Random/pic.jpg";
 
         shadow = {
             direction = "center";
@@ -33,12 +33,13 @@
       bar.default = {
         style = "floating";
         position = "top";
-        background_opacity = 0.93;
+        background_opacity = 0.55;
         margin_vertical = 4;
         margin_horizontal = 4;
         frame_radius = 12;
         outer_corners = true;
         auto_hide = false;
+        corner_radius = 80;
 
         start = [ 
             "launcher" 

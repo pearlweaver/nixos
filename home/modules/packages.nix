@@ -26,11 +26,11 @@
     nocturne
     proton-vpn
     protontricks
-    blender
     krita
     nautilus
     kdePackages.dolphin
     kdePackages.ark
+    stoat-desktop
 
     # Terminal Apps
     yazi
@@ -40,6 +40,8 @@
     ffmpeg
 
     # Dev
+    blender
+    aseprite
     godot_4
     unityhub
     lua
