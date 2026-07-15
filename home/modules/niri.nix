@@ -185,6 +185,8 @@ in {
         "XF86AudioPrev".action.spawn = [ "playerctl" "previous" ];
         "XF86AudioPlay".action.spawn = [ "playerctl" "play-pause" ];
         "XF86AudioPause".action.spawn = [ "playerctl" "play-pause" ];
+        
+        "Mod+Shift+Space".action.spawn = [ "perla" "hotkey" ];
       };
     };
   };

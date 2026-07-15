@@ -9,6 +9,15 @@
   services.desktopManager.plasma6.enable = true;
   services.flatpak.enable = true;
 
+  services.ollama = {
+    enable = true;
+    host = "127.0.0.1";
+    port = 11434;
+    package = pkgs.ollama-cpu;
+  };
+
+  systemd.services.ollama.environment.OLLAMA_KEEP_ALIVE = "30m";
+
   nix.settings.experimental-features = [
     "flakes"
     "nix-command"
