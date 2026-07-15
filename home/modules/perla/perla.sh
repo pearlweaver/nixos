@@ -162,6 +162,7 @@ ensure_session() {
     -H 'Content-Type: application/json' \
     -d '{"title":"perla"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
   echo "$sid" > "$session_file"
+  rm -f "$SESSION_DIR/server-t$tier.injected"
   echo "$sid"
 }
 
@@ -184,8 +185,22 @@ call_opencode() {
   ensure_server "$tier"
   local port
   if [ "$tier" = "1" ]; then port="$SERVER_PORT_T1"; else port="$SERVER_PORT_T2"; fi
+
+  local session_file="$SESSION_DIR/server-t$tier.session"
+  local injected_file="$SESSION_DIR/server-t$tier.injected"
+
   local sid
   sid="$(ensure_session "$tier")"
+
+  if [ ! -f "$injected_file" ]; then
+    text="IMPORTANT SETUP — You must follow these rules above all else:
+- Your name is Perla. You are NOT opencode.
+- When asked your name, say \"Perla\" or \"My name is Perla.\" Never \"opencode.\"
+- You are a warm, witty personal AI assistant.
+
+$text"
+    touch "$injected_file"
+  fi
 
   log "Consulting OpenCode (Tier $tier)..."
   local model_json
