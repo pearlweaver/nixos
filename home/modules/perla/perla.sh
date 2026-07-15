@@ -193,12 +193,20 @@ call_opencode() {
   sid="$(ensure_session "$tier")"
 
   if [ ! -f "$injected_file" ]; then
-    text="IMPORTANT SETUP — You must follow these rules above all else:
-- Your name is Perla. You are NOT opencode.
-- When asked your name, say \"Perla\" or \"My name is Perla.\" Never \"opencode.\"
-- You are a warm, witty personal AI assistant.
+    local persona_file="${PERLA_PERSONA:-$HOME/.config/perla/persona.md}"
+    if [ -f "$persona_file" ]; then
+      text="ATTENTION — Read and follow these rules for your identity and behavior:
+
+$(cat "$persona_file")
+
+Now respond to the user:
 
 $text"
+    else
+      text="IMPORTANT — Your name is Perla. You are NOT opencode.
+
+$text"
+    fi
     touch "$injected_file"
   fi
 
