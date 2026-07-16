@@ -240,11 +240,18 @@ print(json.dumps({
     exit 1
   }
 
-  python3 -c "
+  local output
+  output="$(python3 -c "
 import sys, json
 d = json.load(sys.stdin)
-print(' '.join(p.get('text','') for p in d['parts'] if p['type']=='text'))
-" <<< "$result"
+text = ' '.join(p.get('text','') for p in d['parts'] if p['type']=='text')
+tool_used = any(p.get('type') == 'tool' for p in d['parts'])
+print('true' if tool_used else 'false')
+print(text)
+" <<< "$result")"
+
+  OPENCODE_TOOL_USED="$(echo "$output" | head -1)"
+  OPENCODE_RESPONSE="$(echo "$output" | tail -n +2)"
 }
 
 is_casual() {
@@ -272,6 +279,21 @@ log_command() {
     echo "## $(date +%H:%M) — Tier $tier"
     echo "- **Input:** $text"
     echo "- **Response:** $response"
+    echo ""
+  } >> "$log_file"
+}
+
+log_conversation() {
+  local text="$1"
+  local response="$2"
+  local tier="$3"
+  local log_dir="$PERLA_VAULT/Conversations"
+  mkdir -p "$log_dir"
+  local log_file="$log_dir/$(date +%Y-%m-%d).md"
+  {
+    echo "## $(date +%H:%M) — Tier $tier"
+    echo "- **User:** $text"
+    echo "- **Perla:** $response"
     echo ""
   } >> "$log_file"
 }
@@ -314,6 +336,7 @@ main() {
   fi
 
   if tier0 "$input"; then
+    log_command "$input" "Executed directly" "0"
     return 0
   fi
 
@@ -321,8 +344,9 @@ main() {
     tier=2
   fi
 
-  local response
-  response="$(call_opencode "$input" "$tier")"
+  call_opencode "$input" "$tier"
+  local response="$OPENCODE_RESPONSE"
+  local tool_used="$OPENCODE_TOOL_USED"
   log "Response: $response"
 
   if [ "$mode" = "voice" ]; then
@@ -331,8 +355,10 @@ main() {
     notify "$PERLA_NAME" "$response"
   fi
 
-  if ! is_casual "$input"; then
+  if [ "$tool_used" = "true" ]; then
     log_command "$input" "$response" "$tier"
+  else
+    log_conversation "$input" "$response" "$tier"
   fi
 }
 
