@@ -31,9 +31,9 @@ tier0() {
   lower="$(echo "$text" | tr '[:upper:]' '[:lower:]')"
 
   case "$lower" in
-    *"open firefox"*)    systemd-run --user --scope --unit=perla-firefox firefox 2>/dev/null; return 0 ;;
-    *"open terminal"*)   systemd-run --user --scope --unit=perla-kitty kitty 2>/dev/null; return 0 ;;
-    *"open code"*)       systemd-run --user --scope --unit=perla-codium codium 2>/dev/null; return 0 ;;
+    *"open firefox"*)    systemd-run --user --unit=perla-firefox firefox 2>/dev/null; return 0 ;;
+    *"open terminal"*)   systemd-run --user --unit=perla-kitty kitty 2>/dev/null; return 0 ;;
+    *"open code"*)       systemd-run --user --unit=perla-codium codium 2>/dev/null; return 0 ;;
     *"lock"*)            noctalia msg session lock; return 0 ;;
     *"mute"*)            wpctl set-mute @DEFAULT_AUDIO_SINK@ 1; return 0 ;;
     *"unmute"*)          wpctl set-mute @DEFAULT_AUDIO_SINK@ 0; return 0 ;;
