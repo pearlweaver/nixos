@@ -48,7 +48,18 @@ in {
     text = builtins.toJSON {
       "$schema" = "https://opencode.ai/config.json";
       model = cfg.opencode_model;
-      instructions = builtins.readFile ./perla/AGENTS.md;
+      instructions = [ (builtins.readFile ./perla/AGENTS.md) ];
+      permission = {
+        bash = "deny";
+        edit = "deny";
+        write = "deny";
+        webfetch = "deny";
+        task = "deny";
+        todowrite = "deny";
+        websearch = "deny";
+        lsp = "deny";
+        skill = "deny";
+      };
       agent = {
         perla = {
           description = "${cfg.assistant_name} — personal AI assistant";
@@ -202,7 +213,7 @@ in {
     };
     Service = {
       Type = "simple";
-      ExecStart = "${pkgs.wyoming-openwakeword}/bin/wyoming-openwakeword --uri 'tcp://127.0.0.1:10400' --wake-word '${cfg.wake_word}'";
+      ExecStart = "${pkgs.wyoming-openwakeword}/bin/wyoming-openwakeword --uri 'tcp://127.0.0.1:10400'";
       Restart = "on-failure";
       RestartSec = 5;
     };

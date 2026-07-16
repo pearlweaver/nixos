@@ -31,9 +31,9 @@ tier0() {
   lower="$(echo "$text" | tr '[:upper:]' '[:lower:]')"
 
   case "$lower" in
-    *"open firefox"*)    niri msg action spawn "firefox"; return 0 ;;
-    *"open terminal"*)   niri msg action spawn "kitty"; return 0 ;;
-    *"open code"*)       niri msg action spawn "codium"; return 0 ;;
+    *"open firefox"*)    systemd-run --user --scope --unit=perla-firefox firefox 2>/dev/null; return 0 ;;
+    *"open terminal"*)   systemd-run --user --scope --unit=perla-kitty kitty 2>/dev/null; return 0 ;;
+    *"open code"*)       systemd-run --user --scope --unit=perla-codium codium 2>/dev/null; return 0 ;;
     *"lock"*)            noctalia msg session lock; return 0 ;;
     *"mute"*)            wpctl set-mute @DEFAULT_AUDIO_SINK@ 1; return 0 ;;
     *"unmute"*)          wpctl set-mute @DEFAULT_AUDIO_SINK@ 0; return 0 ;;
@@ -45,6 +45,7 @@ tier0() {
 
 capture_audio() {
   local out="$1"
+  notify "$PERLA_NAME" "Listening..."
   log "Recording 5s..."
   local source="${PERLA_AUDIO_INPUT:-$(pw-cli list-objects | grep -A2 'node.name.*alsa_input' | head -1 | awk '{print $NF}')}"
   pw-record --target "$source" "$out" &
@@ -77,12 +78,17 @@ speak() {
   mkdir -p "$voice_dir"
   if [ ! -f "$voice_file" ]; then
     log "Downloading Piper voice $PERLA_VOICE..."
-    local base="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/southern_english_female/low/$PERLA_VOICE"
+    local lang_region="${PERLA_VOICE%%-*}"
+    local lang="${lang_region%_*}"
+    local voice_qual="${PERLA_VOICE#*-}"
+    local voice="${voice_qual%-*}"
+    local quality="${voice_qual##*-}"
+    local base="https://huggingface.co/rhasspy/piper-voices/resolve/main/$lang/$lang_region/$voice/$quality/$PERLA_VOICE"
     curl -L "$base.onnx" -o "$voice_file"
     curl -L "$base.onnx.json" -o "$voice_file.json" 2>/dev/null || true
   fi
   log "Speaking..."
-  echo "$text" | piper-tts --model "$voice_file" --output-raw | pw-play --format=raw --rate=22050 --channels=1 --bytes=2 -
+  echo "$text" | piper --model "$voice_file" --output-raw --length-scale 1 | pw-play --rate=22050 --channels=1 --format=s16 --raw -
 }
 
 # --- Persistent server management ---
@@ -112,8 +118,9 @@ ensure_server() {
   if [ "$tier" = "1" ]; then
     local tmpdir
     tmpdir="$(mktemp -d)"
-    cp -r "$HOME/.config/opencode/"* "$tmpdir/"
-    cp "$HOME/.config/opencode/opencode-t1.json" "$tmpdir/opencode.json"
+    mkdir -p "$tmpdir/opencode"
+    cp -r "$HOME/.config/opencode/"* "$tmpdir/opencode/"
+    cp "$HOME/.config/opencode/opencode-t1.json" "$tmpdir/opencode/opencode.json"
     setsid -f env XDG_CONFIG_HOME="$tmpdir" opencode serve --port "$port" > "$log_file" 2>&1
   else
     setsid -f opencode serve --port "$port" > "$log_file" 2>&1
@@ -240,6 +247,20 @@ print(' '.join(p.get('text','') for p in d['parts'] if p['type']=='text'))
 " <<< "$result"
 }
 
+is_casual() {
+  local text="$1"
+  local lower
+  lower="$(echo "$text" | tr '[:upper:]' '[:lower:]')"
+  case "$lower" in
+    "hi"|"hello"|"hey"|"yo"|"sup"|"what's up"|"howdy"|"good morning"|"good evening"|"good night"|"how are you"|"how's it going"|"what's new"|"good"|"fine"|"ok"|"okay"|"nice"|"cool"|"great"|"awesome"|"thanks"|"bye"|"goodbye")
+      return 0 ;;
+    say\ hello|say\ hi|tell\ me\ a\ joke|what\ is\ your\ name|just\ say\ hi)
+      return 0 ;;
+  esac
+  [ "$(echo "$text" | wc -w)" -le 3 ] && return 0
+  return 1
+}
+
 log_command() {
   local text="$1"
   local response="$2"
@@ -266,14 +287,10 @@ main() {
     case "$choice" in
       "Quick chat")
         mode="voice"
-        tier=1
+        tier=2
         ;;
       "Full mode")
-        input="$(fuzzel --dmenu --prompt '> ' 2>/dev/null || echo "")"
-        if [ -z "$input" ]; then
-          exit 0
-        fi
-        mode="text"
+        mode="voice"
         tier=2
         ;;
       *) exit 0 ;;
@@ -289,15 +306,19 @@ main() {
       notify "$PERLA_NAME" "I didn't catch that."
       exit 1
     fi
-    if tier0 "$input"; then
-      return 0
-    fi
-    tier=1
   fi
 
   if [ -z "$input" ]; then
     notify "$PERLA_NAME" "No input."
     exit 1
+  fi
+
+  if tier0 "$input"; then
+    return 0
+  fi
+
+  if [ "$mode" = "voice" ]; then
+    tier=2
   fi
 
   local response
@@ -310,7 +331,9 @@ main() {
     notify "$PERLA_NAME" "$response"
   fi
 
-  log_command "$input" "$response" "$tier"
+  if ! is_casual "$input"; then
+    log_command "$input" "$response" "$tier"
+  fi
 }
 
 main "$@"

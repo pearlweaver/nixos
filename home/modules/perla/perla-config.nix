@@ -1,12 +1,12 @@
 { homeDirectory }: {
   perla = {
     assistant_name = "Perla";
-    wake_word = "alexa";
+    wake_word = "perla";
 
     vault_path = "${homeDirectory}/Documents/Obsidian/Perla";
     persona_prompt = "${homeDirectory}/.config/perla/persona.md";
 
-    voice_model = "en_GB-southern_english_female-low";
+    voice_model = "en_US-libritts_r-medium";
     whisper_model = "tiny";
     whisper_lang = "en";
 

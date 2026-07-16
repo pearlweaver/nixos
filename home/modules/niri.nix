@@ -186,7 +186,7 @@ in {
         "XF86AudioPlay".action.spawn = [ "playerctl" "play-pause" ];
         "XF86AudioPause".action.spawn = [ "playerctl" "play-pause" ];
         
-        "Mod+Shift+Space".action.spawn = [ "perla" "hotkey" ];
+        "Mod+Shift+Space".action.spawn = [ "${config.home.homeDirectory}/.local/bin/perla" "hotkey" ];
       };
     };
   };
