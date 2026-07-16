@@ -246,26 +246,22 @@ import sys, json
 d = json.load(sys.stdin)
 text = ' '.join(p.get('text','') for p in d['parts'] if p['type']=='text')
 tool_used = any(p.get('type') == 'tool' for p in d['parts'])
+
+obsidian_writes = {
+    'obsidian_write_note', 'obsidian_patch_note', 'obsidian_append_to_note',
+    'obsidian_replace_in_note', 'obsidian_manage_tags', 'obsidian_delete_note',
+    'obsidian_manage_frontmatter'
+}
+obsidian_write = any(p.get('tool','') in obsidian_writes for p in d['parts'] if p.get('type') == 'tool')
+
 print('true' if tool_used else 'false')
+print('true' if obsidian_write else 'false')
 print(text)
 " <<< "$result")"
 
   OPENCODE_TOOL_USED="$(echo "$output" | head -1)"
-  OPENCODE_RESPONSE="$(echo "$output" | tail -n +2)"
-}
-
-is_casual() {
-  local text="$1"
-  local lower
-  lower="$(echo "$text" | tr '[:upper:]' '[:lower:]')"
-  case "$lower" in
-    "hi"|"hello"|"hey"|"yo"|"sup"|"what's up"|"howdy"|"good morning"|"good evening"|"good night"|"how are you"|"how's it going"|"what's new"|"good"|"fine"|"ok"|"okay"|"nice"|"cool"|"great"|"awesome"|"thanks"|"bye"|"goodbye")
-      return 0 ;;
-    say\ hello|say\ hi|tell\ me\ a\ joke|what\ is\ your\ name|just\ say\ hi)
-      return 0 ;;
-  esac
-  [ "$(echo "$text" | wc -w)" -le 3 ] && return 0
-  return 1
+  OPENCODE_OBSIDIAN_WRITE="$(echo "$output" | sed -n '2p')"
+  OPENCODE_RESPONSE="$(echo "$output" | tail -n +3)"
 }
 
 log_command() {
@@ -296,6 +292,30 @@ log_conversation() {
     echo "- **Perla:** $response"
     echo ""
   } >> "$log_file"
+}
+
+log_memory_mismatch() {
+  local text="$1"
+  local response="$2"
+  local tier="$3"
+  local log_dir="$PERLA_VAULT/Review"
+  mkdir -p "$log_dir"
+  local log_file="$log_dir/memory-mismatches.md"
+  {
+    echo "## $(date +%Y-%m-%d %H:%M) — Tier $tier"
+    echo "- **Input:** $text"
+    echo "- **Response:** $response"
+    echo ""
+  } >> "$log_file"
+}
+
+is_memory_worthy() {
+  local text
+  text="$(echo "$1" | tr '[:upper:]' '[:lower:]' | tr -d "'")"
+  case "$text" in
+    *remember*|*prefer*|*preference*|*task*|"note this"*|*important*|*store*|*save*|*record*|*reminder*|"dont forget"*|"dont ever forget"*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 main() {
@@ -347,6 +367,7 @@ main() {
   call_opencode "$input" "$tier"
   local response="$OPENCODE_RESPONSE"
   local tool_used="$OPENCODE_TOOL_USED"
+  local obsidian_write="$OPENCODE_OBSIDIAN_WRITE"
   log "Response: $response"
 
   if [ "$mode" = "voice" ]; then
@@ -359,6 +380,11 @@ main() {
     log_command "$input" "$response" "$tier"
   else
     log_conversation "$input" "$response" "$tier"
+  fi
+
+  if is_memory_worthy "$input" && [ "$obsidian_write" != "true" ]; then
+    log_memory_mismatch "$input" "$response" "$tier"
+    log "Memory mismatch: input looks memory-worthy but no Obsidian write detected"
   fi
 }
 

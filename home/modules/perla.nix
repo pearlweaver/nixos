@@ -95,6 +95,10 @@ in {
         obsidian = {
           type = "local";
           command = [ "${config.home.homeDirectory}/.local/bin/perla-obsidian-mcp" ];
+          env = {
+            OBSIDIAN_BASE_URL = "https://127.0.0.1:27124";
+            OBSIDIAN_VERIFY_SSL = "false";
+          };
         };
       };
     };
@@ -129,6 +133,8 @@ in {
         . "$ENV"
       fi
       export OBSIDIAN_API_KEY
+      export OBSIDIAN_BASE_URL="https://127.0.0.1:27124"
+      export OBSIDIAN_VERIFY_SSL="false"
       exec npx -y obsidian-mcp-server
     '';
   };
