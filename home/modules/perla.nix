@@ -104,6 +104,15 @@ in {
     };
   };
 
+  # === Sops: decrypt Obsidian API key at rebuild time ===
+  sops = {
+    defaultSopsFile = ../../secrets/perla.yaml;
+    secrets."perla/obsidian_api_key" = {
+      path = "%r/perla/secrets/obsidian-api-key";
+      mode = "0400";
+    };
+  };
+
   # === Perla environment file (sourced by wrapper script) ===
   home.file.".config/perla/perla.env" = {
     force = true;
@@ -117,22 +126,24 @@ in {
       PERLA_WHISPER_LANG="${cfg.whisper_lang}"
       PERLA_IDLE_MINUTES=${toString cfg.session_idle_timeout_minutes}
       PERLA_AUDIO_INPUT="${cfg.audio_input}"
-      OBSIDIAN_API_KEY="${cfg.obsidian_api_key}"
     '';
   };
 
-  # === Obsidian MCP bridge (reads API key from perla.env — never stored in nix store) ===
+  # === Obsidian MCP bridge (reads API key from sops-decrypted file) ===
   home.file.".local/bin/perla-obsidian-mcp" = {
     force = true;
     executable = true;
     text = ''
       #!/usr/bin/env bash
       set -euo pipefail
-      ENV="''${XDG_CONFIG_HOME:-$HOME/.config}/perla/perla.env"
-      if [ -f "$ENV" ]; then
-        . "$ENV"
+      SECRET="''${XDG_CONFIG_HOME:-$HOME/.config}/perla/secrets/obsidian-api-key"
+      if [ -f "$SECRET" ]; then
+        OBSIDIAN_API_KEY="$(cat "$SECRET")"
+        export OBSIDIAN_API_KEY
+      else
+        echo "ERROR: Obsidian API key not found at $SECRET" >&2
+        exit 1
       fi
-      export OBSIDIAN_API_KEY
       export OBSIDIAN_BASE_URL="https://127.0.0.1:27124"
       export OBSIDIAN_VERIFY_SSL="false"
       exec npx -y obsidian-mcp-server

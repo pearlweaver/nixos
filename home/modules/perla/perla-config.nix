@@ -10,8 +10,6 @@
     whisper_model = "tiny";
     whisper_lang = "en";
 
-    obsidian_api_key = "e201b0ba800c7f192ed64f6d814796a26f60997d3f82842f03390bc9cf003c94";
-
     opencode_model = "opencode/deepseek-v4-flash-free";
     ollama_model = "qwen2.5:3b";
 

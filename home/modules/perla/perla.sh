@@ -6,6 +6,11 @@ if [ -f "$CONFIG" ]; then
   . "$CONFIG"
 fi
 
+OBSIDIAN_SECRET="${XDG_CONFIG_HOME:-$HOME/.config}/perla/secrets/obsidian-api-key"
+if [ -f "$OBSIDIAN_SECRET" ]; then
+  OBSIDIAN_API_KEY="$(cat "$OBSIDIAN_SECRET")"
+fi
+
 : ${PERLA_NAME:="Perla"}
 : ${PERLA_PERSONA:="$HOME/.config/perla/persona.md"}
 : ${PERLA_MODEL:="opencode/deepseek-v4-flash-free"}
@@ -88,7 +93,7 @@ speak() {
     curl -L "$base.onnx.json" -o "$voice_file.json" 2>/dev/null || true
   fi
   log "Speaking..."
-  echo "$text" | piper --model "$voice_file" --output-raw --length-scale 1 | pw-play --rate=22050 --channels=1 --format=s16 --raw -
+  echo "$text" | piper --model "$voice_file" --output-raw --length-scale 1.1 | pw-play --rate=22050 --channels=1 --format=s16 --raw -
 }
 
 # --- Persistent server management ---
@@ -109,7 +114,7 @@ ensure_server() {
   fi
 
   if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
-    if curl -sf "http://127.0.0.1:$port/global/health" >/dev/null 2>&1; then
+    if curl -sf --connect-timeout 3 -m 5 "http://127.0.0.1:$port/global/health" >/dev/null 2>&1; then
       return 0
     fi
   fi
@@ -137,7 +142,7 @@ ensure_server() {
   done
 
   for i in $(seq 1 30); do
-    if curl -sf "http://127.0.0.1:$port/global/health" >/dev/null 2>&1; then
+    if curl -sf --connect-timeout 3 -m 5 "http://127.0.0.1:$port/global/health" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -157,7 +162,7 @@ ensure_session() {
   if [ -f "$session_file" ]; then
     local sid
     sid="$(cat "$session_file")"
-    if curl -sf "http://127.0.0.1:$port/session/$sid" >/dev/null 2>&1; then
+    if curl -sf --connect-timeout 3 -m 5 "http://127.0.0.1:$port/session/$sid" >/dev/null 2>&1; then
       echo "$sid"
       return 0
     fi
@@ -165,7 +170,7 @@ ensure_session() {
 
   log "Creating session (Tier $tier)..."
   local sid
-  sid="$(curl -sf -X POST "http://127.0.0.1:$port/session" \
+  sid="$(curl -sf --connect-timeout 3 -m 10 -X POST "http://127.0.0.1:$port/session" \
     -H 'Content-Type: application/json' \
     -d '{"title":"perla"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
   echo "$sid" > "$session_file"
@@ -233,7 +238,7 @@ print(json.dumps({
 " <<< "$text")"
 
   local result
-  result="$(curl -sf -X POST "http://127.0.0.1:$port/session/$sid/message" \
+  result="$(curl -sf --connect-timeout 5 -m 300 -X POST "http://127.0.0.1:$port/session/$sid/message" \
     -H 'Content-Type: application/json' \
     -d "$body")" || {
     notify "$PERLA_NAME is offline" "OpenCode server (Tier $tier) error."
@@ -372,6 +377,7 @@ main() {
 
   if [ "$mode" = "voice" ]; then
     speak "$response"
+    notify -u low "$PERLA_NAME" "$response"
   else
     notify "$PERLA_NAME" "$response"
   fi

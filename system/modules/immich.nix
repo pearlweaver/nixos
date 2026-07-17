@@ -1,9 +1,9 @@
 { config, pkgs, ... }: {
   services.immich = {
     enable = true;
-    host = "0.0.0.0";
+    host = "127.0.0.1";
     port = 2283;
-    openFirewall = true;
+    openFirewall = false;
     mediaLocation = "/var/lib/immich/library";
 
     database = {

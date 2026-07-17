@@ -77,6 +77,7 @@
           noctalia.homeModules.default
           niri-flake.homeModules.niri
           nixvim.homeModules.nixvim
+          sops-nix.homeManagerModules.sops
         ];
       };
 
