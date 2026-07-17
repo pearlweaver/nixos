@@ -107,6 +107,7 @@ in {
   # === Sops: decrypt Obsidian API key at rebuild time ===
   sops = {
     defaultSopsFile = ../../secrets/perla.yaml;
+    age.sshKeyPaths = [ "${config.home.homeDirectory}/.ssh/id_ed25519" ];
     secrets."perla/obsidian_api_key" = {
       path = "%r/perla/secrets/obsidian-api-key";
       mode = "0400";
