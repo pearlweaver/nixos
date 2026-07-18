@@ -159,7 +159,18 @@ in {
       fi
       export OBSIDIAN_BASE_URL="https://127.0.0.1:27124"
       export OBSIDIAN_VERIFY_SSL="false"
-      exec npx -y obsidian-mcp-server
+      # PINNED to 3.2.9 (confirmed current npm "latest" as of 2026-07-18).
+      # Do not revert to a bare "obsidian-mcp-server" (unversioned npx -y).
+      # cyanheads/obsidian-mcp-server has shipped multiple breaking rewrites
+      # over its history with different tool/output-schema shapes each time.
+      # An unpinned npx -y can silently resolve to a newer version than
+      # whatever OpenCode's MCP client cached/validated against, producing
+      # schema-mismatch errors (-32602) on every call, as seen in production.
+      # Manually verified 2026-07-18: `npx -y obsidian-mcp-server@3.2.9`
+      # starts cleanly and lists all 14 tools with no schema error at
+      # startup. Tool-call-level behavior should still be spot-checked
+      # (e.g. via `npx @modelcontextprotocol/inspector`) after any bump.
+      exec npx -y obsidian-mcp-server@3.2.9
     '';
   };
 

@@ -340,6 +340,42 @@ def transcribe_audio(audio_path):
         return ""
 
 
+MEMORY_WORTHY_PATTERNS = [
+    r"\bremember\b", r"\bprefer\b", r"\bpreference\b", r"\btask\b",
+    r"\bnote this\b", r"\bimportant\b", r"\bstore\b", r"\bsave\b",
+    r"\brecord\b", r"\breminder\b", r"\bdon'?t forget\b",
+    r"\bmy (?:music player|editor|browser|os|setup|workflow)\b",
+    r"\bi use\b", r"\bi always\b", r"\bi usually\b", r"\bfrom now on\b",
+]
+
+
+def is_memory_worthy(text):
+    """Mirror of perla.sh's is_memory_worthy(), used to trigger a deterministic write."""
+    lower = text.lower()
+    return any(re.search(p, lower) for p in MEMORY_WORTHY_PATTERNS)
+
+
+def write_short_term_memory(input_text, response, tier):
+    """Deterministically append a Short-Term memory entry.
+
+    This does NOT depend on the LLM deciding to call an Obsidian MCP tool —
+    it's a plain file write, same pattern as log_request(), so a stated
+    preference is never silently dropped just because the model didn't
+    self-trigger a tool call.
+    """
+    mem_dir = os.path.join(PERLA_VAULT, "Memory", "Short-Term")
+    os.makedirs(mem_dir, exist_ok=True)
+    mem_file = os.path.join(mem_dir, f"{datetime.now().strftime('%Y-%m-%d')}.md")
+
+    try:
+        with open(mem_file, "a") as f:
+            f.write(f"## {datetime.now().strftime('%H:%M')} — Tier {tier}\n")
+            f.write(f"- **Said:** {input_text}\n")
+            f.write(f"- **Context:** {response}\n\n")
+    except Exception as e:
+        print(f"ERROR: short-term memory write failed: {e}", flush=True)
+
+
 def log_request(input_text, response, tier, tool_used):
     """Log to Obsidian vault (same format as perla.sh)."""
     tier_label = f"Tier {tier} (remote)"
@@ -549,6 +585,9 @@ class CompanionHandler(BaseHTTPRequestHandler):
         # Log
         log_request(message, response_text, tier, tool_used)
 
+        if is_memory_worthy(message):
+            write_short_term_memory(message, response_text, tier)
+
         self.send_json(200, {"text": response_text, "audio": audio_url})
 
     def handle_voice(self):
@@ -610,6 +649,9 @@ class CompanionHandler(BaseHTTPRequestHandler):
         audio_url = f"/api/audio/{os.path.basename(audio_path)}" if audio_path else None
 
         log_request(transcript, response_text, tier, tool_used)
+
+        if is_memory_worthy(transcript):
+            write_short_term_memory(transcript, response_text, tier)
 
         self.send_json(200, {
             "transcript": transcript,

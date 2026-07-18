@@ -93,7 +93,7 @@ speak() {
     curl -L "$base.onnx.json" -o "$voice_file.json" 2>/dev/null || true
   fi
   log "Speaking..."
-  echo "$text" | piper --model "$voice_file" --output-raw --length-scale 1.1 | pw-play --rate=22050 --channels=1 --format=s16 --raw -
+  echo "$text" | piper --model "$voice_file" --output-raw --length-scale 1 | pw-play --rate=22050 --channels=1 --format=s16 --raw -
 }
 
 # --- Persistent server management ---
@@ -299,6 +299,21 @@ log_conversation() {
   } >> "$log_file"
 }
 
+write_short_term_memory() {
+  local text="$1"
+  local response="$2"
+  local tier="$3"
+  local mem_dir="$PERLA_VAULT/Memory/Short-Term"
+  mkdir -p "$mem_dir"
+  local mem_file="$mem_dir/$(date +%Y-%m-%d).md"
+  {
+    echo "## $(date +%H:%M) — Tier $tier"
+    echo "- **Said:** $text"
+    echo "- **Context:** $response"
+    echo ""
+  } >> "$mem_file"
+}
+
 log_memory_mismatch() {
   local text="$1"
   local response="$2"
@@ -318,7 +333,7 @@ is_memory_worthy() {
   local text
   text="$(echo "$1" | tr '[:upper:]' '[:lower:]' | tr -d "'")"
   case "$text" in
-    *remember*|*prefer*|*preference*|*task*|"note this"*|*important*|*store*|*save*|*record*|*reminder*|"dont forget"*|"dont ever forget"*) return 0 ;;
+    *remember*|*prefer*|*preference*|*task*|"note this"*|*important*|*store*|*save*|*record*|*reminder*|"dont forget"*|"dont ever forget"*|"i use "*|"i always "*|"i usually "*|"from now on"*|"my music player"*|"my editor"*|"my browser"*|"my setup"*|"my workflow"*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -388,9 +403,12 @@ main() {
     log_conversation "$input" "$response" "$tier"
   fi
 
-  if is_memory_worthy "$input" && [ "$obsidian_write" != "true" ]; then
-    log_memory_mismatch "$input" "$response" "$tier"
-    log "Memory mismatch: input looks memory-worthy but no Obsidian write detected"
+  if is_memory_worthy "$input"; then
+    if [ "$obsidian_write" != "true" ]; then
+      log_memory_mismatch "$input" "$response" "$tier"
+      log "Memory mismatch: input looks memory-worthy but no Obsidian write detected"
+    fi
+    write_short_term_memory "$input" "$response" "$tier"
   fi
 }
 

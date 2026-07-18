@@ -384,32 +384,6 @@
     box-shadow: 0 0 10px rgba(184,69,47,0.45);
   }
 
-  .elevate-btn {
-    background: transparent;
-    border: 1px solid var(--rule);
-    border-radius: 50%;
-    width: 26px;
-    height: 26px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--ink-faint);
-    font-size: 0.85rem;
-    cursor: pointer;
-    margin-left: 8px;
-    transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-  }
-  .elevate-btn:hover {
-    color: var(--brass-bright);
-    border-color: var(--brass-dim);
-    background: rgba(201,123,141,0.08);
-  }
-  .elevate-btn.active {
-    color: var(--wax-bright);
-    border-color: var(--wax);
-    background: rgba(184,69,47,0.12);
-  }
-
   .elevate-panel {
     display: flex;
     align-items: center;
@@ -476,11 +450,10 @@
         <span id="tierBadge" class="tier-badge" hidden>T2</span>
         <span id="statusText">not linked</span>
         <span id="statusDot" class="status-dot"></span>
-        <button id="elevateBtn" class="elevate-btn" title="Full Mode">⚡</button>
       </div>
     </header>
 
-    <div id="elevatePanel" class="elevate-panel" hidden>
+    <div id="elevatePanel" class="elevate-panel">
       <input id="elevateInput" type="password" placeholder="Elevation token" autocomplete="off" />
       <button id="elevateSubmit" class="elevate-submit">Activate</button>
       <span id="elevateStatus" class="elevate-status"></span>
@@ -608,24 +581,11 @@
   }
 
   // ---------- Elevation (Tier 2) ----------
-  const elevateBtn = document.getElementById("elevateBtn");
   const elevatePanel = document.getElementById("elevatePanel");
   const elevateInput = document.getElementById("elevateInput");
   const elevateSubmit = document.getElementById("elevateSubmit");
   const elevateStatus = document.getElementById("elevateStatus");
   const tierBadge = document.getElementById("tierBadge");
-
-  elevateBtn.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const isOpen = !elevatePanel.hidden;
-    elevatePanel.hidden = isOpen; // explicit, not a toggle read of a possibly-stale value
-    if (!isOpen) {
-      elevateInput.focus();
-    } else {
-      elevateInput.blur();
-    }
-  });
 
   elevateSubmit.addEventListener("click", async () => {
     const token = elevateInput.value.trim();
@@ -642,17 +602,14 @@
       });
       const data = await res.json();
       if (res.ok && data.tier === 2) {
-        elevateStatus.textContent = `Full Mode active — ${data.expires_in}s`;
+        elevateStatus.textContent = "";
         tierBadge.hidden = false;
-        elevateBtn.classList.add("active");
-        elevatePanel.hidden = true;
         elevateInput.value = "";
         addEntry("system", "", "Full Mode activated for 5 minutes.");
 
         clearTimeout(window._elevateExpiryTimer);
         window._elevateExpiryTimer = setTimeout(() => {
           tierBadge.hidden = true;
-          elevateBtn.classList.remove("active");
           addEntry("system", "", "Full Mode expired — back to Tier 1.");
         }, (data.expires_in || 0) * 1000);
       } else {
