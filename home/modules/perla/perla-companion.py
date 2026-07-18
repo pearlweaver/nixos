@@ -129,6 +129,45 @@ class SessionManager:
         self._persona_injected = set()  # set of tier values
         self._lock = threading.Lock()
 
+    def _server_port(self, tier):
+        return SERVER_PORT_T1 if tier == 1 else SERVER_PORT_T2
+
+    def _server_alive(self, tier):
+        port = self._server_port(tier)
+        try:
+            result = subprocess.run(
+                ["curl", "-sf", "--connect-timeout", "2", "-m", "3",
+                 f"http://127.0.0.1:{port}/global/health"],
+                capture_output=True, timeout=5
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def _start_server(self, tier):
+        port = self._server_port(tier)
+        print(f"Starting OpenCode server (Tier {tier}, port {port})...", flush=True)
+        if tier == 1:
+            subprocess.Popen(
+                [os.path.expanduser("~/.local/bin/perla-t1-server")],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True
+            )
+        else:
+            subprocess.Popen(
+                ["opencode", "serve", "--port", str(port)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True
+            )
+        # Wait for server to be ready (up to 15 seconds)
+        for i in range(15):
+            time.sleep(1)
+            if self._server_alive(tier):
+                print(f"Tier {tier} server ready.", flush=True)
+                return True
+        print(f"WARNING: Tier {tier} server did not start in time.", flush=True)
+        return False
+
     def get_session(self, tier):
         """Get or create a session for the given tier."""
         with self._lock:
@@ -142,7 +181,7 @@ class SessionManager:
             return sid
 
     def _session_alive(self, tier, sid):
-        port = SERVER_PORT_T1 if tier == 1 else SERVER_PORT_T2
+        port = self._server_port(tier)
         try:
             result = subprocess.run(
                 ["curl", "-sf", "--connect-timeout", "3", "-m", "5",
@@ -154,7 +193,11 @@ class SessionManager:
             return False
 
     def _create_session(self, tier):
-        port = SERVER_PORT_T1 if tier == 1 else SERVER_PORT_T2
+        port = self._server_port(tier)
+        # Auto-start server if it's not running
+        if not self._server_alive(tier):
+            if not self._start_server(tier):
+                return None
         try:
             result = subprocess.run(
                 ["curl", "-sf", "--connect-timeout", "3", "-m", "10",

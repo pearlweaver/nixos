@@ -235,6 +235,36 @@ in {
     source = ./perla/perla-companion.html;
   };
 
+  # === T1 OpenCode server (restricted — Obsidian MCP only, no shell) ===
+  home.file.".local/bin/perla-t1-server" = {
+    force = true;
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      tmpdir="$(mktemp -d)"
+      mkdir -p "$tmpdir/opencode"
+      cp -r "$HOME/.config/opencode/"* "$tmpdir/opencode/"
+      cp "$HOME/.config/opencode/opencode-t1.json" "$tmpdir/opencode/opencode.json"
+      export XDG_CONFIG_HOME="$tmpdir"
+      exec opencode serve --port 13101
+    '';
+  };
+
+  systemd.user.services.perla-t1 = {
+    Unit = {
+      Description = "${cfg.assistant_name} Tier 1 OpenCode server";
+      After = [ "pipewire.service" ];
+    };
+    Service = {
+      Type = "simple";
+      ExecStart = "%h/.local/bin/perla-t1-server";
+      Restart = "on-failure";
+      RestartSec = 5;
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
+
   # === Noctalia dmenu entry ===
   programs.noctalia.settings = {
     shell.launcher.dmenu.entry.perla = {
@@ -281,7 +311,7 @@ in {
   systemd.user.services.perla-companion = {
     Unit = {
       Description = "${cfg.assistant_name} companion web API";
-      After = [ "pipewire.service" ];
+      After = [ "pipewire.service" "perla-t1.service" ];
     };
     Service = {
       Type = "simple";
