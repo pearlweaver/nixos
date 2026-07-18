@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Perla</title>
+<style>
+  :root{
+    --bg: #17131a;
+    --bg-panel: #201a23;
+    --bg-panel-2: #29212c;
+    --rule: #453a49;
+    --rule-faint: #322a36;
+    --ink: #e9dfc7;
+    --ink-dim: #a3906c;
+    --ink-faint: #6e5f45;
+    --brass: #c97b8d;
+    --brass-bright: #e4a2b2;
+    --brass-dim: #8c4f5c;
+    --wax: #8a3226;
+    --wax-bright: #b8452f;
+    --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-serif);
+  }
+
+  body {
+    background:
+      radial-gradient(ellipse 900px 600px at 50% -10%, rgba(201,123,141,0.07), transparent 60%),
+      var(--bg);
+  }
+
+  button { font-family: inherit; }
+  input { font-family: inherit; }
+
+  /* ---------- Password Gate ---------- */
+  .gate {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 50;
+    background: var(--bg);
+  }
+
+  .gate-card {
+    width: 100%;
+    max-width: 340px;
+    text-align: center;
+    padding: 40px 32px 32px;
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    background: linear-gradient(180deg, var(--bg-panel), var(--bg-panel-2));
+    box-shadow: 0 30px 60px rgba(0,0,0,0.5);
+  }
+
+  .gate-mark {
+    width: 54px;
+    height: 54px;
+    margin: 0 auto 18px;
+    border-radius: 50%;
+    border: 1px solid var(--brass-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: var(--brass-bright);
+    background: radial-gradient(circle at 35% 30%, rgba(201,123,141,0.18), transparent 70%);
+  }
+
+  .gate-card h1 {
+    margin: 0 0 4px;
+    font-size: 28px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
+  .gate-sub {
+    margin: 0 0 28px;
+    color: var(--ink-dim);
+    font-size: 14px;
+    font-style: italic;
+    letter-spacing: 0.02em;
+  }
+
+  .gate-card input[type="password"] {
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--rule);
+    color: var(--ink);
+    font-size: 16px;
+    text-align: center;
+    padding: 10px 4px;
+    letter-spacing: 0.15em;
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+
+  .gate-card input[type="password"]:focus {
+    border-bottom-color: var(--brass);
+  }
+
+  .gate-card button {
+    margin-top: 22px;
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--brass-dim);
+    background: linear-gradient(180deg, rgba(201,123,141,0.14), rgba(201,123,141,0.04));
+    color: var(--brass-bright);
+    font-size: 15px;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.2s ease;
+  }
+
+  .gate-card button:hover { background: rgba(201,123,141,0.2); }
+  .gate-card button:active { transform: scale(0.98); }
+
+  .gate-error {
+    margin: 14px 0 0;
+    color: var(--wax-bright);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+  }
+
+  .shake { animation: shake 0.4s ease; }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-6px); }
+    40% { transform: translateX(6px); }
+    60% { transform: translateX(-4px); }
+    80% { transform: translateX(4px); }
+  }
+
+  /* ---------- App shell ---------- */
+  .app {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    max-width: 640px;
+    margin: 0 auto;
+    border-left: 1px solid var(--rule-faint);
+    border-right: 1px solid var(--rule-faint);
+  }
+
+  .app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .brand { display: flex; align-items: center; gap: 10px; }
+
+  .brand-mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid var(--brass-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    color: var(--brass-bright);
+  }
+
+  .brand-name {
+    font-size: 19px;
+    letter-spacing: 0.03em;
+  }
+
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--ink-faint);
+    letter-spacing: 0.03em;
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ink-faint);
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+  }
+  .status-dot.ok { background: #7fae6a; box-shadow: 0 0 8px rgba(127,174,106,0.6); }
+  .status-dot.err { background: var(--wax-bright); box-shadow: 0 0 8px rgba(184,69,47,0.6); }
+
+  .page {
+    flex: 1;
+    overflow-y: auto;
+    padding: 22px 20px;
+  }
+
+  .output {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .entry { max-width: 92%; }
+  .entry-user { align-self: flex-end; margin-left: auto; text-align: right; }
+  .entry-perla { align-self: flex-start; }
+  .entry-system { align-self: center; text-align: center; max-width: 100%; }
+
+  .entry-label {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 5px;
+  }
+
+  .entry-user .entry-label { color: var(--brass-dim); }
+  .entry-perla .entry-label { color: var(--ink-dim); }
+
+  .entry p {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.55;
+  }
+
+  .entry-user p { color: var(--ink); }
+  .entry-perla p { color: var(--ink); }
+  .entry-system p {
+    color: var(--ink-faint);
+    font-style: italic;
+    font-size: 14px;
+  }
+
+  .entry-time {
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-top: 5px;
+    opacity: 0.7;
+  }
+
+  .replay-btn {
+    margin-top: 6px;
+    background: transparent;
+    border: 1px solid var(--rule);
+    color: var(--ink-dim);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: var(--font-serif);
+  }
+  .replay-btn:hover { border-color: var(--brass-dim); color: var(--brass); }
+
+  /* ---------- Composer ---------- */
+  .composer {
+    border-top: 1px solid var(--rule);
+    padding: 14px 20px calc(16px + var(--safe-bottom));
+    background: var(--bg-panel);
+  }
+
+  .composer-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+  }
+
+  #textInput {
+    flex: 1;
+    resize: none;
+    max-height: 120px;
+    background: transparent;
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 15px;
+    padding: 11px 14px;
+    line-height: 1.4;
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+  #textInput:focus { border-color: var(--brass-dim); }
+  #textInput::placeholder { color: var(--ink-faint); }
+
+  .send-btn {
+    width: 42px;
+    height: 42px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    border: 1px solid var(--brass-dim);
+    background: linear-gradient(180deg, rgba(201,123,141,0.16), rgba(201,123,141,0.05));
+    color: var(--brass-bright);
+    font-size: 18px;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.2s ease;
+  }
+  .send-btn:hover { background: rgba(201,123,141,0.22); }
+  .send-btn:active { transform: scale(0.94); }
+
+  .mic-btn {
+    position: relative;
+    width: 42px;
+    height: 42px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    border: 1px solid var(--wax);
+    background: radial-gradient(circle at 35% 30%, rgba(138,50,38,0.35), rgba(138,50,38,0.08));
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mic-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--wax-bright);
+    transition: transform 0.2s ease;
+  }
+
+  .mic-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1px solid var(--wax-bright);
+    opacity: 0;
+  }
+
+  .mic-btn.recording .mic-dot {
+    border-radius: 3px;
+    transform: scale(0.6);
+  }
+
+  .mic-btn.recording .ring-1 { animation: pulse-ring 1.8s ease-out infinite; }
+  .mic-btn.recording .ring-2 { animation: pulse-ring 1.8s ease-out infinite 0.6s; }
+
+  @keyframes pulse-ring {
+    0% { transform: scale(1); opacity: 0.55; }
+    100% { transform: scale(1.9); opacity: 0; }
+  }
+
+  .mic-timer {
+    text-align: center;
+    font-size: 12px;
+    color: var(--ink-faint);
+    letter-spacing: 0.04em;
+    margin-top: 8px;
+    min-height: 16px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mic-btn.recording .ring-1,
+    .mic-btn.recording .ring-2 { animation: none; }
+    .shake { animation: none; }
+  }
+
+  @media (min-width: 641px) {
+    body { padding: 28px 0; }
+    .app {
+      height: calc(100dvh - 56px);
+      border-radius: 16px;
+      border: 1px solid var(--rule-faint);
+      box-shadow: 0 40px 80px rgba(0,0,0,0.45);
+      overflow: hidden;
+    }
+  }
+</style>
+</head>
+<body>
+
+  <div id="gate" class="gate">
+    <div class="gate-card">
+      <div class="gate-mark">P</div>
+      <h1>Perla</h1>
+      <p class="gate-sub">the notebook is locked</p>
+      <input id="gatePassword" type="password" placeholder="password" autocomplete="off" inputmode="text" />
+      <button id="gateSubmit">Unlock</button>
+      <p id="gateError" class="gate-error" hidden>Wrong password.</p>
+    </div>
+  </div>
+
+  <div id="app" class="app" hidden>
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-mark">P</span>
+        <span class="brand-name">Perla</span>
+      </div>
+      <div class="status">
+        <span id="statusText">not linked</span>
+        <span id="statusDot" class="status-dot"></span>
+      </div>
+    </header>
+
+    <main class="page">
+      <div id="output" class="output" aria-live="polite">
+        <div class="entry entry-system"><p>The page is blank. Say something.</p></div>
+      </div>
+    </main>
+
+    <footer class="composer">
+      <div class="composer-row">
+        <textarea id="textInput" rows="1" placeholder="Write to Perla…"></textarea>
+        <button id="micBtn" class="mic-btn" aria-label="Record">
+          <span class="mic-ring ring-1"></span>
+          <span class="mic-ring ring-2"></span>
+          <span class="mic-dot"></span>
+        </button>
+        <button id="sendText" class="send-btn" aria-label="Send">→</button>
+      </div>
+      <span id="micTimer" class="mic-timer"></span>
+    </footer>
+  </div>
+
+  <audio id="responseAudio" hidden></audio>
+
+<script>
+
+  const CONFIG = {
+    ENDPOINT: "https://nixos.fish-glyptodon.ts.net",           // Tailscale HTTPS address
+    TEXT_PATH: "/api/text",
+    VOICE_PATH: "/api/voice",
+    HEALTH_PATH: "/api/health",
+    GATE_PATH: "/api/gate",
+  };
+
+  const GATE_PASSWORD = "goharumer"; // UX gate only — short, human-typeable
+
+  let authToken = sessionStorage.getItem("perla_session_token") || null;
+
+  // ---------- Gate ----------
+  const gate = document.getElementById("gate");
+  const app = document.getElementById("app");
+  const gatePassword = document.getElementById("gatePassword");
+  const gateSubmit = document.getElementById("gateSubmit");
+  const gateError = document.getElementById("gateError");
+  const gateCard = document.querySelector(".gate-card");
+
+  // If we already have a session token, skip the gate
+  if (authToken) {
+    gate.style.display = "none";
+    app.hidden = false;
+    checkConnection();
+  }
+
+  async function tryUnlock() {
+    const value = gatePassword.value;
+    if (value.length === 0) return;
+
+    // Client-side UX check first (fast fail, no network)
+    if (value !== GATE_PASSWORD) {
+      gateError.textContent = "Wrong password.";
+      gateError.hidden = false;
+      gateCard.classList.remove("shake");
+      void gateCard.offsetWidth;
+      gateCard.classList.add("shake");
+      gatePassword.value = "";
+      gatePassword.focus();
+      return;
+    }
+
+    // Exchange gate password for a server-issued session token
+    try {
+      const res = await fetch(CONFIG.ENDPOINT + CONFIG.GATE_PATH, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: value }),
+      });
+      if (!res.ok) throw new Error("gate rejected");
+      const data = await res.json();
+      authToken = data.token;
+      sessionStorage.setItem("perla_session_token", authToken);
+      gate.style.display = "none";
+      app.hidden = false;
+      checkConnection();
+    } catch (e) {
+      gateError.hidden = false;
+      gateError.textContent = "Server rejected the password.";
+      gateCard.classList.remove("shake");
+      void gateCard.offsetWidth;
+      gateCard.classList.add("shake");
+      gatePassword.value = "";
+      gatePassword.focus();
+    }
+  }
+
+  gateSubmit.addEventListener("click", tryUnlock);
+  gatePassword.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") tryUnlock();
+  });
+
+  // ---------- Status ----------
+  const statusDot = document.getElementById("statusDot");
+  const statusText = document.getElementById("statusText");
+
+  async function checkConnection() {
+    if (!CONFIG.ENDPOINT) {
+      statusDot.className = "status-dot";
+      statusText.textContent = "not linked";
+      return;
+    }
+    try {
+      const res = await fetch(CONFIG.ENDPOINT + CONFIG.HEALTH_PATH, {
+        headers: { Authorization: "Bearer " + authToken },
+      });
+      if (res.ok) {
+        statusDot.className = "status-dot ok";
+        statusText.textContent = "connected";
+      } else {
+        throw new Error("bad status");
+      }
+    } catch (e) {
+      statusDot.className = "status-dot err";
+      statusText.textContent = "unreachable";
+    }
+  }
+
+  // ---------- Output ----------
+  const output = document.getElementById("output");
+
+  function addEntry(kind, label, text) {
+    const entry = document.createElement("div");
+    entry.className = "entry entry-" + kind;
+    const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    entry.innerHTML =
+      (label ? `<div class="entry-label">${label}</div>` : "") +
+      `<p></p>` +
+      (kind !== "system" ? `<div class="entry-time">${time}</div>` : "");
+    entry.querySelector("p").textContent = text;
+    output.appendChild(entry);
+    output.scrollIntoView({ block: "end" });
+    entry.scrollIntoView({ behavior: "smooth", block: "end" });
+    return entry;
+  }
+
+  function addReplayButton(entry, audioValue) {
+    const btn = document.createElement("button");
+    btn.className = "replay-btn";
+    btn.textContent = "Play";
+    btn.addEventListener("click", () => playAudio(audioValue));
+    entry.appendChild(btn);
+  }
+
+  // ---------- Audio playback ----------
+  const responseAudio = document.getElementById("responseAudio");
+
+  function playAudio(value) {
+    if (!value) return;
+    if (value.startsWith("http") || value.startsWith("/")) {
+      // Fetch with auth headers since audio GET requires authentication
+      const url = value.startsWith("http") ? value : CONFIG.ENDPOINT + value;
+      fetch(url, { headers: { Authorization: "Bearer " + authToken } })
+        .then(r => r.blob())
+        .then(blob => {
+          responseAudio.src = URL.createObjectURL(blob);
+          responseAudio.play().catch(() => {});
+        })
+        .catch(() => {});
+    } else {
+      responseAudio.src = "data:audio/mp3;base64," + value;
+      responseAudio.play().catch(() => {});
+    }
+  }
+
+  // ---------- Text send ----------
+  const textInput = document.getElementById("textInput");
+  const sendText = document.getElementById("sendText");
+
+  textInput.addEventListener("input", () => {
+    textInput.style.height = "auto";
+    textInput.style.height = Math.min(textInput.scrollHeight, 120) + "px";
+  });
+
+  textInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submitText();
+    }
+  });
+
+  sendText.addEventListener("click", submitText);
+
+  async function submitText() {
+    const message = textInput.value.trim();
+    if (!message) return;
+    addEntry("user", "You", message);
+    textInput.value = "";
+    textInput.style.height = "auto";
+
+    if (!CONFIG.ENDPOINT) {
+      addEntry("system", "", "Not linked to Perla yet — set CONFIG.ENDPOINT.");
+      return;
+    }
+
+    try {
+      const res = await fetch(CONFIG.ENDPOINT + CONFIG.TEXT_PATH, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + authToken,
+        },
+        body: JSON.stringify({ message }),
+      });
+      if (!res.ok) throw new Error("request failed");
+      const data = await res.json();
+      const entry = addEntry("perla", "Perla", data.text || "(no response)");
+      if (data.audio) {
+        playAudio(data.audio);
+        addReplayButton(entry, data.audio);
+      }
+      statusDot.className = "status-dot ok";
+      statusText.textContent = "connected";
+    } catch (e) {
+      addEntry("system", "", "Couldn't reach Perla. Check the connection.");
+      statusDot.className = "status-dot err";
+      statusText.textContent = "unreachable";
+    }
+  }
+
+  // ---------- Voice recording ----------
+  const micBtn = document.getElementById("micBtn");
+  const micTimer = document.getElementById("micTimer");
+
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let recording = false;
+  let recordStart = 0;
+  let timerInterval = null;
+
+  micBtn.addEventListener("click", async () => {
+    if (!recording) {
+      await startRecording();
+    } else {
+      stopRecording();
+    }
+  });
+
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+      mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+      mediaRecorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        handleRecordingComplete();
+      };
+      mediaRecorder.start();
+      recording = true;
+      recordStart = Date.now();
+      micBtn.classList.add("recording");
+      timerInterval = setInterval(updateTimer, 250);
+      updateTimer();
+    } catch (e) {
+      micTimer.textContent = "Microphone access denied";
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && recording) {
+      mediaRecorder.stop();
+      recording = false;
+      micBtn.classList.remove("recording");
+      clearInterval(timerInterval);
+      micTimer.textContent = "Sending…";
+    }
+  }
+
+  micBtn.addEventListener("mouseenter", () => {
+    if (!recording) micTimer.textContent = "Tap to speak";
+  });
+  micBtn.addEventListener("mouseleave", () => {
+    if (!recording) micTimer.textContent = "";
+  });
+
+  function updateTimer() {
+    const elapsed = Math.floor((Date.now() - recordStart) / 1000);
+    const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+    const ss = String(elapsed % 60).padStart(2, "0");
+    micTimer.textContent = `${mm}:${ss} — tap to stop`;
+  }
+
+  async function handleRecordingComplete() {
+    const blob = new Blob(audioChunks, { type: "audio/webm" });
+
+    if (!CONFIG.ENDPOINT) {
+      addEntry("system", "", "Not linked to Perla yet — set CONFIG.ENDPOINT.");
+      micTimer.textContent = "";
+      return;
+    }
+
+    try {
+      const form = new FormData();
+      form.append("audio", blob, "input.webm");
+
+      const res = await fetch(CONFIG.ENDPOINT + CONFIG.VOICE_PATH, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + authToken },
+        body: form,
+      });
+      if (!res.ok) throw new Error("request failed");
+      const data = await res.json();
+
+      if (data.transcript) addEntry("user", "You", data.transcript);
+      const entry = addEntry("perla", "Perla", data.text || "(no response)");
+      if (data.audio) {
+        playAudio(data.audio);
+        addReplayButton(entry, data.audio);
+      }
+      statusDot.className = "status-dot ok";
+      statusText.textContent = "connected";
+    } catch (e) {
+      addEntry("system", "", "Couldn't reach Perla. Check the connection.");
+      statusDot.className = "status-dot err";
+      statusText.textContent = "unreachable";
+    } finally {
+      micTimer.textContent = "";
+    }
+  }
+</script>
+
+</body>
+</html>

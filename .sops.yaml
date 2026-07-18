@@ -2,7 +2,11 @@ keys:
   - &thedreamdev age1d0m0a5z855ry2k8l3khpc8nm08ge89m9xrlac3kxrdlj36vpsycqrcukul
 
 creation_rules:
-  - path_regex: secrets/.*\.yaml$
+  - path_regex: secrets/perla\.yaml$
+    key_groups:
+      - age:
+        - *thedreamdev
+  - path_regex: secrets/perla-tokens\.yaml$
     key_groups:
       - age:
         - *thedreamdev

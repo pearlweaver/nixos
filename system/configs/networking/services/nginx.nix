@@ -41,6 +41,17 @@
         };
       };
 
+      # Perla Companion (phone web API)
+      "perla.local" = {
+        locations."/" = {
+          proxyPass = "http://127.0.0.1:8443";
+          proxyWebsockets = true;
+          extraConfig = ''
+            proxy_buffering off;
+          '';
+        };
+      };
+
       # Home Server
 
       "immich.home" = {
@@ -72,6 +83,17 @@
         locations."/" = {
           proxyPass = "http://localhost:4533";
           proxyWebsockets = true;
+        };
+      };
+
+      # Perla Companion (phone web API)
+      "perla.home" = {
+        locations."/" = {
+          proxyPass = "http://127.0.0.1:8443";
+          proxyWebsockets = true;
+          extraConfig = ''
+            proxy_buffering off;
+          '';
         };
       };
 

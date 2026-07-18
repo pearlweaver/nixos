@@ -104,14 +104,26 @@ in {
     };
   };
 
-  # === Sops: decrypt Obsidian API key at rebuild time ===
+  # === Sops: decrypt secrets at rebuild time ===
   sops = {
     defaultSopsFile = ../../secrets/perla.yaml;
     age.sshKeyPaths = [ "${config.home.homeDirectory}/.ssh/id_ed25519" ];
     secrets."perla/obsidian_api_key" = {
-      path = "%r/perla/secrets/obsidian-api-key";
+      path = "${config.home.homeDirectory}/.config/perla/secrets/obsidian-api-key";
       mode = "0400";
     };
+  };
+
+  # === Sops: token secrets (separate encrypted file) ===
+  sops.secrets."perla/remote_token" = {
+    sopsFile = ../../secrets/perla-tokens.yaml;
+    path = "${config.home.homeDirectory}/.config/perla/secrets/remote-token";
+    mode = "0400";
+  };
+  sops.secrets."perla/elevate_token" = {
+    sopsFile = ../../secrets/perla-tokens.yaml;
+    path = "${config.home.homeDirectory}/.config/perla/secrets/elevate-token";
+    mode = "0400";
   };
 
   # === Perla environment file (sourced by wrapper script) ===
@@ -211,6 +223,18 @@ in {
     '';
   };
 
+  # === Companion backend (phone-facing web API) ===
+  home.file.".local/bin/perla-companion" = {
+    force = true;
+    source = ./perla/perla-companion.py;
+    executable = true;
+  };
+
+  home.file.".config/perla/perla-companion.html" = {
+    force = true;
+    source = ./perla/perla-companion.html;
+  };
+
   # === Noctalia dmenu entry ===
   programs.noctalia.settings = {
     shell.launcher.dmenu.entry.perla = {
@@ -247,6 +271,32 @@ in {
     Service = {
       Type = "simple";
       ExecStart = "%h/.local/bin/perla-wakeword-listener";
+      Restart = "on-failure";
+      RestartSec = 5;
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
+
+  # === Companion web API service ===
+  systemd.user.services.perla-companion = {
+    Unit = {
+      Description = "${cfg.assistant_name} companion web API";
+      After = [ "pipewire.service" ];
+    };
+    Service = {
+      Type = "simple";
+      Environment = [
+        "PERLA_NAME=${cfg.assistant_name}"
+        "PERLA_PERSONA=${cfg.persona_prompt}"
+        "PERLA_MODEL=${cfg.opencode_model}"
+        "PERLA_VAULT=${cfg.vault_path}"
+        "PERLA_WHISPER_MODEL=${cfg.whisper_model}"
+        "PERLA_WHISPER_LANG=${cfg.whisper_lang}"
+        "PERLA_AUDIO_DIR=%h/.local/share/perla-audio"
+        "PERLA_COMPANION_PORT=8443"
+        "PERLA_GATE_PASSWORD=${cfg.gate_password}"
+      ];
+      ExecStart = "%h/.local/bin/perla-companion";
       Restart = "on-failure";
       RestartSec = 5;
     };

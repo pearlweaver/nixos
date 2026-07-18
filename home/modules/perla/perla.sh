@@ -14,7 +14,7 @@ fi
 : ${PERLA_NAME:="Perla"}
 : ${PERLA_PERSONA:="$HOME/.config/perla/persona.md"}
 : ${PERLA_MODEL:="opencode/deepseek-v4-flash-free"}
-: ${PERLA_VAULT:="$HOME/Documents/Obsidian/Perla"}
+: ${PERLA_VAULT:="$HOME/Documents/Obsidian/PerlaNew"}
 : ${PERLA_VOICE:="en_GB-southern_english_female-low"}
 : ${PERLA_WHISPER_MODEL:="tiny"}
 : ${PERLA_WHISPER_LANG:="en"}

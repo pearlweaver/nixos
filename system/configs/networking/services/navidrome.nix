@@ -2,11 +2,11 @@
   # Navidrome
   services.navidrome = {
     enable = true;
-    openFirewall = false;
+    openFirewall = true;
     settings = {
       MusicFolder = "/home/thedreamdev/Music";
       Port = 4533;
-      Address = "127.0.0.1";
+      Address = "0.0.0.0";
     };
   };
 }

@@ -3,7 +3,7 @@
     assistant_name = "Perla";
     wake_word = "perla";
 
-    vault_path = "${homeDirectory}/Documents/Obsidian/Perla";
+    vault_path = "${homeDirectory}/Documents/Obsidian/PerlaNew";
     persona_prompt = "${homeDirectory}/.config/perla/persona.md";
 
     voice_model = "en_US-libritts_r-medium";
@@ -18,6 +18,10 @@
 
     audio_input = "alsa_input.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp__source";
 
+    remote_token = "REPLACED_BY_SOPS";
+    elevate_token = "REPLACED_BY_SOPS";
+    gate_password = "goharumer";
+
     fs_read_exclude_paths = [
       ".ssh"
       ".gnupg"
@@ -26,11 +30,9 @@
       ".password-store"
       ".local/share/keyrings"
       ".mozilla"
-      ".config/google-chrome"
-      ".config/chromium"
       ".env"
       ".envrc"
-      "Documents/Obsidian/Perla/Memory/Long-Term"
+      "Documents/Obsidian/PerlaNew/Memory/Long-Term"
     ];
   };
 }
