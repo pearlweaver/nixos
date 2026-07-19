@@ -253,11 +253,18 @@ in {
     text = ''
       #!/usr/bin/env bash
       set -euo pipefail
-      tmpdir="$(mktemp -d)"
-      mkdir -p "$tmpdir/opencode"
-      cp -r "$HOME/.config/opencode/"* "$tmpdir/opencode/"
-      cp "$HOME/.config/opencode/opencode-t1.json" "$tmpdir/opencode/opencode.json"
-      export XDG_CONFIG_HOME="$tmpdir"
+      # Persistent, reusable config dir — NOT mktemp -d. This runs under a
+      # systemd service with Restart=on-failure, so a fresh mktemp -d here
+      # leaked one full copy of ~/.config/opencode into /tmp on every
+      # (re)start, with nothing ever cleaning it up.
+      config_home="''${XDG_RUNTIME_DIR:-/tmp}/perla/t1-config"
+      mkdir -p "$config_home/opencode"
+      if [ ! -f "$config_home/.synced" ] || [ "$HOME/.config/opencode" -nt "$config_home/.synced" ]; then
+        cp -r "$HOME/.config/opencode/"* "$config_home/opencode/"
+        cp "$HOME/.config/opencode/opencode-t1.json" "$config_home/opencode/opencode.json"
+        touch "$config_home/.synced"
+      fi
+      export XDG_CONFIG_HOME="$config_home"
       exec opencode serve --port 13101
     '';
   };
