@@ -1,9 +1,29 @@
 #!/usr/bin/env python3
-"""Perla phone companion — HTTP backend for Tailscale-served mobile access."""
+"""
+Perla backend daemon — the single brain for ALL surfaces (local hotkey/voice
+via perla.sh, and remote phone access via Tailscale).
+
+This replaces the old split between perla.sh (which used to talk to OpenCode
+directly and keep its own session file) and perla-companion.py (which only
+served the phone). Now there is exactly ONE process holding session state,
+so a Tier 1 conversation started from your phone is the same OpenCode
+session you continue from the laptop hotkey — and vice versa. Only two
+sessions exist, ever: Tier 1 and Tier 2. Not one per surface.
+
+perla.sh is now a thin local client: it captures mic audio, handles hotkey/
+dmenu integration, and speaks responses locally — but it calls THIS daemon's
+HTTP API instead of talking to OpenCode or Obsidian directly.
+
+Local calls (from perla.sh, on 127.0.0.1) are trusted by virtue of being on
+the machine and use a fixed local token. Remote calls (from the phone, over
+Tailscale) go through the gate-password -> session-token flow as before.
+"""
 
 import json
 import os
+import re
 import shlex
+import signal
 import subprocess
 import tempfile
 import time
@@ -11,12 +31,11 @@ import uuid
 from datetime import datetime
 from http import HTTPStatus
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
-import re
+from urllib.parse import urlparse
 import threading
 
 # ---------------------------------------------------------------------------
-# Config from environment (set by systemd unit)
+# Config from environment (set by systemd unit / perla.env)
 # ---------------------------------------------------------------------------
 PORT = int(os.environ.get("PERLA_COMPANION_PORT", "8443"))
 HOST = os.environ.get("PERLA_COMPANION_HOST", "127.0.0.1")
@@ -28,12 +47,12 @@ PERLA_PERSONA = os.environ.get("PERLA_PERSONA", os.path.expanduser("~/.config/pe
 PERLA_WHISPER_MODEL = os.environ.get("PERLA_WHISPER_MODEL", "tiny")
 PERLA_WHISPER_LANG = os.environ.get("PERLA_WHISPER_LANG", "en")
 PERLA_AUDIO_DIR = os.environ.get("PERLA_AUDIO_DIR", os.path.expanduser("~/.local/share/perla-audio"))
+PERLA_AUDIO_INPUT = os.environ.get("PERLA_AUDIO_INPUT", "")
 SERVER_PORT_T1 = int(os.environ.get("PERLA_SERVER_PORT_T1", "13101"))
 SERVER_PORT_T2 = int(os.environ.get("PERLA_SERVER_PORT_T2", "13102"))
 ELEVATION_DURATION = int(os.environ.get("PERLA_ELEVATION_DURATION", "300"))  # 5 minutes
 GATE_PASSWORD = os.environ.get("PERLA_GATE_PASSWORD", "")
 
-# Tokens read from sops-decrypted files at startup
 SECRETS_DIR = os.path.expanduser("~/.config/perla/secrets")
 
 
@@ -48,11 +67,24 @@ def read_secret(name):
         return None
 
 
-ELEVATE_TOKEN = read_secret("elevate-token")
+def _load_tokens():
+    """Read (or re-read) secret tokens from disk. Called at startup and on SIGHUP."""
+    global LOCAL_TOKEN, ELEVATE_TOKEN
+    ELEVATE_TOKEN = read_secret("elevate-token")
+    # Fixed local token so perla.sh (running as the same user, on 127.0.0.1)
+    # doesn't have to go through the gate-password flow meant for remote/phone
+    # access. This never leaves the machine and is not the same secret as
+    # ELEVATE_TOKEN or the phone gate password.
+    LOCAL_TOKEN = read_secret("local-token") or "local-only-no-remote-exposure"
+    print(f"Tokens loaded (LOCAL_TOKEN={'set' if LOCAL_TOKEN != 'local-only-no-remote-exposure' else 'fallback'})", flush=True)
+
+
+_load_tokens()
+signal.signal(signal.SIGHUP, lambda *_: _load_tokens())
 
 
 # ---------------------------------------------------------------------------
-# Session token store (server-issued short-lived tokens)
+# Session token store (server-issued short-lived tokens, for REMOTE callers)
 # ---------------------------------------------------------------------------
 SESSION_TTL = int(os.environ.get("PERLA_SESSION_TTL", "86400"))  # 24 hours
 
@@ -61,20 +93,20 @@ class SessionTokenStore:
     """Manages short-lived session tokens issued after gate authentication."""
 
     def __init__(self):
-        self._tokens = {}  # token -> expiry_timestamp
-        self._elevated = set()  # tokens with active Tier 2 elevation
-        self._elevation_expiry = {}  # token -> expiry_timestamp
+        self._tokens = {}
+        self._elevated = set()
+        self._elevation_expiry = {}
         self._lock = threading.Lock()
 
     def create(self):
-        """Issue a new session token, return it."""
         token = uuid.uuid4().hex
         with self._lock:
             self._tokens[token] = time.time() + SESSION_TTL
         return token
 
     def validate(self, token):
-        """Check if a session token is valid and not expired."""
+        if token == LOCAL_TOKEN:
+            return True
         with self._lock:
             expiry = self._tokens.get(token)
             if expiry is None:
@@ -87,7 +119,6 @@ class SessionTokenStore:
             return True
 
     def elevate(self, token):
-        """Grant Tier 2 elevation to a session token."""
         with self._lock:
             if token not in self._tokens:
                 return False
@@ -96,7 +127,6 @@ class SessionTokenStore:
             return True
 
     def is_elevated(self, token):
-        """Check if a session token has active Tier 2 elevation."""
         with self._lock:
             if token not in self._elevated:
                 return False
@@ -108,25 +138,22 @@ class SessionTokenStore:
             return True
 
     def elevation_remaining(self, token):
-        """Seconds of elevation remaining."""
         with self._lock:
             expiry = self._elevation_expiry.get(token, 0)
-            remaining = expiry - time.time()
-            return max(0, int(remaining))
+            return max(0, int(expiry - time.time()))
 
 
 session_tokens = SessionTokenStore()
 
 
 # ---------------------------------------------------------------------------
-# OpenCode session management
+# OpenCode session management — THE unification point.
+# Exactly one session per tier, shared by every surface (local + remote).
 # ---------------------------------------------------------------------------
 class SessionManager:
-    """Manages OpenCode API sessions per tier."""
-
     def __init__(self):
-        self._sessions = {}  # tier -> session_id
-        self._persona_injected = set()  # set of tier values
+        self._sessions = {}         # tier -> session_id
+        self._persona_injected = set()
         self._lock = threading.Lock()
 
     def _server_port(self, tier):
@@ -159,7 +186,6 @@ class SessionManager:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True
             )
-        # Wait for server to be ready (up to 15 seconds)
         for i in range(15):
             time.sleep(1)
             if self._server_alive(tier):
@@ -169,7 +195,6 @@ class SessionManager:
         return False
 
     def get_session(self, tier):
-        """Get or create a session for the given tier."""
         with self._lock:
             if tier in self._sessions:
                 sid = self._sessions[tier]
@@ -194,7 +219,6 @@ class SessionManager:
 
     def _create_session(self, tier):
         port = self._server_port(tier)
-        # Auto-start server if it's not running
         if not self._server_alive(tier):
             if not self._start_server(tier):
                 return None
@@ -203,7 +227,7 @@ class SessionManager:
                 ["curl", "-sf", "--connect-timeout", "3", "-m", "10",
                  "-X", "POST", f"http://127.0.0.1:{port}/session",
                  "-H", "Content-Type: application/json",
-                 "-d", '{"title":"perla-companion"}'],
+                 "-d", '{"title":"perla"}'],
                 capture_output=True, text=True, timeout=15
             )
             data = json.loads(result.stdout)
@@ -225,10 +249,59 @@ session_mgr = SessionManager()
 
 
 # ---------------------------------------------------------------------------
+# Tier 0 — direct dispatch, bypasses the LLM entirely.
+# Moved here (from perla.sh) so BOTH local and remote callers get the
+# shortcut, and so it can run before any OpenCode call regardless of
+# which surface the request came from.
+# ---------------------------------------------------------------------------
+def tier0_dispatch(text):
+    """Try to handle text as a direct system action. Returns response
+    string if handled, None if not a tier0 command."""
+    lower = text.lower()
+
+    def run_detached(cmd_list, unit):
+        subprocess.Popen(
+            ["systemd-run", "--user", f"--unit={unit}"] + cmd_list,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+
+    try:
+        if "open firefox" in lower:
+            run_detached(["firefox"], "perla-firefox")
+            return "Opening Firefox."
+        if "open terminal" in lower:
+            run_detached(["kitty"], "perla-kitty")
+            return "Opening a terminal."
+        if "open code" in lower:
+            run_detached(["codium"], "perla-codium")
+            return "Opening the editor."
+        if "lock" in lower:
+            subprocess.run(["noctalia", "msg", "session", "lock"], timeout=5)
+            return "Locked."
+        if "unmute" in lower:
+            subprocess.run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "0"], timeout=5)
+            return "Unmuted."
+        if "mute" in lower:
+            subprocess.run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "1"], timeout=5)
+            return "Muted."
+        if "screenshot" in lower:
+            path = os.path.expanduser(f"~/Pictures/Screenshots/{int(time.time())}.png")
+            subprocess.run(["grim", path], timeout=10)
+            return "Screenshot taken."
+        if "suspend" in lower or "sleep" in lower:
+            subprocess.run(["systemctl", "suspend"], timeout=5)
+            return "Suspending."
+    except Exception as e:
+        print(f"ERROR: tier0 dispatch failed: {e}", flush=True)
+        return None
+
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Core functions
 # ---------------------------------------------------------------------------
 def read_persona():
-    """Read persona.md content."""
     try:
         with open(PERLA_PERSONA, "r") as f:
             return f.read()
@@ -237,14 +310,11 @@ def read_persona():
 
 
 def model_part():
-    """Parse provider/model into OpenCode JSON."""
     provider, model = PERLA_MODEL.split("/", 1)
     return {"providerID": provider, "modelID": model}
 
 
 def call_opencode(sid, port, text, tier):
-    """Call OpenCode API and return (response_text, tool_used)."""
-    # Persona injection on first message
     if session_mgr.should_inject_persona(tier):
         persona = read_persona()
         text = (
@@ -269,20 +339,31 @@ def call_opencode(sid, port, text, tier):
             capture_output=True, text=True, timeout=310
         )
         if result.returncode != 0:
-            return "OpenCode server error — try again.", False
+            return "OpenCode server error — try again.", False, False
 
         data = json.loads(result.stdout)
         response_text = " ".join(
             p.get("text", "") for p in data.get("parts", []) if p.get("type") == "text"
         )
         tool_used = any(p.get("type") == "tool" for p in data.get("parts", []))
-        return response_text or "(no response)", tool_used
+
+        obsidian_writes = {
+            "obsidian_write_note", "obsidian_patch_note", "obsidian_append_to_note",
+            "obsidian_replace_in_note", "obsidian_manage_tags", "obsidian_delete_note",
+            "obsidian_manage_frontmatter",
+        }
+        obsidian_write = any(
+            p.get("tool", "") in obsidian_writes
+            for p in data.get("parts", []) if p.get("type") == "tool"
+        )
+
+        return response_text or "(no response)", tool_used, obsidian_write
 
     except subprocess.TimeoutExpired:
-        return "Request timed out — the AI took too long to respond.", False
+        return "Request timed out — the AI took too long to respond.", False, False
     except Exception as e:
         print(f"ERROR: call_opencode failed: {e}", flush=True)
-        return "Failed to reach Perla's brain.", False
+        return "Failed to reach Perla's brain.", False, False
 
 
 def generate_tts(text):
@@ -312,8 +393,32 @@ def generate_tts(text):
     return None
 
 
+def speak_locally(text):
+    """Play TTS directly through local speakers — used for local hotkey/
+    voice callers so audio doesn't need to round-trip as a file URL."""
+    voice_dir = os.path.expanduser("~/.local/share/piper-tts/voices")
+    voice_file = os.path.join(voice_dir, f"{PERLA_VOICE}.onnx")
+    if not os.path.exists(voice_file):
+        print(f"WARNING: voice file not found at {voice_file}", flush=True)
+        return False
+    try:
+        subprocess.run(
+            ["bash", "-c",
+             f"echo {shlex.quote(text)} | "
+             f"piper --model {shlex.quote(voice_file)} --output-raw --length-scale 1.1 | "
+             f"pw-play --rate=22050 --channels=1 --format=s16 --raw -"],
+            timeout=60
+        )
+        return True
+    except Exception as e:
+        print(f"ERROR: local speak failed: {e}", flush=True)
+        return False
+
+
 def transcribe_audio(audio_path):
-    """Transcribe audio file using whisper-cli."""
+    """Transcribe audio file using whisper-cli. Used for BOTH local voice
+    (perla.sh posts captured audio here) and phone voice — STT now lives
+    in exactly one place instead of being duplicated in perla.sh."""
     model_dir = os.path.expanduser("~/.local/share/whisper-cpp/models")
     model_file = os.path.join(model_dir, f"ggml-{PERLA_WHISPER_MODEL}.bin")
     os.makedirs(model_dir, exist_ok=True)
@@ -333,52 +438,16 @@ def transcribe_audio(audio_path):
              "--language", PERLA_WHISPER_LANG],
             capture_output=True, text=True, timeout=60
         )
-        # whisper-cli outputs transcription to stdout
         return result.stdout.strip() or ""
     except Exception as e:
         print(f"ERROR: transcription failed: {e}", flush=True)
         return ""
 
 
-MEMORY_WORTHY_PATTERNS = [
-    r"\bremember\b", r"\bprefer\b", r"\bpreference\b", r"\btask\b",
-    r"\bnote this\b", r"\bimportant\b", r"\bstore\b", r"\bsave\b",
-    r"\brecord\b", r"\breminder\b", r"\bdon'?t forget\b",
-    r"\bmy (?:music player|editor|browser|os|setup|workflow)\b",
-    r"\bi use\b", r"\bi always\b", r"\bi usually\b", r"\bfrom now on\b",
-]
-
-
-def is_memory_worthy(text):
-    """Mirror of perla.sh's is_memory_worthy(), used to trigger a deterministic write."""
-    lower = text.lower()
-    return any(re.search(p, lower) for p in MEMORY_WORTHY_PATTERNS)
-
-
-def write_short_term_memory(input_text, response, tier):
-    """Deterministically append a Short-Term memory entry.
-
-    This does NOT depend on the LLM deciding to call an Obsidian MCP tool —
-    it's a plain file write, same pattern as log_request(), so a stated
-    preference is never silently dropped just because the model didn't
-    self-trigger a tool call.
-    """
-    mem_dir = os.path.join(PERLA_VAULT, "Memory", "Short-Term")
-    os.makedirs(mem_dir, exist_ok=True)
-    mem_file = os.path.join(mem_dir, f"{datetime.now().strftime('%Y-%m-%d')}.md")
-
-    try:
-        with open(mem_file, "a") as f:
-            f.write(f"## {datetime.now().strftime('%H:%M')} — Tier {tier}\n")
-            f.write(f"- **Said:** {input_text}\n")
-            f.write(f"- **Context:** {response}\n\n")
-    except Exception as e:
-        print(f"ERROR: short-term memory write failed: {e}", flush=True)
-
-
-def log_request(input_text, response, tier, tool_used):
-    """Log to Obsidian vault (same format as perla.sh)."""
-    tier_label = f"Tier {tier} (remote)"
+def log_request(input_text, response, tier, tool_used, source="remote"):
+    """Log to Obsidian vault. `source` distinguishes local vs remote in the
+    log so you can tell which surface a conversation came from."""
+    tier_label = f"Tier {tier} ({source})"
     if tool_used:
         log_dir = os.path.join(PERLA_VAULT, "Command Log")
     else:
@@ -396,8 +465,29 @@ def log_request(input_text, response, tier, tool_used):
         print(f"ERROR: logging failed: {e}", flush=True)
 
 
+def log_memory_mismatch(input_text, response, tier, source="remote"):
+    log_dir = os.path.join(PERLA_VAULT, "Review")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "memory-mismatches.md")
+    try:
+        with open(log_file, "a") as f:
+            f.write(f"## {datetime.now().strftime('%Y-%m-%d %H:%M')} — Tier {tier} ({source})\n")
+            f.write(f"- **Input:** {input_text}\n")
+            f.write(f"- **Response:** {response}\n\n")
+    except Exception as e:
+        print(f"ERROR: memory mismatch logging failed: {e}", flush=True)
+
+
+def is_memory_worthy(text):
+    lower = text.lower().replace("'", "")
+    keywords = [
+        "remember", "prefer", "preference", "task", "note this", "important",
+        "store", "save", "record", "reminder", "dont forget", "dont ever forget",
+    ]
+    return any(k in lower for k in keywords)
+
+
 def is_destructive(text):
-    """Check if a message contains destructive actions."""
     lower = text.lower()
     destructive_patterns = [
         r"\bdelete\b", r"\brm\b", r"\bremove\b",
@@ -408,14 +498,45 @@ def is_destructive(text):
     return any(re.search(p, lower) for p in destructive_patterns)
 
 
+def process_message(message, tier, source, confirm=False):
+    """The single entrypoint every surface funnels through: tier0 check,
+    then OpenCode, then logging. Returns (response_text, tool_used,
+    confirm_required, confirm_action)."""
+
+    # Tier 0 direct dispatch — bypasses the LLM entirely, same for every surface.
+    tier0_response = tier0_dispatch(message)
+    if tier0_response is not None:
+        log_request(message, tier0_response, 0, True, source=source)
+        return tier0_response, True, False, None
+
+    if tier == 2 and is_destructive(message) and not confirm:
+        return (
+            "About to execute a potentially destructive action. Confirm?",
+            False, True, message
+        )
+
+    sid = session_mgr.get_session(tier)
+    if not sid:
+        return "OpenCode server unavailable.", False, False, None
+
+    port = SERVER_PORT_T1 if tier == 1 else SERVER_PORT_T2
+    response_text, tool_used, obsidian_write = call_opencode(sid, port, message, tier)
+
+    log_request(message, response_text, tier, tool_used, source=source)
+
+    if is_memory_worthy(message) and not obsidian_write:
+        log_memory_mismatch(message, response_text, tier, source=source)
+        print("WARNING: memory-worthy input with no Obsidian write detected", flush=True)
+
+    return response_text, tool_used, False, None
+
+
 # ---------------------------------------------------------------------------
 # HTTP Handler
 # ---------------------------------------------------------------------------
 class CompanionHandler(BaseHTTPRequestHandler):
-    """HTTP request handler for Perla companion API."""
 
     def log_message(self, format, *args):
-        # Suppress default access log
         pass
 
     def send_json(self, code, data):
@@ -440,7 +561,6 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def check_auth(self):
-        """Check bearer token. Returns True if authorized."""
         auth = self.headers.get("Authorization", "")
         if auth.startswith("Bearer "):
             token = auth[7:]
@@ -451,9 +571,21 @@ class CompanionHandler(BaseHTTPRequestHandler):
         self.send_json(401, {"error": "unauthorized"})
         return False
 
-    def get_effective_tier(self):
-        """Determine effective tier (1 or 2 if elevated)."""
+    def get_source(self):
+        """Local (perla.sh, using LOCAL_TOKEN) vs remote (phone, gated
+        session token) — used only for logging/labelling, not permissions."""
         auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer ") and auth[7:] == LOCAL_TOKEN:
+            return "local"
+        return "remote"
+
+    def get_effective_tier(self, requested_tier=None):
+        """Local callers may explicitly request a tier (perla.sh already
+        knows if it's hotkey-quick-chat vs full-mode). Remote callers use
+        elevation status as before."""
+        auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer ") and auth[7:] == LOCAL_TOKEN and requested_tier in (1, 2):
+            return requested_tier
         if auth.startswith("Bearer "):
             token = auth[7:]
             if session_tokens.validate(token) and session_tokens.is_elevated(token):
@@ -461,12 +593,10 @@ class CompanionHandler(BaseHTTPRequestHandler):
         return 1
 
     def read_body(self):
-        """Read request body as bytes."""
         length = int(self.headers.get("Content-Length", 0))
         return self.rfile.read(length) if length > 0 else b""
 
     def do_OPTIONS(self):
-        """Handle CORS preflight."""
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -485,7 +615,6 @@ class CompanionHandler(BaseHTTPRequestHandler):
             if not self.check_auth():
                 return
             filename = os.path.basename(path)
-            # Sanitize filename
             if not re.match(r'^[0-9a-f-]+\.mp3$', filename):
                 self.send_error(400)
                 return
@@ -511,7 +640,6 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.handle_gate()
             return
 
-        # Auth check (except health and gate)
         if path != "/api/health" and not self.check_auth():
             return
 
@@ -527,10 +655,13 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.handle_elevate()
             return
 
+        if path == "/api/speak-local":
+            self.handle_speak_local()
+            return
+
         self.send_error(404)
 
     def handle_gate(self):
-        """Handle POST /api/gate — exchange gate password for session token."""
         try:
             body = json.loads(self.read_body())
         except (json.JSONDecodeError, ValueError):
@@ -546,7 +677,6 @@ class CompanionHandler(BaseHTTPRequestHandler):
         self.send_json(200, {"token": token, "expires_in": SESSION_TTL})
 
     def handle_text(self):
-        """Handle POST /api/text."""
         try:
             body = json.loads(self.read_body())
         except (json.JSONDecodeError, ValueError):
@@ -559,45 +689,39 @@ class CompanionHandler(BaseHTTPRequestHandler):
             return
 
         confirm = body.get("confirm", False)
-        tier = self.get_effective_tier()
+        requested_tier = body.get("tier")  # local callers (perla.sh) may pass this
+        source = self.get_source()
+        tier = self.get_effective_tier(requested_tier)
 
-        # Destructive action check for Tier 2
-        if tier == 2 and is_destructive(message) and not confirm:
+        response_text, tool_used, confirm_required, action = process_message(
+            message, tier, source, confirm=confirm
+        )
+
+        if confirm_required:
             self.send_json(200, {
-                "text": f"About to execute a potentially destructive action. Confirm?",
+                "text": response_text,
                 "confirm_required": True,
-                "action": message
+                "action": action,
             })
             return
 
-        sid = session_mgr.get_session(tier)
-        if not sid:
-            self.send_json(503, {"error": "OpenCode server unavailable"})
-            return
-
-        port = SERVER_PORT_T1 if tier == 1 else SERVER_PORT_T2
-        response_text, tool_used = call_opencode(sid, port, message, tier)
-
-        # Generate TTS
-        audio_path = generate_tts(response_text)
-        audio_url = f"/api/audio/{os.path.basename(audio_path)}" if audio_path else None
-
-        # Log
-        log_request(message, response_text, tier, tool_used)
-
-        if is_memory_worthy(message):
-            write_short_term_memory(message, response_text, tier)
+        audio_url = None
+        # Only generate a downloadable audio file for REMOTE callers (phone
+        # plays it through the browser). Local callers (perla.sh) get audio
+        # played directly through /api/speak-local instead, so we don't
+        # burn TTS twice for the same response.
+        if source == "remote":
+            audio_path = generate_tts(response_text)
+            audio_url = f"/api/audio/{os.path.basename(audio_path)}" if audio_path else None
 
         self.send_json(200, {"text": response_text, "audio": audio_url})
 
     def handle_voice(self):
-        """Handle POST /api/voice."""
         content_type = self.headers.get("Content-Type", "")
         if "multipart/form-data" not in content_type:
             self.send_json(400, {"error": "expected multipart/form-data"})
             return
 
-        # Parse multipart manually (no external deps)
         boundary = None
         for part in content_type.split(";"):
             part = part.strip()
@@ -616,7 +740,6 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": "no audio field in form data"})
             return
 
-        # Save uploaded audio to temp file
         tmp = tempfile.NamedTemporaryFile(suffix=".webm", delete=False)
         tmp.write(audio_data)
         tmp.close()
@@ -634,33 +757,45 @@ class CompanionHandler(BaseHTTPRequestHandler):
             })
             return
 
-        # Feed transcript through text pipeline
-        tier = self.get_effective_tier()
-        sid = session_mgr.get_session(tier)
-        if not sid:
-            self.send_json(503, {"error": "OpenCode server unavailable"})
-            return
+        source = self.get_source()
+        tier = self.get_effective_tier()  # voice never carries explicit tier
 
-        confirm = False  # Voice doesn't carry confirm flag
-        port = SERVER_PORT_T1 if tier == 1 else SERVER_PORT_T2
-        response_text, tool_used = call_opencode(sid, port, transcript, tier)
+        response_text, tool_used, confirm_required, action = process_message(
+            transcript, tier, source, confirm=False
+        )
 
-        audio_path = generate_tts(response_text)
-        audio_url = f"/api/audio/{os.path.basename(audio_path)}" if audio_path else None
-
-        log_request(transcript, response_text, tier, tool_used)
-
-        if is_memory_worthy(transcript):
-            write_short_term_memory(transcript, response_text, tier)
+        audio_url = None
+        if source == "remote":
+            audio_path = generate_tts(response_text)
+            audio_url = f"/api/audio/{os.path.basename(audio_path)}" if audio_path else None
 
         self.send_json(200, {
             "transcript": transcript,
             "text": response_text,
-            "audio": audio_url
+            "audio": audio_url,
+            "confirm_required": confirm_required,
+            "action": action,
         })
 
+    def handle_speak_local(self):
+        """Local-only: speak text directly through this machine's speakers.
+        Used by perla.sh instead of round-tripping an audio file."""
+        if self.get_source() != "local":
+            self.send_json(403, {"error": "local only"})
+            return
+        try:
+            body = json.loads(self.read_body())
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(400, {"error": "invalid JSON"})
+            return
+        text = body.get("text", "").strip()
+        if not text:
+            self.send_json(400, {"error": "empty text"})
+            return
+        ok = speak_locally(text)
+        self.send_json(200, {"spoken": ok})
+
     def _parse_multipart_audio(self, raw, boundary):
-        """Extract the 'audio' field from multipart data."""
         boundary_bytes = boundary.encode()
         parts = raw.split(b"--" + boundary_bytes)
         for part in parts:
@@ -672,16 +807,13 @@ class CompanionHandler(BaseHTTPRequestHandler):
             header = part[:header_end].decode(errors="replace")
             if 'name="audio"' not in header:
                 continue
-            # Extract filename if present
             body = part[header_end + 4:]
-            # Remove trailing \r\n-- if present
             if body.endswith(b"\r\n"):
                 body = body[:-2]
             return body
         return None
 
     def handle_elevate(self):
-        """Handle POST /api/elevate — grant Tier 2 to the caller's session token."""
         if not ELEVATE_TOKEN:
             self.send_json(403, {"error": "elevation not configured"})
             return
@@ -697,7 +829,6 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(403, {"error": "invalid elevation token"})
             return
 
-        # Elevate the session token from the Authorization header
         auth = self.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
             self.send_json(401, {"error": "no session token"})
@@ -721,7 +852,6 @@ class CompanionHandler(BaseHTTPRequestHandler):
 # Audio cleanup thread
 # ---------------------------------------------------------------------------
 def cleanup_old_audio():
-    """Delete audio files older than 1 hour."""
     while True:
         time.sleep(300)
         now = time.time()
@@ -744,7 +874,6 @@ def main():
         print("FATAL: PERLA_GATE_PASSWORD not set. Exiting.", flush=True)
         return
 
-    # Start cleanup thread
     cleanup_thread = threading.Thread(target=cleanup_old_audio, daemon=True)
     cleanup_thread.start()
 

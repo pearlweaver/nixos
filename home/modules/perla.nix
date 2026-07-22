@@ -125,6 +125,21 @@ in {
     path = "${config.home.homeDirectory}/.config/perla/secrets/elevate-token";
     mode = "0400";
   };
+  # Fixed token so perla.sh (the local hotkey/voice client) authenticates to
+  # perla-companion as a trusted local caller instead of going through the
+  # phone's gate-password flow. Never leaves the machine — only ever sent to
+  # 127.0.0.1. Generate with e.g. `openssl rand -hex 32` and add under
+  # perla/local_token in secrets/perla-tokens.yaml, same as the entries above.
+  sops.secrets."perla/local_token" = {
+    sopsFile = ../../secrets/perla-tokens.yaml;
+    path = "${config.home.homeDirectory}/.config/perla/secrets/local-token";
+    mode = "0400";
+  };
+
+  # Reload companion daemon when secrets change (SIGHUP re-reads token files)
+  home.activation.reload-perla = lib.mkAfter ''
+    pkill -HUP -f perla-companion || true
+  '';
 
   # === Perla environment file (sourced by wrapper script) ===
   home.file.".config/perla/perla.env" = {
@@ -234,7 +249,15 @@ in {
     '';
   };
 
-  # === Companion backend (phone-facing web API) ===
+  # === Companion backend — the single unified daemon ===
+  # Owns OpenCode sessions (one per tier, shared by every surface), STT,
+  # TTS, tier0 direct dispatch, and vault logging. perla.sh (local
+  # hotkey/voice) and the phone both talk to this over HTTP — perla.sh via
+  # 127.0.0.1 with local-token auth, phone via Tailscale with the
+  # gate-password -> session-token flow. This is what makes a Tier 1
+  # conversation started on the phone continue seamlessly from the laptop
+  # hotkey: there's exactly one OpenCode session per tier, not one per
+  # surface.
   home.file.".local/bin/perla-companion" = {
     force = true;
     source = ./perla/perla-companion.py;
@@ -365,6 +388,40 @@ in {
     Timer = {
       OnCalendar = "daily";
       Persistent = true;
+    };
+    Install.WantedBy = [ "timers.target" ];
+  };
+
+  # === Reminder checker ===
+  # Scans Reminders.md every 5 min and fires anything due — unprompted, no
+  # active conversation needed. Calls perla-companion's local speak endpoint
+  # for TTS plus notify-send, so it depends on the companion daemon being up
+  # (not a hard dependency — if the daemon's down the checker just logs a
+  # warning and the desktop notification still fires).
+  home.file.".local/bin/perla-reminder-check" = {
+    force = true;
+    source = ./perla/perla-reminder-check.py;
+    executable = true;
+  };
+
+  systemd.user.services.perla-reminder-check = {
+    Unit = {
+      Description = "${cfg.assistant_name} reminder check";
+      After = [ "pipewire.service" "perla-companion.service" ];
+    };
+    Service = {
+      Type = "oneshot";
+      ExecStart = "%h/.local/bin/perla-reminder-check";
+    };
+  };
+
+  systemd.user.timers.perla-reminder-check = {
+    Unit.Description = "${cfg.assistant_name} reminder check timer";
+    Timer = {
+      OnCalendar = "*:0/5"; # every 5 minutes
+      Persistent = true;    # catches up on missed ticks after sleep/reboot —
+                             # this is what makes "missed" reminders actually
+                             # fire once the machine wakes back up
     };
     Install.WantedBy = [ "timers.target" ];
   };

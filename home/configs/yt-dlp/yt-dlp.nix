@@ -7,7 +7,7 @@ in
 {
   programs.yt-dlp = {
     enable = true;
-    package = pkgs.yt-dlp.overrideAttrs (old: {
+    package = pkgs.python313.pkgs.yt-dlp.overrideAttrs (old: {
       propagatedBuildInputs = (old.propagatedBuildInputs or []) ++ [ bgutil ];
     });
   };

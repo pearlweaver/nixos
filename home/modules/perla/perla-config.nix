@@ -1,7 +1,7 @@
 { homeDirectory }: {
   perla = {
     assistant_name = "Perla";
-    wake_word = "perla";
+    wake_word = "hey_jarvis";
 
     vault_path = "${homeDirectory}/Documents/Obsidian/PerlaNew";
     persona_prompt = "${homeDirectory}/.config/perla/persona.md";
