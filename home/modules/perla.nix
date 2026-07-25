@@ -52,7 +52,6 @@ in {
       permission = {
         bash = "deny";
         edit = "deny";
-        write = "deny";
         webfetch = "deny";
         task = "deny";
         todowrite = "deny";

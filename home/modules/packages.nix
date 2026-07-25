@@ -31,6 +31,8 @@
     kdePackages.dolphin
     kdePackages.ark
     stoat-desktop
+    lsfg-vk
+    lsfg-vk-ui
 
     # Terminal Apps
     yazi
