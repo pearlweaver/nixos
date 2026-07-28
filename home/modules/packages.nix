@@ -72,7 +72,11 @@
     xdg-desktop-portal
     xdg-desktop-portal-gnome
     mpvpaper
+    vulkan-tools
   ];
+
+  xdg.dataFile."vulkan/implicit_layer.d/VkLayer_LS_frame_generation.json".source =
+    "${pkgs.lsfg-vk}/share/vulkan/implicit_layer.d/VkLayer_LS_frame_generation.json";
 
   nixpkgs.config.permittedInsecurePackages = [
      "electron-38.8.4"
