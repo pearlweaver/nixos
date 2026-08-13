@@ -5,7 +5,6 @@
     ./modules/apps.nix
     ./modules/packages.nix
     ./modules/xdg.nix
-    ./modules/session.nix
     ./modules/perla.nix
   ];
 

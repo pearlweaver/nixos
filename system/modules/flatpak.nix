@@ -7,6 +7,7 @@ let
     "org.vinegarhq.Sober"
     "io.github.tanaybhomia.Whisp"
     "app.zen_browser.zen"
+    "app.fluxer.Fluxer"
   ];
 in {
   system.userActivationScripts.flatpakManagement = {
