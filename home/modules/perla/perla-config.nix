@@ -10,7 +10,7 @@
     whisper_model = "tiny";
     whisper_lang = "en";
 
-    opencode_model = "opencode/deepseek-v4-flash-free";
+    opencode_model = "opencode/mimo-v2.5-free";
     ollama_model = "qwen2.5:3b";
 
     session_idle_timeout_minutes = 10;

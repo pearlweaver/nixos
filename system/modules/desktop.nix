@@ -4,7 +4,7 @@
   services.desktopManager.plasma6.enable = true;
 
   programs.niri.enable = true;
-  programs.niri.package = pkgs.niri-unstable;
+  programs.niri.package = pkgs.niri;
 
   nix.settings.experimental-features = [
     "flakes"

@@ -8,6 +8,7 @@ let
     "io.github.tanaybhomia.Whisp"
     "app.zen_browser.zen"
     "app.fluxer.Fluxer"
+    "org.vinegarhq.Vinegar"
   ];
 in {
   system.userActivationScripts.flatpakManagement = {

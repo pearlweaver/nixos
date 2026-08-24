@@ -56,7 +56,7 @@
     opencode
     nodejs
     obs-studio
-    antigravity
+    antigravity-ide
 
     # Important / Others
     playerctl

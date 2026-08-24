@@ -31,6 +31,7 @@
   # steam black screen fix
   nixpkgs.overlays = [
     inputs.niri-flake.overlays.niri
+    inputs.helium-flake.overlays.default
     (final: prev: {
       steam = prev.steam.override {
         extraArgs = "-cef-disable-gpu-compositing";

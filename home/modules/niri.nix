@@ -4,6 +4,7 @@ let
   noctalia = cmd: [ "noctalia" "msg" ] ++ (pkgs.lib.splitString " " cmd);
 in {
   programs.niri = {
+    package = pkgs.niri;
     settings = {
       spawn-at-startup = [
         { command = [ "noctalia" ]; }
@@ -113,7 +114,7 @@ in {
         "Mod+T".action.spawn = [ "kitty" ];
         "Mod+E".action.spawn = [ "nautilus" ];
         "Mod+Shift+E".action.spawn = [ "kitty" "-e" "yazi" ];
-        "Mod+B".action.spawn = [ "app.zen_browser.zen" ];
+        "Mod+B".action.spawn = [ "helium" ];
         "Mod+D".action.spawn = [ "vesktop" ];
         "Mod+M".action.spawn = [ "nocturne" ];
         "Mod+C".action.spawn = [ "codium" ];

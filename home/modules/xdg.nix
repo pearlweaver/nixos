@@ -41,8 +41,8 @@
       "inode/directory" = "thunar.desktop";
 
       # Browser
-      "x-scheme-handler/http" = "app.zen_browser.zen.desktop";
-      "x-scheme-handler/https" = "app.zen_browser.zen.desktop";
+      "x-scheme-handler/http" = "helium.desktop"; # "app.zen_browser.zen.desktop";
+      "x-scheme-handler/https" = "helium.desktop"; # "app.zen_browser.zen.desktop";
 
       # Torrents
       "application/x-bittorrent" = "org.qbittorrent.qBittorrent.desktop";

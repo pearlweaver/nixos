@@ -28,6 +28,7 @@
     sops
     ssh-to-age
     lazymc
+    helium
 
     inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default
   ];
