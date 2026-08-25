@@ -739,17 +739,36 @@ class CompanionHandler(BaseHTTPRequestHandler):
         return "remote"
 
     def get_effective_tier(self, requested_tier=None):
-        """Local callers may explicitly request a tier (perla.sh already
-        knows if it's hotkey-quick-chat vs full-mode). Remote callers use
-        elevation status as before."""
+        """Local callers (perla.sh) may explicitly request a tier — trusted
+        outright since they're on 127.0.0.1 with the local token.
+
+        Remote callers (phone/browser) may also request a tier explicitly
+        now that the UI has separate Tier 1 / Tier 2 chats:
+          - tier 1 is always honored (dropping privilege is free)
+          - tier 2 is honored only if the session is currently elevated
+          - no explicit tier falls back to the old implicit behavior
+            (elevated -> 2, otherwise -> 1) for backward compatibility
+        Returns (tier, error) — error is None on success, or a short
+        string the caller should surface instead of silently reassigning
+        the tier.
+        """
         auth = self.headers.get("Authorization", "")
         if auth.startswith("Bearer ") and auth[7:] == LOCAL_TOKEN and requested_tier in (1, 2):
-            return requested_tier
+            return requested_tier, None
+
         if auth.startswith("Bearer "):
             token = auth[7:]
-            if session_tokens.validate(token) and session_tokens.is_elevated(token):
-                return 2
-        return 1
+            elevated = session_tokens.validate(token) and session_tokens.is_elevated(token)
+            if requested_tier == 1:
+                return 1, None
+            if requested_tier == 2:
+                if elevated:
+                    return 2, None
+                return None, "Tier 2 requires Full Mode — elevate first."
+            # No explicit tier requested: old implicit behavior.
+            return (2 if elevated else 1), None
+
+        return 1, None
 
     def read_body(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -891,7 +910,10 @@ class CompanionHandler(BaseHTTPRequestHandler):
         confirm = body.get("confirm", False)
         requested_tier = body.get("tier")  # local callers (perla.sh) may pass this
         source = self.get_source()
-        tier = self.get_effective_tier(requested_tier)
+        tier, tier_error = self.get_effective_tier(requested_tier)
+        if tier_error:
+            self.send_json(403, {"error": tier_error})
+            return
 
         response_text, tool_used, confirm_required, action = process_message(
             message, tier, source, confirm=confirm
@@ -914,7 +936,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
             audio_path = generate_tts(response_text)
             audio_url = f"/api/audio/{os.path.basename(audio_path)}" if audio_path else None
 
-        self.send_json(200, {"text": response_text, "audio": audio_url})
+        self.send_json(200, {"text": response_text, "audio": audio_url, "tier": tier})
 
     def handle_voice(self):
         content_type = self.headers.get("Content-Type", "")
@@ -940,6 +962,14 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": "no audio field in form data"})
             return
 
+        tier_field = self._parse_multipart_field(raw, boundary, "tier")
+        requested_tier = None
+        if tier_field:
+            try:
+                requested_tier = int(tier_field.decode().strip())
+            except ValueError:
+                requested_tier = None
+
         tmp = tempfile.NamedTemporaryFile(suffix=".webm", delete=False)
         tmp.write(audio_data)
         tmp.close()
@@ -958,7 +988,10 @@ class CompanionHandler(BaseHTTPRequestHandler):
             return
 
         source = self.get_source()
-        tier = self.get_effective_tier()  # voice never carries explicit tier
+        tier, tier_error = self.get_effective_tier(requested_tier)
+        if tier_error:
+            self.send_json(403, {"error": tier_error, "transcript": transcript})
+            return
 
         response_text, tool_used, confirm_required, action = process_message(
             transcript, tier, source, confirm=False
@@ -975,6 +1008,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
             "audio": audio_url,
             "confirm_required": confirm_required,
             "action": action,
+            "tier": tier,
         })
 
     def handle_speak_local(self):
@@ -995,7 +1029,9 @@ class CompanionHandler(BaseHTTPRequestHandler):
         ok = speak_locally(text)
         self.send_json(200, {"spoken": ok})
 
-    def _parse_multipart_audio(self, raw, boundary):
+    def _parse_multipart_field(self, raw, boundary, field_name):
+        """Extract a single named field's raw bytes from multipart form
+        data. Returns None if the field isn't present."""
         boundary_bytes = boundary.encode()
         parts = raw.split(b"--" + boundary_bytes)
         for part in parts:
@@ -1005,13 +1041,16 @@ class CompanionHandler(BaseHTTPRequestHandler):
             if header_end == -1:
                 continue
             header = part[:header_end].decode(errors="replace")
-            if 'name="audio"' not in header:
+            if f'name="{field_name}"' not in header:
                 continue
             body = part[header_end + 4:]
             if body.endswith(b"\r\n"):
                 body = body[:-2]
             return body
         return None
+
+    def _parse_multipart_audio(self, raw, boundary):
+        return self._parse_multipart_field(raw, boundary, "audio")
 
     def handle_elevate(self):
         if not ELEVATE_TOKEN:

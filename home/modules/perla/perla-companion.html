@@ -500,6 +500,17 @@
     color: var(--ink-faint);
     letter-spacing: 0.04em;
   }
+  .menu-item-badge.locked { color: var(--wax-bright); }
+  .menu-item-badge.unread {
+    color: var(--brass-bright);
+    font-weight: 600;
+  }
+
+  .menu-divider {
+    height: 1px;
+    background: var(--rule);
+    margin: 6px 4px;
+  }
 
   /* ---------- Dropdown panels (history day picker, elevate token) ---------- */
   .dropdown-panel {
@@ -638,7 +649,7 @@
         <span class="brand-name">Perla</span>
       </div>
       <div class="status">
-        <span id="tierBadge" class="tier-badge" hidden>T2</span>
+        <span id="tierBadge" class="tier-badge">T1</span>
         <button id="menuBtn" class="icon-btn menu-btn" aria-label="Menu" aria-expanded="false" title="Menu">
           <span class="hamburger-lines"><span></span><span></span><span></span></span>
         </button>
@@ -647,6 +658,17 @@
     </header>
 
     <nav id="appMenu" class="app-menu" hidden>
+      <button id="tier1Btn" class="menu-item tier-item active">
+        <span class="menu-item-icon">①</span>
+        <span class="menu-item-label">Tier 1 chat</span>
+        <span class="menu-item-badge" id="tier1Badge"></span>
+      </button>
+      <button id="tier2Btn" class="menu-item tier-item">
+        <span class="menu-item-icon">②</span>
+        <span class="menu-item-label">Tier 2 chat</span>
+        <span class="menu-item-badge" id="tier2Badge">locked</span>
+      </button>
+      <div class="menu-divider"></div>
       <button id="elevateBtn" class="menu-item">
         <span class="menu-item-icon">⚡</span>
         <span class="menu-item-label">Full Mode</span>
@@ -719,6 +741,34 @@
 
   let authToken = sessionStorage.getItem("perla_session_token") || null;
 
+  // ---------- Tier state (separate Tier 1 / Tier 2 chats) ----------
+  // Each tier keeps its own chat transcript. Stored in sessionStorage so a
+  // reload within the same gate-unlock doesn't lose either conversation,
+  // but a fresh gate unlock always starts clean at Tier 1 per spec.
+  let activeTier = parseInt(sessionStorage.getItem("perla_active_tier") || "1", 10);
+  let isElevated = sessionStorage.getItem("perla_elevated") === "1";
+  let tier2Unread = sessionStorage.getItem("perla_tier2_unread") === "1";
+
+  function getChatLog(tier) {
+    return sessionStorage.getItem("perla_chat_t" + tier) || "";
+  }
+
+  function setChatLog(tier, html) {
+    try {
+      sessionStorage.setItem("perla_chat_t" + tier, html);
+    } catch (e) {
+      // sessionStorage quota exceeded or unavailable — chat still works
+      // in-memory for this page view, just won't survive a reload.
+    }
+  }
+
+  // Overlay view state (history / reminders share the main output area
+  // as a read-only overlay on top of whichever tier's chat is active).
+  // Declared here (not where first used) so addEntry, defined below, can
+  // reference activeOverlay without relying on hoisting/call-order luck.
+  let liveOutputHTML = null;
+  let activeOverlay = null;  // "history" | "reminders" | null
+
   // ---------- Gate ----------
   const gate = document.getElementById("gate");
   const app = document.getElementById("app");
@@ -727,11 +777,39 @@
   const gateError = document.getElementById("gateError");
   const gateCard = document.querySelector(".gate-card");
 
-  // If we already have a session token, skip the gate
+  // If we already have a session token, skip the gate — this is a reload
+  // within the same gate-unlock, so restore whatever tier/chat state was
+  // saved rather than resetting to Tier 1. The actual initAppState() call
+  // happens at the end of the script, once all DOM refs below exist.
   if (authToken) {
     gate.style.display = "none";
     app.hidden = false;
     checkConnection();
+  }
+
+  function initAppState(freshUnlock) {
+    if (freshUnlock) {
+      // New gate session: always start at Tier 1, drop any elevation and
+      // chat transcripts left over from a previous session.
+      sessionStorage.removeItem("perla_chat_t1");
+      sessionStorage.removeItem("perla_chat_t2");
+      sessionStorage.setItem("perla_active_tier", "1");
+      sessionStorage.setItem("perla_elevated", "0");
+      sessionStorage.setItem("perla_tier2_unread", "0");
+      activeTier = 1;
+      isElevated = false;
+      tier2Unread = false;
+    }
+    setElevated(isElevated);
+    tierBadge.textContent = "T" + activeTier;
+    tier1Btn.classList.toggle("active", activeTier === 1);
+    tier2Btn.classList.toggle("active", activeTier === 2);
+    updateTier2UnreadBadge();
+    const savedLog = getChatLog(activeTier);
+    if (savedLog) {
+      output.innerHTML = savedLog;
+      output.scrollIntoView({ block: "end" });
+    }
   }
 
   async function tryUnlock() {
@@ -764,6 +842,7 @@
       gate.style.display = "none";
       app.hidden = false;
       checkConnection();
+      initAppState(true);
     } catch (e) {
       gateError.hidden = false;
       gateError.textContent = "Server rejected the password.";
@@ -870,16 +949,21 @@
       const data = await res.json();
       if (res.ok && data.tier === 2) {
         elevateStatus.textContent = "";
-        tierBadge.hidden = false;
         elevateInput.value = "";
         elevatePanel.hidden = true;
         elevateBtn.classList.remove("active");
+        setElevated(true);
         addEntry("system", "", "Full Mode activated for 5 minutes.");
 
         clearTimeout(window._elevateExpiryTimer);
         window._elevateExpiryTimer = setTimeout(() => {
-          tierBadge.hidden = true;
-          addEntry("system", "", "Full Mode expired — back to Tier 1.");
+          setElevated(false);
+          if (activeTier === 2) {
+            switchTier(1);
+            addEntry("system", "", "Full Mode expired — back to Tier 1.");
+          } else {
+            addEntry("system", "", "Full Mode expired.");
+          }
         }, (data.expires_in || 0) * 1000);
       } else {
         elevateStatus.textContent = data.error || "Failed";
@@ -908,11 +992,74 @@
     output.appendChild(entry);
     output.scrollIntoView({ block: "end" });
     entry.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (activeOverlay === null) setChatLog(activeTier, output.innerHTML);
     return entry;
   }
 
-  function addReplayButton(entry, audioValue) {
-    const btn = document.createElement("button");
+  // ---------- Tier switching (Tier 1 / Tier 2 as separate chats) ----------
+  const tier1Btn = document.getElementById("tier1Btn");
+  const tier2Btn = document.getElementById("tier2Btn");
+  const tier1Badge = document.getElementById("tier1Badge");
+  const tier2Badge = document.getElementById("tier2Badge");
+
+  function setElevated(value) {
+    isElevated = value;
+    sessionStorage.setItem("perla_elevated", value ? "1" : "0");
+    tier2Badge.textContent = value ? "" : "locked";
+    tier2Badge.classList.toggle("locked", !value);
+  }
+
+  function updateTier2UnreadBadge() {
+    if (activeTier === 1 && tier2Unread) {
+      tier2Badge.textContent = "new";
+      tier2Badge.classList.add("unread");
+    } else {
+      tier2Badge.classList.remove("unread");
+      if (isElevated) tier2Badge.textContent = "";
+    }
+  }
+
+  function switchTier(tier) {
+    if (tier === activeTier) return;
+    if (tier === 2 && !isElevated) {
+      // Route to elevation instead of silently failing — one tap gets
+      // you to the thing you actually need to do.
+      closeAppMenu();
+      elevateBtn.click();
+      return;
+    }
+
+    // Persist current tier's transcript before swapping.
+    if (activeOverlay === null) setChatLog(activeTier, output.innerHTML);
+
+    activeTier = tier;
+    sessionStorage.setItem("perla_active_tier", String(tier));
+    tierBadge.textContent = "T" + tier;
+
+    tier1Btn.classList.toggle("active", tier === 1);
+    tier2Btn.classList.toggle("active", tier === 2);
+
+    if (tier === 2) {
+      tier2Unread = false;
+      sessionStorage.setItem("perla_tier2_unread", "0");
+    }
+    updateTier2UnreadBadge();
+
+    if (activeOverlay === null) {
+      output.innerHTML = getChatLog(tier);
+      if (!output.innerHTML) {
+        addEntry("system", "", tier === 1
+          ? "Tier 1 — quick chat."
+          : "Tier 2 — Full Mode. Shell, files, and everything else are in play.");
+      }
+      output.scrollIntoView({ block: "end" });
+    }
+  }
+
+  tier1Btn.addEventListener("click", () => { closeAppMenu(); switchTier(1); });
+  tier2Btn.addEventListener("click", () => { closeAppMenu(); switchTier(2); });
+
+  function addReplayButton(entry, audioValue) {    const btn = document.createElement("button");
     btn.className = "replay-btn";
     btn.textContent = "Play";
     btn.addEventListener("click", () => playAudio(audioValue));
@@ -977,10 +1124,17 @@
           "Content-Type": "application/json",
           Authorization: "Bearer " + authToken,
         },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, tier: activeTier }),
       });
-      if (!res.ok) throw new Error("request failed");
       const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 403 && data.error) {
+          addEntry("system", "", data.error);
+        } else {
+          throw new Error("request failed");
+        }
+        return;
+      }
       const entry = addEntry("perla", "Perla", data.text || "(no response)");
       if (data.audio) {
         playAudio(data.audio);
@@ -1063,14 +1217,23 @@
     try {
       const form = new FormData();
       form.append("audio", blob, "input.webm");
+      form.append("tier", String(activeTier));
 
       const res = await fetch(CONFIG.ENDPOINT + CONFIG.VOICE_PATH, {
         method: "POST",
         headers: { Authorization: "Bearer " + authToken },
         body: form,
       });
-      if (!res.ok) throw new Error("request failed");
       const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 403 && data.error) {
+          if (data.transcript) addEntry("user", "You", data.transcript);
+          addEntry("system", "", data.error);
+        } else {
+          throw new Error("request failed");
+        }
+        return;
+      }
 
       if (data.transcript) addEntry("user", "You", data.transcript);
       const entry = addEntry("perla", "Perla", data.text || "(no response)");
@@ -1088,11 +1251,6 @@
       micTimer.textContent = "";
     }
   }
-
-  // ---------- Overlay view management (history / reminders share the
-  // main output area as a read-only overlay on top of live chat) ----------
-  let liveOutputHTML = null; // stash of live chat while an overlay is open
-  let activeOverlay = null;  // "history" | "reminders" | null
 
   // ---------- History (view-only past conversations) ----------
   const historyBtn = document.getElementById("historyBtn");
@@ -1406,6 +1564,14 @@
     });
 
     return list;
+  }
+
+  // ---------- Deferred init ----------
+  // Runs after every const/function above is declared. Handles the
+  // "already had a session token" auto-unlock path from earlier in this
+  // script, restoring saved tier/chat state for that case.
+  if (authToken) {
+    initAppState(false);
   }
 </script>
 

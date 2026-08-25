@@ -1,5 +1,3 @@
-# Version 26.8.25.1
+# Version 26.8.25.2
 
-- Reminders in Perla now work properly
-- Added history and reminders view in the perla web
-- Improved UI of the website
+- Separated Tier 1 and Tier 2 chats in the web interface for Perla
