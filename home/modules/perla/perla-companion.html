@@ -153,7 +153,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 18px 20px 14px;
+    padding: 14px 16px;
     border-bottom: 1px solid var(--rule);
   }
 
@@ -179,17 +179,16 @@
   .status {
     display: flex;
     align-items: center;
-    gap: 7px;
-    font-size: 12px;
-    color: var(--ink-faint);
-    letter-spacing: 0.03em;
+    gap: 4px;
   }
 
   .status-dot {
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--ink-faint);
+    margin-left: 6px;
+    flex-shrink: 0;
     transition: background 0.3s ease, box-shadow 0.3s ease;
   }
   .status-dot.ok { background: #7fae6a; box-shadow: 0 0 8px rgba(127,174,106,0.6); }
@@ -384,29 +383,6 @@
     box-shadow: 0 0 10px rgba(184,69,47,0.45);
   }
 
-  .elevate-panel {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 20px;
-    background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
-    border-bottom: 1px solid var(--wax-dim, var(--rule));
-    box-shadow: inset 0 1px 0 rgba(201,123,141,0.06);
-  }
-  .elevate-panel input {
-    flex: 1;
-    background: var(--bg);
-    border: 1px solid var(--rule);
-    border-radius: 8px;
-    color: var(--ink);
-    padding: 8px 12px;
-    font-size: 0.85rem;
-    letter-spacing: 0.06em;
-    outline: none;
-    transition: border-color 0.2s ease;
-  }
-  .elevate-panel input::placeholder { color: var(--ink-faint); }
-  .elevate-panel input:focus { border-color: var(--wax-bright); }
   .elevate-submit {
     background: linear-gradient(180deg, rgba(184,69,47,0.22), rgba(184,69,47,0.08));
     color: var(--wax-bright);
@@ -417,15 +393,230 @@
     letter-spacing: 0.04em;
     cursor: pointer;
     transition: background 0.2s ease, transform 0.15s ease;
+    flex-shrink: 0;
   }
   .elevate-submit:hover { background: rgba(184,69,47,0.32); }
   .elevate-submit:active { transform: scale(0.96); }
-  .elevate-status {
+  .panel-status {
+    display: block;
+    margin-top: 8px;
     font-size: 0.72rem;
     color: var(--ink-dim);
     font-style: italic;
-    white-space: nowrap;
   }
+  .panel-status:empty { display: none; }
+
+  /* ---------- Header icon buttons (shared: history, elevate) ---------- */
+  .icon-btn {
+    background: transparent;
+    border: 1px solid var(--rule);
+    color: var(--ink-dim);
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+    flex-shrink: 0;
+  }
+  .icon-btn:hover { border-color: var(--brass-dim); color: var(--brass-bright); }
+  .icon-btn.active {
+    border-color: var(--brass);
+    color: var(--brass-bright);
+    background: rgba(201,123,141,0.14);
+  }
+
+  /* ---------- Hamburger menu button ---------- */
+  .menu-btn { position: relative; }
+
+  .hamburger-lines {
+    width: 15px;
+    height: 11px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .hamburger-lines span {
+    display: block;
+    width: 100%;
+    height: 1.5px;
+    background: currentColor;
+    border-radius: 1px;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+  .menu-btn.active .hamburger-lines span:nth-child(1) {
+    transform: translateY(4.5px) rotate(45deg);
+  }
+  .menu-btn.active .hamburger-lines span:nth-child(2) { opacity: 0; }
+  .menu-btn.active .hamburger-lines span:nth-child(3) {
+    transform: translateY(-4.5px) rotate(-45deg);
+  }
+
+  /* ---------- App menu (hamburger dropdown) ---------- */
+  .app-menu {
+    display: flex;
+    flex-direction: column;
+    padding: 8px;
+    background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
+    border-bottom: 1px solid var(--rule);
+    animation: panel-drop 0.18s ease;
+  }
+  .app-menu[hidden] { display: none; }
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 15px;
+    text-align: left;
+    padding: 12px 12px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .menu-item:hover { background: rgba(201,123,141,0.08); }
+  .menu-item.active {
+    background: rgba(201,123,141,0.14);
+    color: var(--brass-bright);
+  }
+  .menu-item-icon {
+    width: 22px;
+    flex-shrink: 0;
+    text-align: center;
+    font-size: 15px;
+  }
+  .menu-item-label { flex: 1; }
+  .menu-item-badge {
+    font-size: 11px;
+    color: var(--ink-faint);
+    letter-spacing: 0.04em;
+  }
+
+  /* ---------- Dropdown panels (history day picker, elevate token) ---------- */
+  .dropdown-panel {
+    padding: 12px 16px;
+    background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
+    border-bottom: 1px solid var(--rule);
+    animation: panel-drop 0.18s ease;
+  }
+
+  @keyframes panel-drop {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .dropdown-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dropdown-row input,
+  .dropdown-row select {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    color: var(--ink);
+    padding: 9px 11px;
+    font-size: 0.85rem;
+    font-family: var(--font-serif);
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+  .dropdown-row input::placeholder { color: var(--ink-faint); }
+  .dropdown-row input:focus,
+  .dropdown-row select:focus { border-color: var(--brass-dim); }
+
+  .entry-tier0 .entry-label { color: var(--ink-faint); }
+  .entry-tier0 p { color: var(--ink-dim); font-style: italic; }
+
+  /* ---------- Reminders ---------- */
+  .reminder-section-title {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .reminder-section-title.missed { color: var(--wax-bright); }
+  .reminder-section-title.pending { color: var(--brass-bright); }
+
+  .reminder-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--rule-faint);
+  }
+  .reminder-row:last-child { border-bottom: none; }
+
+  .reminder-glyph {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    margin-top: 1px;
+  }
+  .reminder-glyph.pending { color: var(--brass-bright); }
+  .reminder-glyph.overdue { color: var(--wax-bright); }
+  .reminder-glyph.missed { color: var(--wax-bright); }
+  .reminder-glyph.delivered { color: #7fae6a; }
+
+  .reminder-body { flex: 1; min-width: 0; }
+  .reminder-text {
+    font-size: 15px;
+    line-height: 1.4;
+    color: var(--ink);
+  }
+  .reminder-meta {
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-top: 3px;
+  }
+
+  .reminder-empty {
+    color: var(--ink-faint);
+    font-style: italic;
+    font-size: 14px;
+    padding: 4px 0 18px;
+  }
+
+  .reminder-collapsible summary {
+    cursor: pointer;
+    list-style: none;
+  }
+  .reminder-collapsible summary::-webkit-details-marker { display: none; }
+  .reminder-collapsible summary .reminder-section-title { margin-bottom: 10px; }
+  .reminder-collapsible summary .disclosure-arrow {
+    display: inline-block;
+    transition: transform 0.15s ease;
+    margin-left: auto;
+    color: var(--ink-faint);
+  }
+  .reminder-collapsible[open] summary .disclosure-arrow { transform: rotate(90deg); }
+
+  .reminder-section {
+    margin-bottom: 22px;
+  }
+  .reminder-section:last-child { margin-bottom: 0; }
 </style>
 </head>
 <body>
@@ -448,15 +639,47 @@
       </div>
       <div class="status">
         <span id="tierBadge" class="tier-badge" hidden>T2</span>
-        <span id="statusText">not linked</span>
-        <span id="statusDot" class="status-dot"></span>
+        <button id="menuBtn" class="icon-btn menu-btn" aria-label="Menu" aria-expanded="false" title="Menu">
+          <span class="hamburger-lines"><span></span><span></span><span></span></span>
+        </button>
+        <span class="status-dot" id="statusDot"></span>
       </div>
     </header>
 
-    <div id="elevatePanel" class="elevate-panel">
-      <input id="elevateInput" type="password" placeholder="Elevation token" autocomplete="off" />
-      <button id="elevateSubmit" class="elevate-submit">Activate</button>
-      <span id="elevateStatus" class="elevate-status"></span>
+    <nav id="appMenu" class="app-menu" hidden>
+      <button id="elevateBtn" class="menu-item">
+        <span class="menu-item-icon">⚡</span>
+        <span class="menu-item-label">Full Mode</span>
+      </button>
+      <button id="remindersBtn" class="menu-item">
+        <span class="menu-item-icon">⏰</span>
+        <span class="menu-item-label">Reminders</span>
+      </button>
+      <button id="historyBtn" class="menu-item">
+        <span class="menu-item-icon">🕘</span>
+        <span class="menu-item-label">History</span>
+      </button>
+    </nav>
+
+    <div id="historyPanel" class="dropdown-panel" hidden>
+      <div class="dropdown-row">
+        <select id="historyDaySelect">
+          <option value="">Select a day…</option>
+        </select>
+      </div>
+      <span id="historyStatus" class="panel-status"></span>
+    </div>
+
+    <div id="elevatePanel" class="dropdown-panel" hidden>
+      <div class="dropdown-row">
+        <input id="elevateInput" type="password" placeholder="Elevation token" autocomplete="off" />
+        <button id="elevateSubmit" class="elevate-submit">Activate</button>
+      </div>
+      <span id="elevateStatus" class="panel-status"></span>
+    </div>
+
+    <div id="remindersBar" class="dropdown-panel" hidden>
+      <span id="remindersStatus" class="panel-status"></span>
     </div>
 
     <main class="page">
@@ -487,6 +710,9 @@
     VOICE_PATH: "/api/voice",
     HEALTH_PATH: "/api/health",
     GATE_PATH: "/api/gate",
+    HISTORY_DAYS_PATH: "/api/history/days",
+    HISTORY_DAY_PATH: "/api/history/day",
+    REMINDERS_PATH: "/api/reminders",
   };
 
   const GATE_PASSWORD = "goharumer"; // UX gate only — short, human-typeable
@@ -556,12 +782,14 @@
 
   // ---------- Status ----------
   const statusDot = document.getElementById("statusDot");
-  const statusText = document.getElementById("statusText");
+  function setStatusText(text) {
+    statusDot.title = text;
+  }
 
   async function checkConnection() {
     if (!CONFIG.ENDPOINT) {
       statusDot.className = "status-dot";
-      statusText.textContent = "not linked";
+      setStatusText("not linked");
       return;
     }
     try {
@@ -570,22 +798,61 @@
       });
       if (res.ok) {
         statusDot.className = "status-dot ok";
-        statusText.textContent = "connected";
+        setStatusText("connected");
       } else {
         throw new Error("bad status");
       }
     } catch (e) {
       statusDot.className = "status-dot err";
-      statusText.textContent = "unreachable";
+      setStatusText("unreachable");
     }
   }
 
+  // ---------- Hamburger menu ----------
+  const menuBtn = document.getElementById("menuBtn");
+  const appMenu = document.getElementById("appMenu");
+
+  function closeAppMenu() {
+    appMenu.hidden = true;
+    menuBtn.classList.remove("active");
+    menuBtn.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleAppMenu() {
+    const opening = appMenu.hidden;
+    appMenu.hidden = !opening;
+    menuBtn.classList.toggle("active", opening);
+    menuBtn.setAttribute("aria-expanded", String(opening));
+  }
+
+  menuBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleAppMenu();
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!appMenu.hidden && !appMenu.contains(e.target) && e.target !== menuBtn && !menuBtn.contains(e.target)) {
+      closeAppMenu();
+    }
+  });
+
   // ---------- Elevation (Tier 2) ----------
+  const elevateBtn = document.getElementById("elevateBtn");
   const elevatePanel = document.getElementById("elevatePanel");
   const elevateInput = document.getElementById("elevateInput");
   const elevateSubmit = document.getElementById("elevateSubmit");
   const elevateStatus = document.getElementById("elevateStatus");
   const tierBadge = document.getElementById("tierBadge");
+
+  elevateBtn.addEventListener("click", () => {
+    closeAppMenu();
+    closeHistoryPanel();
+    closeRemindersPanel();
+    const opening = elevatePanel.hidden;
+    elevatePanel.hidden = !opening;
+    elevateBtn.classList.toggle("active", opening);
+    if (opening) elevateInput.focus();
+  });
 
   elevateSubmit.addEventListener("click", async () => {
     const token = elevateInput.value.trim();
@@ -605,6 +872,8 @@
         elevateStatus.textContent = "";
         tierBadge.hidden = false;
         elevateInput.value = "";
+        elevatePanel.hidden = true;
+        elevateBtn.classList.remove("active");
         addEntry("system", "", "Full Mode activated for 5 minutes.");
 
         clearTimeout(window._elevateExpiryTimer);
@@ -718,11 +987,11 @@
         addReplayButton(entry, data.audio);
       }
       statusDot.className = "status-dot ok";
-      statusText.textContent = "connected";
+      setStatusText("connected");
     } catch (e) {
       addEntry("system", "", "Couldn't reach Perla. Check the connection.");
       statusDot.className = "status-dot err";
-      statusText.textContent = "unreachable";
+      setStatusText("unreachable");
     }
   }
 
@@ -810,14 +1079,333 @@
         addReplayButton(entry, data.audio);
       }
       statusDot.className = "status-dot ok";
-      statusText.textContent = "connected";
+      setStatusText("connected");
     } catch (e) {
       addEntry("system", "", "Couldn't reach Perla. Check the connection.");
       statusDot.className = "status-dot err";
-      statusText.textContent = "unreachable";
+      setStatusText("unreachable");
     } finally {
       micTimer.textContent = "";
     }
+  }
+
+  // ---------- Overlay view management (history / reminders share the
+  // main output area as a read-only overlay on top of live chat) ----------
+  let liveOutputHTML = null; // stash of live chat while an overlay is open
+  let activeOverlay = null;  // "history" | "reminders" | null
+
+  // ---------- History (view-only past conversations) ----------
+  const historyBtn = document.getElementById("historyBtn");
+  const historyPanel = document.getElementById("historyPanel");
+  const historyDaySelect = document.getElementById("historyDaySelect");
+  const historyStatus = document.getElementById("historyStatus");
+  const composer = document.querySelector(".composer");
+
+  let daysLoaded = false;
+
+  function formatDayLabel(dateStr) {
+    // dateStr is YYYY-MM-DD
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    const today = new Date();
+    const isToday = dt.toDateString() === today.toDateString();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const isYesterday = dt.toDateString() === yesterday.toDateString();
+    const label = dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+    if (isToday) return `Today — ${label}`;
+    if (isYesterday) return `Yesterday — ${label}`;
+    return label;
+  }
+
+  function closeHistoryPanel() {
+    if (activeOverlay !== "history") return;
+    activeOverlay = null;
+    historyBtn.classList.remove("active");
+    historyPanel.hidden = true;
+    composer.hidden = false;
+    historyDaySelect.value = "";
+    historyStatus.textContent = "";
+    output.innerHTML = liveOutputHTML !== null ? liveOutputHTML : "";
+    output.scrollIntoView({ block: "end" });
+  }
+
+  async function openHistoryPanel() {
+    if (!CONFIG.ENDPOINT) {
+      addEntry("system", "", "Not linked to Perla yet — set CONFIG.ENDPOINT.");
+      return;
+    }
+    elevatePanel.hidden = true;
+    elevateBtn.classList.remove("active");
+    closeRemindersPanel();
+
+    activeOverlay = "history";
+    historyBtn.classList.add("active");
+    historyPanel.hidden = false;
+    composer.hidden = true;
+    liveOutputHTML = output.innerHTML;
+    output.innerHTML = "";
+    addEntry("system", "", "Viewing past conversations — read only.");
+
+    if (!daysLoaded) {
+      historyStatus.textContent = "Loading days…";
+      try {
+        const res = await fetch(CONFIG.ENDPOINT + CONFIG.HISTORY_DAYS_PATH, {
+          headers: { Authorization: "Bearer " + authToken },
+        });
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        historyDaySelect.innerHTML = '<option value="">Select a day…</option>';
+        (data.days || []).forEach((d) => {
+          const opt = document.createElement("option");
+          opt.value = d;
+          opt.textContent = formatDayLabel(d);
+          historyDaySelect.appendChild(opt);
+        });
+        daysLoaded = true;
+        historyStatus.textContent = (data.days || []).length
+          ? ""
+          : "No past conversations found.";
+      } catch (e) {
+        historyStatus.textContent = "Couldn't load days.";
+      }
+    }
+  }
+
+  historyBtn.addEventListener("click", () => {
+    closeAppMenu();
+    if (activeOverlay === "history") {
+      closeHistoryPanel();
+    } else {
+      openHistoryPanel();
+    }
+  });
+
+  historyDaySelect.addEventListener("change", async () => {
+    const date = historyDaySelect.value;
+    output.innerHTML = "";
+    if (!date) return;
+
+    historyStatus.textContent = "Loading…";
+    try {
+      const res = await fetch(
+        CONFIG.ENDPOINT + CONFIG.HISTORY_DAY_PATH + "?date=" + encodeURIComponent(date),
+        { headers: { Authorization: "Bearer " + authToken } }
+      );
+      if (!res.ok) throw new Error("failed");
+      const data = await res.json();
+      const entries = data.entries || [];
+
+      if (entries.length === 0) {
+        addEntry("system", "", "No conversations logged that day.");
+        historyStatus.textContent = "";
+        return;
+      }
+
+      entries.forEach((e) => {
+        renderHistoryEntry(e);
+      });
+      historyStatus.textContent = `${entries.length} exchange${entries.length === 1 ? "" : "s"}`;
+    } catch (e) {
+      addEntry("system", "", "Couldn't load that day's conversation.");
+      historyStatus.textContent = "";
+    }
+  });
+
+  function renderHistoryEntry(e) {
+    // Same visual shape as live chat: user bubble, then Perla's reply.
+    // Tier 0 (direct system dispatch, no LLM) gets a subtler treatment
+    // since it's a command echo rather than a conversational reply.
+    const isTier0 = e.tier === 0;
+
+    if (e.input) {
+      addHistoryEntry("user", "You", e.input, e.time);
+    }
+    if (e.response) {
+      const kind = isTier0 ? "perla entry-tier0" : "perla";
+      addHistoryEntry(kind, "Perla", e.response, e.time);
+    }
+  }
+
+  function addHistoryEntry(kind, label, text, timeStr) {
+    const entry = document.createElement("div");
+    entry.className = "entry entry-" + kind.split(" ")[0];
+    if (kind.includes("entry-tier0")) entry.classList.add("entry-tier0");
+    entry.innerHTML =
+      (label ? `<div class="entry-label">${label}</div>` : "") +
+      `<p></p>` +
+      `<div class="entry-time">${timeStr || ""}</div>`;
+    entry.querySelector("p").textContent = text;
+    output.appendChild(entry);
+    return entry;
+  }
+
+  // ---------- Reminders (view-only, status-grouped) ----------
+  const remindersBtn = document.getElementById("remindersBtn");
+  const remindersBar = document.getElementById("remindersBar");
+  const remindersStatus = document.getElementById("remindersStatus");
+
+  function closeRemindersPanel() {
+    if (activeOverlay !== "reminders") return;
+    activeOverlay = null;
+    remindersBtn.classList.remove("active");
+    remindersBar.hidden = true;
+    composer.hidden = false;
+    remindersStatus.textContent = "";
+    output.innerHTML = liveOutputHTML !== null ? liveOutputHTML : "";
+    output.scrollIntoView({ block: "end" });
+  }
+
+  async function openRemindersPanel() {
+    if (!CONFIG.ENDPOINT) {
+      addEntry("system", "", "Not linked to Perla yet — set CONFIG.ENDPOINT.");
+      return;
+    }
+    elevatePanel.hidden = true;
+    elevateBtn.classList.remove("active");
+    closeHistoryPanel();
+
+    activeOverlay = "reminders";
+    remindersBtn.classList.add("active");
+    remindersBar.hidden = false;
+    composer.hidden = true;
+    liveOutputHTML = output.innerHTML;
+    output.innerHTML = "";
+    remindersStatus.textContent = "Loading…";
+
+    try {
+      const res = await fetch(CONFIG.ENDPOINT + CONFIG.REMINDERS_PATH, {
+        headers: { Authorization: "Bearer " + authToken },
+      });
+      if (!res.ok) throw new Error("failed");
+      const data = await res.json();
+      renderReminders(data);
+      remindersStatus.textContent = "";
+    } catch (e) {
+      output.innerHTML = "";
+      addEntry("system", "", "Couldn't load reminders.");
+      remindersStatus.textContent = "";
+    }
+  }
+
+  remindersBtn.addEventListener("click", () => {
+    closeAppMenu();
+    if (activeOverlay === "reminders") {
+      closeRemindersPanel();
+    } else {
+      openRemindersPanel();
+    }
+  });
+
+  function formatReminderTime(iso) {
+    // iso like 2026-08-26T18:00 -> "Tue, Aug 26 · 6:00 PM"; if it's today,
+    // just the time.
+    if (!iso) return "";
+    const dt = new Date(iso);
+    if (isNaN(dt.getTime())) return iso;
+    const today = new Date();
+    const isToday = dt.toDateString() === today.toDateString();
+    const timeStr = dt.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    if (isToday) return `Today · ${timeStr}`;
+    const dateStr = dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    return `${dateStr} · ${timeStr}`;
+  }
+
+  function renderReminders(data) {
+    output.innerHTML = "";
+
+    const pending = data.pending || [];
+    const missed = data.missed || [];
+    const delivered = data.delivered || [];
+
+    if (pending.length === 0 && missed.length === 0 && delivered.length === 0) {
+      const wrap = document.createElement("div");
+      wrap.className = "reminder-empty";
+      wrap.textContent = "No reminders set.";
+      output.appendChild(wrap);
+      return;
+    }
+
+    if (missed.length > 0) {
+      output.appendChild(buildReminderSection(
+        "missed", `⚠ Missed (${missed.length})`, missed,
+        (r) => `Was due ${formatReminderTime(r.due)} — caught at ${formatReminderTime(r.delivered)}`
+      ));
+    }
+
+    // Upcoming always shows, even when empty, so it's clear there's
+    // nothing pending rather than looking like the section didn't load.
+    const upcomingSection = buildReminderSection(
+      "pending", `Upcoming (${pending.length})`, pending,
+      (r) => r.overdue ? `Due ${formatReminderTime(r.due)} — waiting to fire` : `Due ${formatReminderTime(r.due)}`,
+      "Nothing on the books."
+    );
+    output.appendChild(upcomingSection);
+
+    if (delivered.length > 0) {
+      const details = document.createElement("details");
+      details.className = "reminder-collapsible reminder-section";
+      const summary = document.createElement("summary");
+      summary.innerHTML = `<div class="reminder-section-title">Delivered (${delivered.length})<span class="disclosure-arrow">›</span></div>`;
+      details.appendChild(summary);
+      const list = buildReminderList(delivered, "delivered",
+        (r) => `Delivered ${formatReminderTime(r.delivered)}`
+      );
+      details.appendChild(list);
+      output.appendChild(details);
+    }
+  }
+
+  function buildReminderSection(statusClass, title, items, metaFn, emptyText) {
+    const section = document.createElement("div");
+    section.className = "reminder-section";
+    const heading = document.createElement("div");
+    heading.className = "reminder-section-title " + statusClass;
+    heading.textContent = title;
+    section.appendChild(heading);
+
+    if (items.length === 0 && emptyText) {
+      const empty = document.createElement("div");
+      empty.className = "reminder-empty";
+      empty.textContent = emptyText;
+      section.appendChild(empty);
+      return section;
+    }
+
+    section.appendChild(buildReminderList(items, statusClass, metaFn));
+    return section;
+  }
+
+  function buildReminderList(items, statusClass, metaFn) {
+    const list = document.createElement("div");
+    const glyphs = { pending: "⏰", missed: "⚠", delivered: "✓" };
+
+    items.forEach((r) => {
+      const row = document.createElement("div");
+      row.className = "reminder-row";
+
+      const glyphClass = statusClass === "pending" && r.overdue ? "overdue" : statusClass;
+      const glyph = document.createElement("div");
+      glyph.className = "reminder-glyph " + glyphClass;
+      glyph.textContent = statusClass === "pending" ? glyphs.pending : glyphs[statusClass];
+
+      const body = document.createElement("div");
+      body.className = "reminder-body";
+      const text = document.createElement("div");
+      text.className = "reminder-text";
+      text.textContent = r.text;
+      const meta = document.createElement("div");
+      meta.className = "reminder-meta";
+      meta.textContent = metaFn(r);
+      body.appendChild(text);
+      body.appendChild(meta);
+
+      row.appendChild(glyph);
+      row.appendChild(body);
+      list.appendChild(row);
+    });
+
+    return list;
   }
 </script>
 

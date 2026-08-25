@@ -31,7 +31,7 @@ import uuid
 from datetime import datetime
 from http import HTTPStatus
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 import threading
 
 # ---------------------------------------------------------------------------
@@ -465,6 +465,165 @@ def log_request(input_text, response, tier, tool_used, source="remote"):
         print(f"ERROR: logging failed: {e}", flush=True)
 
 
+HISTORY_HEADER_RE = re.compile(
+    r"^##\s+(\d{2}:\d{2})\s+—\s+Tier\s+(\d+)\s*\(([^)]*)\)\s*$"
+)
+HISTORY_INPUT_RE = re.compile(r"^-\s+\*\*Input:\*\*\s?(.*)$")
+HISTORY_RESPONSE_RE = re.compile(r"^-\s+\*\*Response:\*\*\s?(.*)$")
+
+
+def list_history_days():
+    """Union of dates that have a log file in either Conversations/ or
+    Command Log/, newest first. Filenames are expected as YYYY-MM-DD.md."""
+    date_re = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")
+    days = set()
+    for folder in ("Conversations", "Command Log"):
+        dir_path = os.path.join(PERLA_VAULT, folder)
+        try:
+            for fname in os.listdir(dir_path):
+                m = date_re.match(fname)
+                if m:
+                    days.add(m.group(1))
+        except FileNotFoundError:
+            continue
+    return sorted(days, reverse=True)
+
+
+def _parse_log_file(path):
+    """Parse a single day's log file (Conversations or Command Log schema)
+    into a list of {time, tier, source, input, response} dicts. Tolerant
+    of malformed/legacy lines — skips anything that doesn't match."""
+    entries = []
+    try:
+        with open(path, "r") as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        return entries
+
+    current = None
+    pending_field = None  # "input" or "response", for multi-line continuation
+
+    def flush():
+        if current is not None and (current["input"] or current["response"]):
+            entries.append(current)
+
+    for line in lines:
+        header_m = HISTORY_HEADER_RE.match(line)
+        if header_m:
+            flush()
+            time_str, tier_str, source = header_m.groups()
+            current = {
+                "time": time_str,
+                "tier": int(tier_str),
+                "source": source.strip(),
+                "input": "",
+                "response": "",
+            }
+            pending_field = None
+            continue
+
+        if current is None:
+            continue
+
+        input_m = HISTORY_INPUT_RE.match(line)
+        if input_m:
+            current["input"] = input_m.group(1)
+            pending_field = "input"
+            continue
+
+        response_m = HISTORY_RESPONSE_RE.match(line)
+        if response_m:
+            current["response"] = response_m.group(1)
+            pending_field = "response"
+            continue
+
+        if line.strip() == "":
+            pending_field = None
+            continue
+
+        # Continuation line of a multi-line input/response block.
+        if pending_field in ("input", "response"):
+            current[pending_field] = (current[pending_field] + "\n" + line).rstrip()
+
+    flush()
+    return entries
+
+
+def get_history_for_day(date_str):
+    """Merge Conversations/{date}.md and Command Log/{date}.md, sorted by
+    time. `date_str` must already be validated as YYYY-MM-DD by the caller."""
+    entries = []
+    for folder in ("Conversations", "Command Log"):
+        path = os.path.join(PERLA_VAULT, folder, f"{date_str}.md")
+        entries.extend(_parse_log_file(path))
+
+    entries.sort(key=lambda e: e["time"])
+    return entries
+
+
+# ---------------------------------------------------------------------------
+# Reminders — view-only read of Reminders.md for the companion UI.
+# Same file/schema perla-reminder-check.py already owns; this is read-only.
+# ---------------------------------------------------------------------------
+REMINDER_PENDING_RE = re.compile(
+    r"^-\s\[\s\]\s([0-9T:-]+)\s\|\sid:([a-f0-9]+)\s\|\s(.*)$"
+)
+REMINDER_DONE_RE = re.compile(
+    r"^-\s\[x\]\s([0-9T:-]+)\s\|\sid:([a-f0-9]+)\s\|\s(.*?)\s\(delivered\s([0-9T:-]+)(,\smissed)?\)\s*$"
+)
+
+
+def get_reminders():
+    """Parse Reminders.md into three buckets: pending (not yet due, or due
+    but not yet processed by the checker), missed (delivered late), and
+    delivered (delivered on time). Sorted by due time within each bucket."""
+    reminders_file = os.path.join(PERLA_VAULT, "Reminders.md")
+    pending, missed, delivered = [], [], []
+
+    try:
+        with open(reminders_file, "r") as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        return {"pending": [], "missed": [], "delivered": []}
+
+    now_iso = datetime.now().isoformat(timespec="minutes")
+
+    for line in lines:
+        m = REMINDER_PENDING_RE.match(line)
+        if m:
+            due, rid, text = m.groups()
+            pending.append({
+                "id": rid,
+                "due": due,
+                "text": text,
+                "overdue": due <= now_iso,
+            })
+            continue
+
+        m = REMINDER_DONE_RE.match(line)
+        if m:
+            due, rid, text, delivered_ts, missed_suffix = m.groups()
+            entry = {
+                "id": rid,
+                "due": due,
+                "text": text,
+                "delivered": delivered_ts,
+            }
+            if missed_suffix:
+                missed.append(entry)
+            else:
+                delivered.append(entry)
+            continue
+        # Lines that don't match either pattern (headers, blank lines,
+        # malformed entries) are silently skipped — read-only, tolerant.
+
+    pending.sort(key=lambda e: e["due"])
+    missed.sort(key=lambda e: e["due"], reverse=True)
+    delivered.sort(key=lambda e: e["due"], reverse=True)
+
+    return {"pending": pending, "missed": missed, "delivered": delivered}
+
+
 def log_memory_mismatch(input_text, response, tier, source="remote"):
     log_dir = os.path.join(PERLA_VAULT, "Review")
     os.makedirs(log_dir, exist_ok=True)
@@ -620,6 +779,47 @@ class CompanionHandler(BaseHTTPRequestHandler):
                 return
             audio_path = os.path.join(PERLA_AUDIO_DIR, filename)
             self.send_file(audio_path, "audio/mpeg")
+            return
+
+        if path == "/api/history/days":
+            if not self.check_auth():
+                return
+            try:
+                days = list_history_days()
+            except Exception as e:
+                print(f"ERROR: listing history days failed: {e}", flush=True)
+                self.send_json(500, {"error": "failed to list history"})
+                return
+            self.send_json(200, {"days": days})
+            return
+
+        if path == "/api/history/day":
+            if not self.check_auth():
+                return
+            qs = parse_qs(parsed.query)
+            date_str = (qs.get("date") or [""])[0]
+            if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+                self.send_json(400, {"error": "invalid or missing date (expected YYYY-MM-DD)"})
+                return
+            try:
+                entries = get_history_for_day(date_str)
+            except Exception as e:
+                print(f"ERROR: reading history for {date_str} failed: {e}", flush=True)
+                self.send_json(500, {"error": "failed to read history"})
+                return
+            self.send_json(200, {"date": date_str, "entries": entries})
+            return
+
+        if path == "/api/reminders":
+            if not self.check_auth():
+                return
+            try:
+                reminders = get_reminders()
+            except Exception as e:
+                print(f"ERROR: reading reminders failed: {e}", flush=True)
+                self.send_json(500, {"error": "failed to read reminders"})
+                return
+            self.send_json(200, reminders)
             return
 
         if path == "/":
