@@ -44,6 +44,7 @@ PERLA_MODEL = os.environ.get("PERLA_MODEL", "opencode/deepseek-v4-flash-free")
 PERLA_VOICE = os.environ.get("PERLA_VOICE", "en_US-libritts_r-medium")
 PERLA_VAULT = os.environ.get("PERLA_VAULT", os.path.expanduser("~/Documents/Obsidian/PerlaNew"))
 PERLA_PERSONA = os.environ.get("PERLA_PERSONA", os.path.expanduser("~/.config/perla/persona.md"))
+PERLA_AVATAR = os.environ.get("PERLA_AVATAR", os.path.expanduser("~/.config/perla/profile.jpg"))
 PERLA_WHISPER_MODEL = os.environ.get("PERLA_WHISPER_MODEL", "tiny")
 PERLA_WHISPER_LANG = os.environ.get("PERLA_WHISPER_LANG", "en")
 PERLA_AUDIO_DIR = os.environ.get("PERLA_AUDIO_DIR", os.path.expanduser("~/.local/share/perla-audio"))
@@ -787,6 +788,23 @@ class CompanionHandler(BaseHTTPRequestHandler):
 
         if path == "/api/health":
             self.send_json(200, {"status": "ok"})
+            return
+
+        if path == "/api/avatar":
+            # Unauthenticated by design: the browser's <link rel="icon">
+            # and the pre-gate lock screen both need to load this before
+            # any auth token exists, and a profile picture isn't sensitive
+            # vault/conversation data — same trust tier as /api/health.
+            if os.path.exists(PERLA_AVATAR):
+                ext = os.path.splitext(PERLA_AVATAR)[1].lower()
+                content_type = {
+                    ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                    ".png": "image/png", ".webp": "image/webp",
+                    ".gif": "image/gif",
+                }.get(ext, "application/octet-stream")
+                self.send_file(PERLA_AVATAR, content_type)
+            else:
+                self.send_error(404)
             return
 
         if path.startswith("/api/audio/"):

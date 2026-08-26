@@ -78,6 +78,14 @@
     font-size: 24px;
     color: var(--brass-bright);
     background: radial-gradient(circle at 35% 30%, rgba(201,123,141,0.18), transparent 70%);
+    overflow: hidden;
+  }
+  .gate-mark img,
+  .brand-mark img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 
   .gate-card h1 {
@@ -169,6 +177,7 @@
     justify-content: center;
     font-size: 15px;
     color: var(--brass-bright);
+    overflow: hidden;
   }
 
   .brand-name {
@@ -634,7 +643,7 @@
 
   <div id="gate" class="gate">
     <div class="gate-card">
-      <div class="gate-mark">P</div>
+      <div id="gateMark" class="gate-mark">P</div>
       <h1>Perla</h1>
       <input id="gatePassword" type="password" placeholder="password" autocomplete="off" inputmode="text" />
       <button id="gateSubmit">Unlock</button>
@@ -645,7 +654,7 @@
   <div id="app" class="app" hidden>
     <header class="app-header">
       <div class="brand">
-        <span class="brand-mark">P</span>
+        <span id="brandMark" class="brand-mark">P</span>
         <span class="brand-name">Perla</span>
       </div>
       <div class="status">
@@ -735,11 +744,39 @@
     HISTORY_DAYS_PATH: "/api/history/days",
     HISTORY_DAY_PATH: "/api/history/day",
     REMINDERS_PATH: "/api/reminders",
+    AVATAR_PATH: "/api/avatar",
   };
 
   const GATE_PASSWORD = "goharumer"; // UX gate only — short, human-typeable
 
   let authToken = sessionStorage.getItem("perla_session_token") || null;
+
+  // ---------- Custom avatar (profile.jpg) ----------
+  // Unauthenticated probe — the server serves this without auth since a
+  // profile picture isn't sensitive, and the browser's own favicon fetch
+  // can't carry an Authorization header anyway. Falls back to the "P"
+  // mark (already in the markup) if the file isn't there.
+  (function loadAvatar() {
+    if (!CONFIG.ENDPOINT) return;
+    const avatarUrl = CONFIG.ENDPOINT + CONFIG.AVATAR_PATH;
+    const probe = new Image();
+    probe.onload = () => {
+      document.querySelectorAll("#gateMark, #brandMark").forEach((mark) => {
+        mark.textContent = "";
+        const img = document.createElement("img");
+        img.src = avatarUrl;
+        img.alt = "Perla";
+        mark.appendChild(img);
+      });
+      let favicon = document.querySelector('link[rel="icon"]');
+      if (favicon) favicon.href = avatarUrl;
+    };
+    probe.onerror = () => {
+      // No profile.jpg deployed yet — keep the default "P" mark and SVG
+      // favicon already in the markup, no action needed.
+    };
+    probe.src = avatarUrl;
+  })();
 
   // ---------- Tier state (separate Tier 1 / Tier 2 chats) ----------
   // Each tier keeps its own chat transcript. Stored in sessionStorage so a

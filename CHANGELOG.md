@@ -1,3 +1,3 @@
-# Version 26.8.25.2
+# Version 26.8.26.1
 
-- Separated Tier 1 and Tier 2 chats in the web interface for Perla
+- Added profile photo for Perla

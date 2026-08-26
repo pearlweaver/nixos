@@ -268,6 +268,13 @@ in {
     source = ./perla/perla-companion.html;
   };
 
+  # === Profile picture (avatar shown in the companion UI: gate screen,
+  # header, and favicon) ===
+  home.file.".config/perla/profile.jpg" = {
+    force = true;
+    source = ./perla/profile.jpg;
+  };
+
   # === T1 OpenCode server (restricted — Obsidian MCP only, no shell) ===
   home.file.".local/bin/perla-t1-server" = {
     force = true;
