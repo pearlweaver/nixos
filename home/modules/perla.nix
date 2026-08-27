@@ -100,6 +100,13 @@ in {
             OBSIDIAN_VERIFY_SSL = "false";
           };
         };
+        view-screen = {
+          type = "local";
+          command = [ "${config.home.homeDirectory}/.local/bin/perla-view-screen-mcp" ];
+          env = {
+            PERLA_COMPANION_PORT = "8443";
+          };
+        };
       };
     };
   };
@@ -186,6 +193,44 @@ in {
       # startup. Tool-call-level behavior should still be spot-checked
       # (e.g. via `npx @modelcontextprotocol/inspector`) after any bump.
       exec npx -y obsidian-mcp-server@3.2.9
+    '';
+  };
+
+  # === view_screen MCP server (lets the model decide for itself when it
+  # needs to look at the screen, e.g. "what song is playing on my
+  # screen" — no fixed phrase list to keep out of date). The actual
+  # capture/lock-check logic lives entirely in perla-companion.py
+  # (capture_screenshot(), already used by the tier0 screenshot command);
+  # this script only exposes it as a tool the model can call. ===
+  home.file.".local/bin/perla-view-screen-mcp-impl.py" = {
+    force = true;
+    source = ./perla/perla-view-screen-mcp.py;
+  };
+
+  home.file.".local/bin/perla-view-screen-mcp" = {
+    force = true;
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      # Self-contained venv so this doesn't depend on a system-wide `mcp`
+      # package being packaged in nixpkgs (as of writing it isn't a
+      # standard nixpkgs attribute). Built once, reused after.
+      # PINNED to mcp<2: the 2.x release renamed FastMCP to MCPServer and
+      # changed other APIs (see the mcp 2.x import error message itself,
+      # which links to its own migration guide). Do not remove the pin —
+      # an unpinned install can silently jump to 2.x and break this
+      # script's `from mcp.server.fastmcp import FastMCP, Image` line.
+      VENV_DIR="''${XDG_STATE_HOME:-$HOME/.local/state}/perla/view-screen-mcp-venv"
+      MARKER="$VENV_DIR/.mcp-1x-installed"
+      if [ ! -f "$MARKER" ]; then
+        rm -rf "$VENV_DIR"
+        python3 -m venv "$VENV_DIR"
+        "$VENV_DIR/bin/pip" install --quiet "mcp<2"
+        touch "$MARKER"
+      fi
+      export PERLA_COMPANION_PORT="''${PERLA_COMPANION_PORT:-8443}"
+      exec "$VENV_DIR/bin/python3" "$HOME/.local/bin/perla-view-screen-mcp-impl.py"
     '';
   };
 

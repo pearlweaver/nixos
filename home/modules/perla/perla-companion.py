@@ -31,7 +31,7 @@ import time
 import uuid
 from datetime import datetime
 from http import HTTPStatus
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import threading
 
@@ -412,6 +412,41 @@ def read_persona():
 def model_part():
     provider, model = PERLA_MODEL.split("/", 1)
     return {"providerID": provider, "modelID": model}
+
+
+MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024
+_UPLOAD_MIME_EXT = {"image/png": ".png", "image/jpeg": ".jpg"}
+
+
+def decode_upload_image(data_url, filename=None):
+    """Decode a client-supplied image data URL into a temp file in
+    PERLA_SCREENSHOT_DIR. Returns (path, error); path is None on error.
+    The caller feeds path to call_opencode and then deletes it — an upload
+    only ever lives on disk long enough to be sent. The 15-minute screenshot
+    sweep is a safety net if a path ever leaks.
+    """
+    if not isinstance(data_url, str) or not data_url.startswith("data:"):
+        return None, "image must be a base64 data: URL"
+    m = re.match(r"^data:([^;,]+);base64,(.*)$", data_url, re.S)
+    if not m:
+        return None, "image must be base64-encoded"
+    mime, b64 = m.group(1), m.group(2).strip()
+    if mime not in _UPLOAD_MIME_EXT:
+        return None, f"unsupported image type: {mime} (use png or jpeg)"
+    try:
+        raw = base64.b64decode(b64, validate=True)
+    except (ValueError, TypeError):
+        return None, "image data is not valid base64"
+    if len(raw) > MAX_IMAGE_UPLOAD_BYTES:
+        return None, "image too large (max 10MB)"
+    os.makedirs(PERLA_SCREENSHOT_DIR, exist_ok=True)
+    path = os.path.join(
+        PERLA_SCREENSHOT_DIR,
+        f"upload-{uuid.uuid4().hex}{_UPLOAD_MIME_EXT[mime]}",
+    )
+    with open(path, "wb") as f:
+        f.write(raw)
+    return path, None
 
 
 def call_opencode(sid, port, text, tier, image_path=None):
@@ -802,54 +837,74 @@ def is_screen_vision_request(text):
     return any(p in lower for p in vision_phrases)
 
 
-def process_message(message, tier, source, confirm=False):
+def process_message(message, tier, source, confirm=False, user_image_path=None):
     """The single entrypoint every surface funnels through: tier0 check,
     then OpenCode, then logging. Returns (response_text, tool_used,
     confirm_required, confirm_action, image_path). image_path is None
     except for tier0 actions that produce one (screenshot capture) or a
     screen-vision request (captured screenshot sent alongside the
-    model's description)."""
+    model's description). When the user attaches their own image
+    (user_image_path), it wins over tier0 dispatch and screen capture, is
+    sent to the model instead, and the temp file is removed afterwards."""
 
-    # Tier 0 direct dispatch — bypasses the LLM entirely, same for every surface.
-    tier0_response, tier0_image = tier0_dispatch(message)
-    if tier0_response is not None:
-        log_request(message, tier0_response, 0, True, source=source)
-        return tier0_response, True, False, None, tier0_image
-
-    # Screen vision — deliberately NOT tier0: needs the model to actually
-    # look at and describe the image, so it goes through the normal
-    # OpenCode call below with an image part attached. Available at every
-    # tier, same as screenshot capture, since it uses the same lock-safe
-    # capture_screenshot() and carries no elevated privilege.
     vision_image_path = None
-    if is_screen_vision_request(message):
-        vision_image_path, capture_error = capture_screenshot()
-        if capture_error:
-            log_request(message, capture_error, tier, False, source=source)
-            return capture_error, False, False, None, None
+    if user_image_path:
+        # Explicit attachment takes precedence: the user wants THAT image
+        # analyzed, not a system action ("lock"-style text is ignored now)
+        # and not a fresh screen grab.
+        pass
+    else:
+        # Tier 0 direct dispatch — bypasses the LLM entirely, same for every surface.
+        tier0_response, tier0_image = tier0_dispatch(message)
+        if tier0_response is not None:
+            log_request(message, tier0_response, 0, True, source=source)
+            return tier0_response, True, False, None, tier0_image
 
-    if tier == 2 and is_destructive(message) and not confirm:
-        return (
-            "About to execute a potentially destructive action. Confirm?",
-            False, True, message, None
+        # Screen vision — deliberately NOT tier0: needs the model to actually
+        # look at and describe the image, so it goes through the normal
+        # OpenCode call below with an image part attached. Available at every
+        # tier, same as screenshot capture, since it uses the same lock-safe
+        # capture_screenshot() and carries no elevated privilege.
+        if is_screen_vision_request(message):
+            vision_image_path, capture_error = capture_screenshot()
+            if capture_error:
+                log_request(message, capture_error, tier, False, source=source)
+                return capture_error, False, False, None, None
+
+    attach_path = user_image_path or vision_image_path
+
+    try:
+        if tier == 2 and is_destructive(message) and not confirm:
+            return (
+                "About to execute a potentially destructive action. Confirm?",
+                False, True, message, None
+            )
+
+        sid = session_mgr.get_session(tier)
+        if not sid:
+            return "OpenCode server unavailable.", False, False, None, None
+
+        port = SERVER_PORT_T1 if tier == 1 else SERVER_PORT_T2
+        response_text, tool_used, obsidian_write = call_opencode(
+            sid, port, message, tier, image_path=attach_path
         )
 
-    sid = session_mgr.get_session(tier)
-    if not sid:
-        return "OpenCode server unavailable.", False, False, None, None
+        log_request(message, response_text, tier, tool_used, source=source)
 
-    port = SERVER_PORT_T1 if tier == 1 else SERVER_PORT_T2
-    response_text, tool_used, obsidian_write = call_opencode(
-        sid, port, message, tier, image_path=vision_image_path
-    )
+        if is_memory_worthy(message) and not obsidian_write:
+            log_memory_mismatch(message, response_text, tier, source=source)
+            print("WARNING: memory-worthy input with no Obsidian write detected", flush=True)
 
-    log_request(message, response_text, tier, tool_used, source=source)
-
-    if is_memory_worthy(message) and not obsidian_write:
-        log_memory_mismatch(message, response_text, tier, source=source)
-        print("WARNING: memory-worthy input with no Obsidian write detected", flush=True)
-
-    return response_text, tool_used, False, None, vision_image_path
+        # image_path returned to the caller is the CAPTURED screenshot (which
+        # the web UI re-serves via /api/screenshot); a user upload is instead
+        # echoed client-side from the data URL, so nothing to re-serve.
+        return response_text, tool_used, False, None, vision_image_path
+    finally:
+        if user_image_path:
+            try:
+                os.unlink(user_image_path)
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -1068,6 +1123,10 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.handle_speak_local()
             return
 
+        if path == "/api/internal/screenshot":
+            self.handle_internal_screenshot()
+            return
+
         self.send_error(404)
 
     def handle_gate(self):
@@ -1093,20 +1152,38 @@ class CompanionHandler(BaseHTTPRequestHandler):
             return
 
         message = body.get("message", "").strip()
-        if not message:
+        image_field = body.get("image")
+        if not message and not image_field:
             self.send_json(400, {"error": "empty message"})
             return
+
+        user_image_path = None
+        if image_field:
+            user_image_path, upload_error = decode_upload_image(
+                image_field, body.get("filename")
+            )
+            if upload_error:
+                self.send_json(400, {"error": upload_error, "message": message})
+                return
+            if not message:
+                # Image-only send: give the model something to do with it.
+                message = "Analyze this image."
 
         confirm = body.get("confirm", False)
         requested_tier = body.get("tier")  # local callers (perla.sh) may pass this
         source = self.get_source()
         tier, tier_error = self.get_effective_tier(requested_tier)
         if tier_error:
+            if user_image_path:
+                try:
+                    os.unlink(user_image_path)
+                except OSError:
+                    pass
             self.send_json(403, {"error": tier_error})
             return
 
         response_text, tool_used, confirm_required, action, image_path = process_message(
-            message, tier, source, confirm=confirm
+            message, tier, source, confirm=confirm, user_image_path=user_image_path
         )
 
         if confirm_required:
@@ -1226,6 +1303,30 @@ class CompanionHandler(BaseHTTPRequestHandler):
         ok = speak_locally(text)
         self.send_json(200, {"spoken": ok})
 
+    def handle_internal_screenshot(self):
+        """Local-only: capture a screenshot and return it as base64, for
+        the view_screen MCP tool (perla-view-screen-mcp.py) to call. Reuses
+        the exact same lock-safe capture_screenshot() used by the tier0
+        'send me my screen' command and the vision-phrase path, so the
+        lock/standby check is defined in exactly one place regardless of
+        which of the three surfaces (tier0 dispatch, vision phrases, or
+        the model calling this tool on its own) triggers a capture."""
+        if self.get_source() != "local":
+            self.send_json(403, {"error": "local only"})
+            return
+        path, error = capture_screenshot()
+        if error:
+            self.send_json(200, {"error": error})
+            return
+        try:
+            with open(path, "rb") as f:
+                encoded = base64.b64encode(f.read()).decode("ascii")
+        except Exception as e:
+            print(f"ERROR: reading captured screenshot failed: {e}", flush=True)
+            self.send_json(500, {"error": "Captured the screen but couldn't read it back."})
+            return
+        self.send_json(200, {"image_base64": encoded, "mime": "image/png"})
+
     def _parse_multipart_field(self, raw, boundary, field_name):
         """Extract a single named field's raw bytes from multipart form
         data. Returns None if the field isn't present."""
@@ -1323,7 +1424,15 @@ def main():
         target=cleanup_old_files, args=(PERLA_SCREENSHOT_DIR, 900), daemon=True
     ).start()
 
-    server = HTTPServer((HOST, PORT), CompanionHandler)
+    # ThreadingHTTPServer, NOT HTTPServer: /api/text blocks its thread in the
+    # whole OpenCode round-trip (call_opencode, up to 300s). If the model then
+    # calls the view_screen MCP tool mid-message, that tool's POST to
+    # /api/internal/screenshot must be served concurrently — a single-threaded
+    # server would starve it behind the very message it's helping to answer,
+    # and the MCP client would time out. SessionTokenStore/SessionManager are
+    # already mutex-guarded, and captures write unique files, so threading is
+    # safe here.
+    server = ThreadingHTTPServer((HOST, PORT), CompanionHandler)
     print(f"Perla companion listening on {HOST}:{PORT}", flush=True)
     try:
         server.serve_forever()

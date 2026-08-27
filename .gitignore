@@ -3,3 +3,5 @@
 .trash/
 docs/
 hyprland_setup/
+__pycache__/
+*.pyc

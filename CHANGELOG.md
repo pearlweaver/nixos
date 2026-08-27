@@ -1,4 +1,4 @@
-# Version 26.8.27.1
+# Version 26.8.28.1
 
-- Perla can now send current laptop screen to the web interface
-- Perla can now explain what is on the screen in real time
+- Perla can now analyse the screen on runtime
+- Attach images on web interface for perla to analyse

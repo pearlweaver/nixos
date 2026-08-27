@@ -302,6 +302,55 @@
     border-top: 1px solid var(--rule);
     padding: 14px 20px calc(16px + var(--safe-bottom));
     background: var(--bg-panel);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .attach-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink-faint);
+    font-size: 20px;
+    cursor: pointer;
+  }
+  .attach-btn:hover { border-color: var(--brass-dim); color: var(--brass-bright); }
+
+  .attach-preview {
+    position: relative;
+    align-self: flex-start;
+    max-width: 120px;
+    border: 1px solid var(--brass-dim);
+    border-radius: 8px;
+    padding: 3px;
+    background: rgba(201,123,141,0.06);
+  }
+  .attach-preview img {
+    display: block;
+    max-width: 110px;
+    max-height: 90px;
+    border-radius: 5px;
+  }
+  .attach-clear {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 22px;
+    height: 22px;
+    line-height: 1;
+    border-radius: 50%;
+    border: 1px solid var(--wax);
+    background: var(--bg-panel);
+    color: var(--wax-bright);
+    font-size: 12px;
+    cursor: pointer;
   }
 
   .composer-row {
@@ -750,7 +799,15 @@
     </main>
 
     <footer class="composer">
+      <div id="attachPreview" class="attach-preview" hidden>
+        <img id="attachPreviewImg" alt="">
+        <button id="attachClear" class="attach-clear" aria-label="Remove image" title="Remove image">✕</button>
+      </div>
       <div class="composer-row">
+        <label id="attachLabel" class="attach-btn" aria-label="Attach image" title="Attach an image">
+          📎
+          <input id="attachInput" type="file" accept="image/*" hidden>
+        </label>
         <textarea id="textInput" rows="1" placeholder="Write to Perla…"></textarea>
         <button id="micBtn" class="mic-btn" aria-label="Record">
           <span class="mic-ring ring-1"></span>
@@ -1208,6 +1265,45 @@
   // ---------- Text send ----------
   const textInput = document.getElementById("textInput");
   const sendText = document.getElementById("sendText");
+  const attachInput = document.getElementById("attachInput");
+  const attachPreview = document.getElementById("attachPreview");
+  const attachPreviewImg = document.getElementById("attachPreviewImg");
+  const attachClear = document.getElementById("attachClear");
+
+  let attachDataUrl = null;
+  let attachFilename = null;
+
+  attachInput.addEventListener("change", () => {
+    const file = attachInput.files && attachInput.files[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      addEntry("system", "", "Please pick an image file.");
+      attachInput.value = "";
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      addEntry("system", "", "Image too large — max 10MB.");
+      attachInput.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      attachDataUrl = reader.result;
+      attachFilename = file.name;
+      attachPreviewImg.src = attachDataUrl;
+      attachPreview.hidden = false;
+    };
+    reader.onerror = () => addEntry("system", "", "Couldn't read that image.");
+    reader.readAsDataURL(file);
+    attachInput.value = "";
+  });
+
+  attachClear.addEventListener("click", () => {
+    attachDataUrl = null;
+    attachFilename = null;
+    attachPreview.hidden = true;
+    attachPreviewImg.removeAttribute("src");
+  });
 
   textInput.addEventListener("input", () => {
     textInput.style.height = "auto";
@@ -1225,10 +1321,26 @@
 
   async function submitText() {
     const message = textInput.value.trim();
-    if (!message) return;
-    addEntry("user", "You", message);
+    const image = attachDataUrl;
+    if (!message && !image) return;
+    if (message) addEntry("user", "You", message);
+    if (image) {
+      const userEntry = document.createElement("div");
+      userEntry.className = "entry entry-user";
+      const preview = document.createElement("img");
+      preview.className = "entry-image";
+      preview.src = image;
+      userEntry.appendChild(preview);
+      output.appendChild(userEntry);
+      output.scrollIntoView({ block: "end" });
+      userEntry.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
     textInput.value = "";
     textInput.style.height = "auto";
+    attachDataUrl = null;
+    attachFilename = null;
+    attachPreview.hidden = true;
+    attachPreviewImg.removeAttribute("src");
 
     if (!CONFIG.ENDPOINT) {
       addEntry("system", "", "Not linked to Perla yet — set CONFIG.ENDPOINT.");
@@ -1236,13 +1348,18 @@
     }
 
     try {
+      const body = { message, tier: activeTier };
+      if (image) {
+        body.image = image;
+        if (attachFilename) body.filename = attachFilename;
+      }
       const res = await fetch(CONFIG.ENDPOINT + CONFIG.TEXT_PATH, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: "Bearer " + authToken,
         },
-        body: JSON.stringify({ message, tier: activeTier }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) {
