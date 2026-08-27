@@ -1,3 +1,4 @@
-# Version 26.8.26.1
+# Version 26.8.27.1
 
-- Added profile photo for Perla
+- Perla can now send current laptop screen to the web interface
+- Perla can now explain what is on the screen in real time

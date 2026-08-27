@@ -252,6 +252,38 @@
     opacity: 0.7;
   }
 
+  .entry-image-wrap {
+    margin-top: 6px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--rule);
+    background: var(--bg);
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .entry-image {
+    display: block;
+    width: 100%;
+    max-height: 360px;
+    object-fit: contain;
+    cursor: zoom-in;
+    background: var(--bg);
+  }
+
+  .entry-image-loading,
+  .entry-image-error {
+    display: block;
+    padding: 20px 14px;
+    font-size: 13px;
+    color: var(--ink-faint);
+    font-style: italic;
+    text-align: center;
+  }
+  .entry-image-error { color: var(--wax-bright); }
+
   .replay-btn {
     margin-top: 6px;
     background: transparent;
@@ -845,6 +877,15 @@
     const savedLog = getChatLog(activeTier);
     if (savedLog) {
       output.innerHTML = savedLog;
+      // blob: URLs from a previous page load don't survive a reload —
+      // swap any stale screenshot image for a plain notice instead of
+      // showing a broken-image icon.
+      output.querySelectorAll("img.entry-image").forEach((img) => {
+        if (img.src.startsWith("blob:")) {
+          const wrap = img.closest(".entry-image-wrap");
+          if (wrap) wrap.innerHTML = '<span class="entry-image-error">Screenshot no longer available after reload.</span>';
+        }
+      });
       output.scrollIntoView({ block: "end" });
     }
   }
@@ -1033,6 +1074,46 @@
     return entry;
   }
 
+  // Screenshot images require an authenticated fetch (same as audio) since
+  // the endpoint is gated — a bare <img src> can't carry the bearer token.
+  // Renders as its own bubble under the Perla label, with the caption text
+  // (if any) shown above it.
+  async function addImageEntry(label, imageUrl, captionText) {
+    const entry = document.createElement("div");
+    entry.className = "entry entry-perla";
+    const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    entry.innerHTML =
+      (label ? `<div class="entry-label">${label}</div>` : "") +
+      (captionText ? `<p></p>` : "") +
+      `<div class="entry-image-wrap"><span class="entry-image-loading">Loading screenshot…</span></div>` +
+      `<div class="entry-time">${time}</div>`;
+    if (captionText) entry.querySelector("p").textContent = captionText;
+    output.appendChild(entry);
+    output.scrollIntoView({ block: "end" });
+    entry.scrollIntoView({ behavior: "smooth", block: "end" });
+
+    const wrap = entry.querySelector(".entry-image-wrap");
+    try {
+      const url = imageUrl.startsWith("http") ? imageUrl : CONFIG.ENDPOINT + imageUrl;
+      const res = await fetch(url, { headers: { Authorization: "Bearer " + authToken } });
+      if (!res.ok) throw new Error("image fetch failed");
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      wrap.innerHTML = "";
+      const img = document.createElement("img");
+      img.className = "entry-image";
+      img.src = objectUrl;
+      img.alt = "Screenshot";
+      img.addEventListener("click", () => window.open(objectUrl, "_blank"));
+      wrap.appendChild(img);
+    } catch (e) {
+      wrap.innerHTML = `<span class="entry-image-error">Couldn't load the screenshot.</span>`;
+    }
+
+    if (activeOverlay === null) setChatLog(activeTier, output.innerHTML);
+    return entry;
+  }
+
   // ---------- Tier switching (Tier 1 / Tier 2 as separate chats) ----------
   const tier1Btn = document.getElementById("tier1Btn");
   const tier2Btn = document.getElementById("tier2Btn");
@@ -1172,10 +1253,14 @@
         }
         return;
       }
-      const entry = addEntry("perla", "Perla", data.text || "(no response)");
-      if (data.audio) {
-        playAudio(data.audio);
-        addReplayButton(entry, data.audio);
+      if (data.image) {
+        await addImageEntry("Perla", data.image, data.text || "");
+      } else {
+        const entry = addEntry("perla", "Perla", data.text || "(no response)");
+        if (data.audio) {
+          playAudio(data.audio);
+          addReplayButton(entry, data.audio);
+        }
       }
       statusDot.className = "status-dot ok";
       setStatusText("connected");
@@ -1273,10 +1358,14 @@
       }
 
       if (data.transcript) addEntry("user", "You", data.transcript);
-      const entry = addEntry("perla", "Perla", data.text || "(no response)");
-      if (data.audio) {
-        playAudio(data.audio);
-        addReplayButton(entry, data.audio);
+      if (data.image) {
+        await addImageEntry("Perla", data.image, data.text || "");
+      } else {
+        const entry = addEntry("perla", "Perla", data.text || "(no response)");
+        if (data.audio) {
+          playAudio(data.audio);
+          addReplayButton(entry, data.audio);
+        }
       }
       statusDot.className = "status-dot ok";
       setStatusText("connected");

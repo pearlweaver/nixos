@@ -15,6 +15,7 @@ in {
     curl
     nodejs
     libnotify
+    grim
   ];
 
   # === Wrapper script ===

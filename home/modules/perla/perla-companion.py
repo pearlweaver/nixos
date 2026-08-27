@@ -19,6 +19,7 @@ the machine and use a fixed local token. Remote calls (from the phone, over
 Tailscale) go through the gate-password -> session-token flow as before.
 """
 
+import base64
 import json
 import os
 import re
@@ -48,6 +49,7 @@ PERLA_AVATAR = os.environ.get("PERLA_AVATAR", os.path.expanduser("~/.config/perl
 PERLA_WHISPER_MODEL = os.environ.get("PERLA_WHISPER_MODEL", "tiny")
 PERLA_WHISPER_LANG = os.environ.get("PERLA_WHISPER_LANG", "en")
 PERLA_AUDIO_DIR = os.environ.get("PERLA_AUDIO_DIR", os.path.expanduser("~/.local/share/perla-audio"))
+PERLA_SCREENSHOT_DIR = os.environ.get("PERLA_SCREENSHOT_DIR", os.path.expanduser("~/.local/share/perla-screenshots"))
 PERLA_AUDIO_INPUT = os.environ.get("PERLA_AUDIO_INPUT", "")
 SERVER_PORT_T1 = int(os.environ.get("PERLA_SERVER_PORT_T1", "13101"))
 SERVER_PORT_T2 = int(os.environ.get("PERLA_SERVER_PORT_T2", "13102"))
@@ -255,9 +257,101 @@ session_mgr = SessionManager()
 # shortcut, and so it can run before any OpenCode call regardless of
 # which surface the request came from.
 # ---------------------------------------------------------------------------
+def get_screen_lock_state():
+    """Determine whether the screen is currently locked, using
+    systemd-logind's LockedHint — the same mechanism every lock path goes
+    through (Noctalia's lock keybind, idle timeout, or a manual
+    `loginctl lock-session`), regardless of which triggered it.
+
+    Returns "locked", "unlocked", or "unknown" (fail-safe: unknown is
+    treated as locked by the caller, since a false negative here would
+    mean silently exposing a screenshot of a locked or suspended machine).
+
+    Runs `loginctl list-sessions` first rather than relying on
+    $XDG_SESSION_ID, since perla-companion runs as a systemd --user
+    service and isn't guaranteed to inherit that variable the way an
+    interactive login shell would.
+    """
+    try:
+        whoami = subprocess.run(
+            ["whoami"], capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+        if not whoami:
+            return "unknown"
+
+        sessions = subprocess.run(
+            ["loginctl", "list-sessions", "--no-legend"],
+            capture_output=True, text=True, timeout=5
+        )
+        if sessions.returncode != 0:
+            return "unknown"
+
+        session_ids = []
+        for line in sessions.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 3 and parts[2] == whoami:
+                session_ids.append(parts[0])
+
+        if not session_ids:
+            return "unknown"
+
+        # If ANY of this user's sessions is locked, treat the screen as
+        # locked — conservative on multi-session setups (e.g. a spare TTY).
+        for sid in session_ids:
+            result = subprocess.run(
+                ["loginctl", "show-session", sid, "-p", "LockedHint", "--value"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0 and result.stdout.strip() == "yes":
+                return "locked"
+
+        return "unlocked"
+    except Exception as e:
+        print(f"WARNING: lock state check failed: {e}", flush=True)
+        return "unknown"
+
+
+def capture_screenshot():
+    """Take a full-screen screenshot via grim, after confirming the
+    session isn't locked or (as a side effect of the check above)
+    unreachable. Returns (path, error) — path is None on failure, error
+    is a short user-facing string explaining why.
+    """
+    lock_state = get_screen_lock_state()
+    if lock_state in ("locked", "unknown"):
+        return None, (
+            "Can't grab a screenshot right now — the screen's locked."
+            if lock_state == "locked"
+            else "Can't confirm the screen isn't locked, so I'm not grabbing a screenshot."
+        )
+
+    os.makedirs(PERLA_SCREENSHOT_DIR, exist_ok=True)
+    shot_id = str(uuid.uuid4())
+    path = os.path.join(PERLA_SCREENSHOT_DIR, f"{shot_id}.png")
+
+    try:
+        result = subprocess.run(
+            ["grim", path], capture_output=True, timeout=10
+        )
+        if result.returncode != 0 or not os.path.exists(path):
+            stderr = result.stderr.decode(errors="replace").strip()
+            print(f"ERROR: grim failed: {stderr}", flush=True)
+            return None, "Couldn't capture the screen — grim failed."
+        return path, None
+    except FileNotFoundError:
+        return None, "grim isn't installed — can't capture the screen."
+    except subprocess.TimeoutExpired:
+        return None, "Screen capture timed out."
+    except Exception as e:
+        print(f"ERROR: capture_screenshot failed: {e}", flush=True)
+        return None, "Something went wrong capturing the screen."
+
+
 def tier0_dispatch(text):
-    """Try to handle text as a direct system action. Returns response
-    string if handled, None if not a tier0 command."""
+    """Try to handle text as a direct system action. Returns
+    (response_text, image_path) if handled — image_path is None unless
+    the action produced one (e.g. a screenshot) — or (None, None) if this
+    isn't a tier0 command."""
     lower = text.lower()
 
     def run_detached(cmd_list, unit):
@@ -269,34 +363,39 @@ def tier0_dispatch(text):
     try:
         if "open firefox" in lower:
             run_detached(["firefox"], "perla-firefox")
-            return "Opening Firefox."
+            return "Opening Firefox.", None
         if "open terminal" in lower:
             run_detached(["kitty"], "perla-kitty")
-            return "Opening a terminal."
+            return "Opening a terminal.", None
         if "open code" in lower:
             run_detached(["codium"], "perla-codium")
-            return "Opening the editor."
-        if "lock" in lower:
+            return "Opening the editor.", None
+        if "lock" in lower and "unlock" not in lower:
             subprocess.run(["noctalia", "msg", "session", "lock"], timeout=5)
-            return "Locked."
+            return "Locked.", None
         if "unmute" in lower:
             subprocess.run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "0"], timeout=5)
-            return "Unmuted."
+            return "Unmuted.", None
         if "mute" in lower:
             subprocess.run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "1"], timeout=5)
-            return "Muted."
-        if "screenshot" in lower:
-            path = os.path.expanduser(f"~/Pictures/Screenshots/{int(time.time())}.png")
-            subprocess.run(["grim", path], timeout=10)
-            return "Screenshot taken."
+            return "Muted.", None
+        if any(p in lower for p in (
+            "screenshot", "capture my screen", "capture the screen",
+            "send me my screen", "send my screen", "show me my screen",
+            "take a screenshot", "take a picture of my screen",
+        )):
+            path, error = capture_screenshot()
+            if error:
+                return error, None
+            return "Here's your screen.", path
         if "suspend" in lower or "sleep" in lower:
             subprocess.run(["systemctl", "suspend"], timeout=5)
-            return "Suspending."
+            return "Suspending.", None
     except Exception as e:
         print(f"ERROR: tier0 dispatch failed: {e}", flush=True)
-        return None
+        return None, None
 
-    return None
+    return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +414,14 @@ def model_part():
     return {"providerID": provider, "modelID": model}
 
 
-def call_opencode(sid, port, text, tier):
+def call_opencode(sid, port, text, tier, image_path=None):
+    """Send a message to OpenCode. If image_path is given, attaches it as
+    a file part alongside the text part — mimo-v2.5-free (the deployed
+    model per perla-config.nix) accepts image input natively. The request
+    body is piped over stdin rather than passed as a curl argv string,
+    since an inlined base64 image can be large enough to risk hitting
+    OS argument-length limits as a single -d argument.
+    """
     if session_mgr.should_inject_persona(tier):
         persona = read_persona()
         text = (
@@ -326,8 +432,27 @@ def call_opencode(sid, port, text, tier):
         )
         session_mgr.mark_persona_injected(tier)
 
+    parts = [{"type": "text", "text": text}]
+
+    if image_path:
+        try:
+            with open(image_path, "rb") as f:
+                encoded = base64.b64encode(f.read()).decode("ascii")
+            ext = os.path.splitext(image_path)[1].lower()
+            mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(ext, "image/png")
+            parts.append({
+                "type": "file",
+                "mime": mime,
+                "filename": os.path.basename(image_path),
+                "url": f"data:{mime};base64,{encoded}",
+            })
+        except Exception as e:
+            print(f"ERROR: failed to read image for OpenCode: {e}", flush=True)
+            # Fall through with just the text part rather than failing the
+            # whole request — Perla will just not have the image to look at.
+
     body = json.dumps({
-        "parts": [{"type": "text", "text": text}],
+        "parts": parts,
         "model": model_part()
     })
 
@@ -336,8 +461,8 @@ def call_opencode(sid, port, text, tier):
             ["curl", "-sf", "--connect-timeout", "5", "-m", "300",
              "-X", "POST", f"http://127.0.0.1:{port}/session/{sid}/message",
              "-H", "Content-Type: application/json",
-             "-d", body],
-            capture_output=True, text=True, timeout=310
+             "-d", "@-"],
+            input=body, capture_output=True, text=True, timeout=310
         )
         if result.returncode != 0:
             return "OpenCode server error — try again.", False, False
@@ -658,29 +783,65 @@ def is_destructive(text):
     return any(re.search(p, lower) for p in destructive_patterns)
 
 
+def is_screen_vision_request(text):
+    """Phrases that mean 'look at my screen and tell me about it' — these
+    need the LLM (to actually describe/reason about the image), so they
+    must NOT be handled by tier0_dispatch, which bypasses the model
+    entirely. Deliberately distinct from the tier0 'send me a screenshot'
+    phrases (which just want the raw image, no description)."""
+    lower = text.lower()
+    vision_phrases = (
+        "what's on my screen", "whats on my screen",
+        "what am i looking at", "what is on my screen",
+        "describe my screen", "describe what's on my screen",
+        "can you see my screen", "look at my screen",
+        "what do you see on my screen", "explain what's on my screen",
+        "explain whats on my screen", "tell me what's on my screen",
+        "tell me whats on my screen", "what's happening on my screen",
+    )
+    return any(p in lower for p in vision_phrases)
+
+
 def process_message(message, tier, source, confirm=False):
     """The single entrypoint every surface funnels through: tier0 check,
     then OpenCode, then logging. Returns (response_text, tool_used,
-    confirm_required, confirm_action)."""
+    confirm_required, confirm_action, image_path). image_path is None
+    except for tier0 actions that produce one (screenshot capture) or a
+    screen-vision request (captured screenshot sent alongside the
+    model's description)."""
 
     # Tier 0 direct dispatch — bypasses the LLM entirely, same for every surface.
-    tier0_response = tier0_dispatch(message)
+    tier0_response, tier0_image = tier0_dispatch(message)
     if tier0_response is not None:
         log_request(message, tier0_response, 0, True, source=source)
-        return tier0_response, True, False, None
+        return tier0_response, True, False, None, tier0_image
+
+    # Screen vision — deliberately NOT tier0: needs the model to actually
+    # look at and describe the image, so it goes through the normal
+    # OpenCode call below with an image part attached. Available at every
+    # tier, same as screenshot capture, since it uses the same lock-safe
+    # capture_screenshot() and carries no elevated privilege.
+    vision_image_path = None
+    if is_screen_vision_request(message):
+        vision_image_path, capture_error = capture_screenshot()
+        if capture_error:
+            log_request(message, capture_error, tier, False, source=source)
+            return capture_error, False, False, None, None
 
     if tier == 2 and is_destructive(message) and not confirm:
         return (
             "About to execute a potentially destructive action. Confirm?",
-            False, True, message
+            False, True, message, None
         )
 
     sid = session_mgr.get_session(tier)
     if not sid:
-        return "OpenCode server unavailable.", False, False, None
+        return "OpenCode server unavailable.", False, False, None, None
 
     port = SERVER_PORT_T1 if tier == 1 else SERVER_PORT_T2
-    response_text, tool_used, obsidian_write = call_opencode(sid, port, message, tier)
+    response_text, tool_used, obsidian_write = call_opencode(
+        sid, port, message, tier, image_path=vision_image_path
+    )
 
     log_request(message, response_text, tier, tool_used, source=source)
 
@@ -688,7 +849,7 @@ def process_message(message, tier, source, confirm=False):
         log_memory_mismatch(message, response_text, tier, source=source)
         print("WARNING: memory-worthy input with no Obsidian write detected", flush=True)
 
-    return response_text, tool_used, False, None
+    return response_text, tool_used, False, None, vision_image_path
 
 
 # ---------------------------------------------------------------------------
@@ -818,6 +979,17 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_file(audio_path, "audio/mpeg")
             return
 
+        if path.startswith("/api/screenshot/"):
+            if not self.check_auth():
+                return
+            filename = os.path.basename(path)
+            if not re.match(r'^[0-9a-f-]+\.png$', filename):
+                self.send_error(400)
+                return
+            screenshot_path = os.path.join(PERLA_SCREENSHOT_DIR, filename)
+            self.send_file(screenshot_path, "image/png")
+            return
+
         if path == "/api/history/days":
             if not self.check_auth():
                 return
@@ -933,7 +1105,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(403, {"error": tier_error})
             return
 
-        response_text, tool_used, confirm_required, action = process_message(
+        response_text, tool_used, confirm_required, action, image_path = process_message(
             message, tier, source, confirm=confirm
         )
 
@@ -954,7 +1126,11 @@ class CompanionHandler(BaseHTTPRequestHandler):
             audio_path = generate_tts(response_text)
             audio_url = f"/api/audio/{os.path.basename(audio_path)}" if audio_path else None
 
-        self.send_json(200, {"text": response_text, "audio": audio_url, "tier": tier})
+        image_url = f"/api/screenshot/{os.path.basename(image_path)}" if image_path else None
+
+        self.send_json(200, {
+            "text": response_text, "audio": audio_url, "tier": tier, "image": image_url,
+        })
 
     def handle_voice(self):
         content_type = self.headers.get("Content-Type", "")
@@ -1011,7 +1187,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(403, {"error": tier_error, "transcript": transcript})
             return
 
-        response_text, tool_used, confirm_required, action = process_message(
+        response_text, tool_used, confirm_required, action, image_path = process_message(
             transcript, tier, source, confirm=False
         )
 
@@ -1020,6 +1196,8 @@ class CompanionHandler(BaseHTTPRequestHandler):
             audio_path = generate_tts(response_text)
             audio_url = f"/api/audio/{os.path.basename(audio_path)}" if audio_path else None
 
+        image_url = f"/api/screenshot/{os.path.basename(image_path)}" if image_path else None
+
         self.send_json(200, {
             "transcript": transcript,
             "text": response_text,
@@ -1027,6 +1205,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
             "confirm_required": confirm_required,
             "action": action,
             "tier": tier,
+            "image": image_url,
         })
 
     def handle_speak_local(self):
@@ -1106,19 +1285,21 @@ class CompanionHandler(BaseHTTPRequestHandler):
 
 
 # ---------------------------------------------------------------------------
-# Audio cleanup thread
+# Audio / screenshot cleanup threads
 # ---------------------------------------------------------------------------
-def cleanup_old_audio():
+def cleanup_old_files(directory, max_age_seconds, check_interval=300):
     while True:
-        time.sleep(300)
+        time.sleep(check_interval)
         now = time.time()
         try:
-            for f in os.listdir(PERLA_AUDIO_DIR):
-                path = os.path.join(PERLA_AUDIO_DIR, f)
-                if os.path.isfile(path) and now - os.path.getmtime(path) > 3600:
+            for f in os.listdir(directory):
+                path = os.path.join(directory, f)
+                if os.path.isfile(path) and now - os.path.getmtime(path) > max_age_seconds:
                     os.unlink(path)
+        except FileNotFoundError:
+            pass  # directory not created yet — nothing to clean
         except Exception as e:
-            print(f"ERROR: audio cleanup failed: {e}", flush=True)
+            print(f"ERROR: cleanup failed for {directory}: {e}", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1126,13 +1307,21 @@ def cleanup_old_audio():
 # ---------------------------------------------------------------------------
 def main():
     os.makedirs(PERLA_AUDIO_DIR, exist_ok=True)
+    os.makedirs(PERLA_SCREENSHOT_DIR, exist_ok=True)
 
     if not GATE_PASSWORD:
         print("FATAL: PERLA_GATE_PASSWORD not set. Exiting.", flush=True)
         return
 
-    cleanup_thread = threading.Thread(target=cleanup_old_audio, daemon=True)
-    cleanup_thread.start()
+    threading.Thread(
+        target=cleanup_old_files, args=(PERLA_AUDIO_DIR, 3600), daemon=True
+    ).start()
+    # Screenshots are more sensitive than TTS audio (a live picture of the
+    # desktop) — kept for a shorter window, just long enough to view/replay
+    # in the chat before being wiped.
+    threading.Thread(
+        target=cleanup_old_files, args=(PERLA_SCREENSHOT_DIR, 900), daemon=True
+    ).start()
 
     server = HTTPServer((HOST, PORT), CompanionHandler)
     print(f"Perla companion listening on {HOST}:{PORT}", flush=True)
