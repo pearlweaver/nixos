@@ -172,8 +172,8 @@
     width: 100%;
     max-width: 820px;
     margin: 0 auto;
-    border-left: 1px solid var(--rule-faint);
-    border-right: 1px solid var(--rule-faint);
+    /* No side borders — the chat blends straight into the page
+       background instead of sitting in a bounded card. */
   }
 
   /* Below this, the app is full-bleed and fixed to track the visual
@@ -200,12 +200,48 @@
   .app-header {
     display: flex;
     align-items: center;
+    padding: 14px 20px;
+    z-index: 20;
+    /* Blends into the page background instead of sitting in its own
+       panel — no border-bottom, no distinct background fill. */
+    background: transparent;
+    /* Full-bleed: .app (the chat column) is capped at max-width and
+       centered within a flex-centered body, so a margin-based breakout
+       (calc(50% - 50vw)) resolves against .app's width, not the real
+       viewport — it doesn't actually reach the browser edges. Using
+       position:fixed anchored to the true viewport corners is what
+       makes this a real top bar spanning the whole window, independent
+       of how .app itself is sized/centered. Unlike the chat body, the
+       header's own buttons intentionally use the full window width
+       (hamburger/logo at the true left edge, status at the true right
+       edge) rather than being re-capped to the chat column's width. */
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* The header is fixed now, so it no longer takes up space in normal
+     flow — reserve that height at the top of .app so the app-menu,
+     dropdown panels, and content-wrap (all its siblings) sit below the
+     header instead of underneath it. */
+  .app {
+    padding-top: 58px;
+  }
+
+  .app-header-inner {
+    display: flex;
+    align-items: center;
     justify-content: space-between;
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--rule);
-    position: relative;
-    z-index: 2;
-    background: var(--bg-panel);
+    width: 100%;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
 
   .brand { display: flex; align-items: center; gap: 10px; }
@@ -258,47 +294,41 @@
     gap: 20px;
   }
 
-  .entry { max-width: 92%; }
-  .entry-user {
-    align-self: flex-end;
-    margin-left: auto;
+  .entry {
+    max-width: 92%;
+    display: flex;
+    flex-direction: column;
+  }
+  .entry-user { align-self: flex-end; }
+  .entry-perla { align-self: flex-start; }
+  .entry-system { align-self: center; max-width: 100%; }
+
+  .entry-bubble {
+    padding: 10px 14px;
+  }
+
+  .entry-user .entry-bubble {
     text-align: left;
     background: linear-gradient(180deg, rgba(201,123,141,0.16), rgba(201,123,141,0.07));
     border: 1px solid rgba(201,123,141,0.28);
     border-radius: 16px 16px 4px 16px;
-    padding: 10px 14px;
   }
-  .entry-perla {
-    align-self: flex-start;
+  .entry-perla .entry-bubble {
     background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
     border: 1px solid var(--rule-faint);
     border-radius: 16px 16px 16px 4px;
-    padding: 10px 14px;
   }
-  .entry-system {
-    align-self: center;
+  .entry-system .entry-bubble {
     text-align: center;
-    max-width: 100%;
     background: rgba(0,0,0,0.22);
     border: 1px solid var(--rule-faint);
     border-radius: 20px;
     padding: 6px 14px;
   }
 
-  .entry-label {
-    font-size: 11px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    margin-bottom: 5px;
-  }
-
-  .entry-user .entry-label { color: var(--brass-dim); }
-  .entry-perla .entry-label { color: var(--ink-dim); }
-
   .entry p {
     margin: 0;
-    font-size: 16px;
+    font-size: 17px;
     line-height: 1.55;
   }
 
@@ -310,11 +340,34 @@
     font-size: 14px;
   }
 
+  /* Meta row (timestamp + optional play button) sits below the bubble
+     and stays hidden until the message is hovered, focused (keyboard
+     nav), or tapped — tap support is via the .meta-visible class, which
+     JS toggles on mobile where :hover doesn't apply. */
+  .entry-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 0 4px;
+    height: 18px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease;
+  }
+  .entry-user .entry-meta { align-self: flex-end; }
+  .entry-perla .entry-meta { align-self: flex-start; }
+
+  .entry:hover .entry-meta,
+  .entry:focus-within .entry-meta,
+  .entry.meta-visible .entry-meta {
+    opacity: 1;
+    visibility: visible;
+  }
+
   .entry-time {
     font-size: 11px;
     color: var(--ink-faint);
-    margin-top: 5px;
-    opacity: 0.7;
   }
 
   .entry-image-wrap {
@@ -350,27 +403,37 @@
   }
   .entry-image-error { color: var(--wax-bright); }
 
-  .replay-btn {
-    margin-top: 6px;
+  .replay-btn,
+  .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
     background: transparent;
-    border: 1px solid var(--rule);
+    border: none;
+    border-radius: 50%;
     color: var(--ink-dim);
-    border-radius: 20px;
-    padding: 4px 12px;
-    font-size: 12px;
+    padding: 0;
     cursor: pointer;
-    font-family: var(--font-serif);
   }
-  .replay-btn:hover { border-color: var(--brass-dim); color: var(--brass); }
+  .replay-btn:hover,
+  .copy-btn:hover { color: var(--brass-bright); }
+  .copy-btn.copied { color: #7fae6a; }
 
   /* ---------- Composer ---------- */
   .composer {
-    border-top: 1px solid var(--rule);
-    padding: 10px 14px calc(10px + var(--safe-bottom));
+    padding: 10px 14px;
     background: var(--bg-panel);
+    border: 1px solid var(--rule);
+    border-radius: 18px;
     display: flex;
     flex-direction: column;
     gap: 6px;
+    /* Lifted off the bottom edge instead of resting flush against it,
+       and inset from the sides so it reads as a floating docked bar. */
+    margin: 0 14px calc(14px + var(--safe-bottom));
   }
 
   .attach-btn {
@@ -381,13 +444,13 @@
     height: 42px;
     flex-shrink: 0;
     border-radius: 50%;
-    border: 1px solid var(--rule);
+    border: none;
     background: transparent;
     color: var(--ink-faint);
     font-size: 20px;
     cursor: pointer;
   }
-  .attach-btn:hover { border-color: var(--brass-dim); color: var(--brass-bright); }
+  .attach-btn:hover { color: var(--brass-bright); background: rgba(201,123,141,0.08); }
 
   .attach-preview {
     position: relative;
@@ -421,26 +484,27 @@
 
   .composer-row {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     gap: 10px;
   }
 
-  #textInput {
+  .composer-row-spacer {
     flex: 1;
+  }
+
+  #textInput {
+    width: 100%;
     resize: none;
     max-height: 120px;
     background: transparent;
-    border: 1px solid var(--rule);
-    border-radius: 10px;
+    border: none;
     color: var(--ink);
     font-family: var(--font-serif);
-    font-size: 15px;
-    padding: 11px 14px;
+    font-size: 17px;
+    padding: 6px 4px 10px;
     line-height: 1.4;
     outline: none;
-    transition: border-color 0.2s ease;
   }
-  #textInput:focus { border-color: var(--brass-dim); }
   #textInput::placeholder { color: var(--ink-faint); }
 
   .send-btn {
@@ -458,7 +522,7 @@
     padding: 0;
     transition: transform 0.15s ease, background 0.2s ease, opacity 0.2s ease;
   }
-  .send-btn svg { width: 19px; height: 19px; }
+  .send-btn svg { display: block; width: 19px; height: 19px; }
   .send-btn:hover { background: rgba(201,123,141,0.22); }
   .send-btn:active { transform: scale(0.94); }
   .send-btn:disabled {
@@ -474,22 +538,31 @@
     height: 42px;
     flex-shrink: 0;
     border-radius: 50%;
-    border: 1px solid var(--wax);
-    background: radial-gradient(circle at 35% 30%, rgba(138,50,38,0.35), rgba(138,50,38,0.08));
+    border: none;
+    background: transparent;
+    color: var(--ink-faint);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: opacity 0.2s ease, transform 0.15s ease;
+    transition: opacity 0.2s ease, color 0.2s ease, background 0.2s ease;
   }
+  .mic-btn:hover { color: var(--brass-bright); background: rgba(201,123,141,0.08); }
   .mic-btn.typing-hidden { display: none; }
 
-  .mic-dot {
+  .mic-icon {
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+
+  .mic-stop-square {
+    position: absolute;
     width: 11px;
     height: 11px;
-    border-radius: 50%;
+    border-radius: 3px;
     background: var(--wax-bright);
-    transition: transform 0.2s ease;
+    opacity: 0;
+    transform: scale(0.4);
+    transition: opacity 0.2s ease, transform 0.2s ease;
   }
 
   .mic-ring {
@@ -500,9 +573,16 @@
     opacity: 0;
   }
 
-  .mic-btn.recording .mic-dot {
-    border-radius: 3px;
-    transform: scale(0.6);
+  .mic-btn.recording {
+    color: var(--wax-bright);
+  }
+  .mic-btn.recording .mic-icon {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  .mic-btn.recording .mic-stop-square {
+    opacity: 1;
+    transform: scale(1);
   }
 
   .mic-btn.recording .ring-1 { animation: pulse-ring 1.8s ease-out infinite; }
@@ -642,10 +722,8 @@
     }
     .app {
       height: calc(100dvh - 56px);
-      border-radius: 16px;
-      border: 1px solid var(--rule-faint);
-      box-shadow: 0 40px 80px rgba(0,0,0,0.45);
-      overflow: hidden;
+      /* No card chrome (border/shadow/radius) — the chat blends into
+         the page background instead of floating in a bounded card. */
     }
   }
 
@@ -700,7 +778,7 @@
   /* ---------- Header icon buttons (shared: history, elevate) ---------- */
   .icon-btn {
     background: transparent;
-    border: 1px solid var(--rule);
+    border: none;
     color: var(--ink-dim);
     border-radius: 50%;
     width: 30px;
@@ -711,12 +789,11 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+    transition: color 0.2s ease, background 0.2s ease;
     flex-shrink: 0;
   }
-  .icon-btn:hover { border-color: var(--brass-dim); color: var(--brass-bright); }
+  .icon-btn:hover { color: var(--brass-bright); background: rgba(201,123,141,0.08); }
   .icon-btn.active {
-    border-color: var(--brass);
     color: var(--brass-bright);
     background: rgba(201,123,141,0.14);
   }
@@ -753,10 +830,29 @@
     flex-direction: column;
     padding: 8px;
     background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
-    border-bottom: 1px solid var(--rule);
-    animation: panel-drop 0.18s ease;
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.45);
+    /* Floats over the content near the hamburger button instead of
+       pushing the page down — anchored to the header's fixed left
+       padding (20px) since the button always sits there. */
+    position: fixed;
+    top: 58px;
+    left: 20px;
+    width: 240px;
+    max-width: calc(100vw - 40px);
+    z-index: 25;
+    transform-origin: top left;
+    transition: opacity 0.16s ease, transform 0.16s ease;
+    opacity: 0;
+    transform: scale(0.94) translateY(-6px);
+    pointer-events: none;
   }
-  .app-menu[hidden] { display: none; }
+  .app-menu.open {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    pointer-events: auto;
+  }
 
   .menu-item {
     display: flex;
@@ -840,7 +936,6 @@
   .dropdown-row input:focus,
   .dropdown-row select:focus { border-color: var(--brass-dim); }
 
-  .entry-tier0 .entry-label { color: var(--ink-faint); }
   .entry-tier0 p { color: var(--ink-dim); font-style: italic; }
 
   /* ---------- Reminders ---------- */
@@ -935,21 +1030,25 @@
 
   <div id="app" class="app" hidden>
     <header class="app-header">
-      <div class="brand">
-        <span id="brandMark" class="brand-mark">P</span>
-        <span class="brand-name">Perla</span>
-      </div>
-      <div class="status">
-        <span id="tierBadge" class="tier-badge">T1</span>
-        <span id="tierTimer" class="tier-timer" hidden></span>
-        <button id="menuBtn" class="icon-btn menu-btn" aria-label="Menu" aria-expanded="false" title="Menu">
-          <span class="hamburger-lines"><span></span><span></span><span></span></span>
-        </button>
-        <span class="status-dot" id="statusDot"></span>
+      <div class="app-header-inner">
+        <div class="header-left">
+          <button id="menuBtn" class="icon-btn menu-btn" aria-label="Menu" aria-expanded="false" title="Menu">
+            <span class="hamburger-lines"><span></span><span></span><span></span></span>
+          </button>
+          <div class="brand">
+            <span id="brandMark" class="brand-mark">P</span>
+            <span class="brand-name">Perla</span>
+          </div>
+        </div>
+        <div class="status">
+          <span id="tierBadge" class="tier-badge">T1</span>
+          <span id="tierTimer" class="tier-timer" hidden></span>
+          <span class="status-dot" id="statusDot"></span>
+        </div>
       </div>
     </header>
 
-    <nav id="appMenu" class="app-menu" hidden>
+    <nav id="appMenu" class="app-menu" aria-hidden="true">
       <button id="tier1Btn" class="menu-item tier-item active">
         <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span>
         <span class="menu-item-label">Tier 1 chat</span>
@@ -1010,19 +1109,26 @@
         <img id="attachPreviewImg" alt="">
         <button id="attachClear" class="attach-clear" aria-label="Remove image" title="Remove image">✕</button>
       </div>
+      <textarea id="textInput" rows="1" placeholder="Write to Perla…"></textarea>
       <div class="composer-row">
         <label id="attachLabel" class="attach-btn" aria-label="Attach image" title="Attach an image">
           <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
           <input id="attachInput" type="file" accept="image/*" hidden>
         </label>
-        <textarea id="textInput" rows="1" placeholder="Write to Perla…"></textarea>
+        <div class="composer-row-spacer"></div>
         <button id="micBtn" class="mic-btn" aria-label="Record">
           <span class="mic-ring ring-1"></span>
           <span class="mic-ring ring-2"></span>
-          <span class="mic-dot"></span>
+          <svg class="mic-icon" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+            <rect x="8" y="2.5" width="6" height="11" rx="3"/>
+            <path d="M4.5 10.5a6.5 6.5 0 0 0 13 0"/>
+            <line x1="11" y1="17" x2="11" y2="20"/>
+            <line x1="7.5" y1="20" x2="14.5" y2="20"/>
+          </svg>
+          <span class="mic-stop-square"></span>
         </button>
         <button id="sendText" class="send-btn" aria-label="Send">
-          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+          <svg viewBox="0 0 22 22" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
         </button>
       </div>
       <span id="micTimer" class="mic-timer"></span>
@@ -1150,6 +1256,13 @@
     const savedLog = getChatLog(activeTier);
     if (savedLog) {
       output.innerHTML = savedLog;
+      // A reload that happens while a request is in flight can leave the
+      // thinking indicator's markup as the last thing painted before the
+      // tab closed — strip any stray copy so it doesn't reappear frozen
+      // on the next load with no request actually pending.
+      const staleThinking = output.querySelector("#thinkingIndicator");
+      if (staleThinking) staleThinking.remove();
+      output.querySelectorAll(".entry.meta-visible").forEach((el) => el.classList.remove("meta-visible"));
       // blob: URLs from a previous page load don't survive a reload —
       // swap any stale screenshot image for a plain notice instead of
       // showing a broken-image icon.
@@ -1245,14 +1358,16 @@
   const appMenu = document.getElementById("appMenu");
 
   function closeAppMenu() {
-    appMenu.hidden = true;
+    appMenu.classList.remove("open");
+    appMenu.setAttribute("aria-hidden", "true");
     menuBtn.classList.remove("active");
     menuBtn.setAttribute("aria-expanded", "false");
   }
 
   function toggleAppMenu() {
-    const opening = appMenu.hidden;
-    appMenu.hidden = !opening;
+    const opening = !appMenu.classList.contains("open");
+    appMenu.classList.toggle("open", opening);
+    appMenu.setAttribute("aria-hidden", String(!opening));
     menuBtn.classList.toggle("active", opening);
     menuBtn.setAttribute("aria-expanded", String(opening));
   }
@@ -1263,7 +1378,7 @@
   });
 
   document.addEventListener("click", (e) => {
-    if (!appMenu.hidden && !appMenu.contains(e.target) && e.target !== menuBtn && !menuBtn.contains(e.target)) {
+    if (appMenu.classList.contains("open") && !appMenu.contains(e.target) && e.target !== menuBtn && !menuBtn.contains(e.target)) {
       closeAppMenu();
     }
   });
@@ -1343,6 +1458,22 @@
   // ---------- Output ----------
   const output = document.getElementById("output");
 
+  // Touch devices have no :hover, so tapping a message toggles its meta
+  // row (timestamp + play button) instead. Delegated on `output` so it
+  // covers every entry, including ones restored from session storage or
+  // history, without attaching a listener per bubble. A tap on the play
+  // button itself shouldn't also toggle the row it just revealed.
+  output.addEventListener("click", (e) => {
+    if (e.target.closest(".replay-btn") || e.target.closest(".copy-btn") || e.target.closest(".entry-image")) return;
+    const entry = e.target.closest(".entry");
+    if (!entry || !output.contains(entry)) return;
+    const wasVisible = entry.classList.contains("meta-visible");
+    output.querySelectorAll(".entry.meta-visible").forEach((el) => {
+      if (el !== entry) el.classList.remove("meta-visible");
+    });
+    entry.classList.toggle("meta-visible", !wasVisible);
+  });
+
   function addEntry(kind, label, text) {
     // A real exchange replaces the welcome card.
     if (kind !== "system") {
@@ -1352,10 +1483,10 @@
     entry.className = "entry entry-" + kind;
     const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     entry.innerHTML =
-      (label ? `<div class="entry-label">${label}</div>` : "") +
-      `<p></p>` +
-      (kind !== "system" ? `<div class="entry-time">${time}</div>` : "");
+      `<div class="entry-bubble"><p></p></div>` +
+      (kind !== "system" ? `<div class="entry-meta"><span class="entry-time">${time}</span></div>` : "");
     entry.querySelector("p").textContent = text;
+    if (kind === "perla") addCopyButton(entry, text);
     output.appendChild(entry);
     output.scrollIntoView({ block: "end" });
     entry.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -1365,18 +1496,19 @@
 
   // Screenshot images require an authenticated fetch (same as audio) since
   // the endpoint is gated — a bare <img src> can't carry the bearer token.
-  // Renders as its own bubble under the Perla label, with the caption text
-  // (if any) shown above it.
+  // Renders as its own bubble, with the caption text (if any) above it.
   async function addImageEntry(label, imageUrl, captionText) {
     const entry = document.createElement("div");
     entry.className = "entry entry-perla";
     const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     entry.innerHTML =
-      (label ? `<div class="entry-label">${label}</div>` : "") +
+      `<div class="entry-bubble">` +
       (captionText ? `<p></p>` : "") +
       `<div class="entry-image-wrap"><span class="entry-image-loading">Loading screenshot…</span></div>` +
-      `<div class="entry-time">${time}</div>`;
+      `</div>` +
+      `<div class="entry-meta"><span class="entry-time">${time}</span></div>`;
     if (captionText) entry.querySelector("p").textContent = captionText;
+    if (captionText) addCopyButton(entry, captionText);
     output.appendChild(entry);
     output.scrollIntoView({ block: "end" });
     entry.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -1577,11 +1709,56 @@
   tier1Btn.addEventListener("click", () => { closeAppMenu(); switchTier(1); });
   tier2Btn.addEventListener("click", () => { closeAppMenu(); switchTier(2); });
 
-  function addReplayButton(entry, audioValue) {    const btn = document.createElement("button");
+  function addCopyButton(entry, text) {
+    const meta = entry.querySelector(".entry-meta");
+    if (!meta) return;
+    const btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.setAttribute("aria-label", "Copy message");
+    btn.title = "Copy";
+    const copyIcon = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/></svg>';
+    const checkIcon = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><polyline points="4 12 9 17 18 6"/></svg>';
+    btn.innerHTML = copyIcon;
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+        // Clipboard API can fail without a secure context/permission —
+        // fall back to a hidden textarea + execCommand so copy still
+        // works rather than silently doing nothing.
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+        } catch (e2) {
+          return;
+        }
+      }
+      btn.innerHTML = checkIcon;
+      btn.classList.add("copied");
+      setTimeout(() => {
+        btn.innerHTML = copyIcon;
+        btn.classList.remove("copied");
+      }, 1500);
+    });
+    meta.appendChild(btn);
+  }
+
+  function addReplayButton(entry, audioValue) {
+    const meta = entry.querySelector(".entry-meta");
+    if (!meta) return;
+    const btn = document.createElement("button");
     btn.className = "replay-btn";
-    btn.textContent = "Play";
+    btn.setAttribute("aria-label", "Play voice reply");
+    btn.title = "Play";
+    btn.innerHTML = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" width="14" height="14"><path d="M6.5 4.5v13l11-6.5-11-6.5z"/></svg>';
     btn.addEventListener("click", () => playAudio(audioValue));
-    entry.appendChild(btn);
+    meta.appendChild(btn);
   }
 
   // ---------- Audio playback ----------
@@ -2009,9 +2186,8 @@
     entry.className = "entry entry-" + kind.split(" ")[0];
     if (kind.includes("entry-tier0")) entry.classList.add("entry-tier0");
     entry.innerHTML =
-      (label ? `<div class="entry-label">${label}</div>` : "") +
-      `<p></p>` +
-      `<div class="entry-time">${timeStr || ""}</div>`;
+      `<div class="entry-bubble"><p></p></div>` +
+      `<div class="entry-meta"><span class="entry-time">${timeStr || ""}</span></div>`;
     entry.querySelector("p").textContent = text;
     output.appendChild(entry);
     return entry;

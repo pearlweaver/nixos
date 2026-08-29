@@ -1,3 +1,3 @@
-# Version 26.8.29.2
+# Version 26.8.29.3
 
-- Fixed narrow desktop chat for perla
+- Trying a new style for web interface that does not contain a bounding box (making it similar to how claude chatbox is)
