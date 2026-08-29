@@ -80,17 +80,27 @@ send_voice() {
     -F "tier=$tier"
 }
 
+# Normalize a tier selection into 1 or 2, whatever spelling it arrives as
+# (voice argument "1"/"2", noctalia's "Tier 1"/"Tier 2" selection).
+normalize_tier() {
+  case "${1,,}" in
+    1|"tier 1"|quick|"quick chat"|t1) echo 1 ;;
+    2|"tier 2"|full|"full mode"|t2) echo 2 ;;
+    *) echo 1 ;;
+  esac
+}
+
 main() {
   local mode="${1:-hotkey}"
-  local tier="${2:-1}"
+  local tier="$(normalize_tier "${2:-1}")"
   local input="${3:-}"
 
   if [ "$mode" = "hotkey" ]; then
     local choice
-    choice="$(printf 'Quick chat\nFull mode\n' | noctalia dmenu -p "$PERLA_NAME")" || exit 0
+    choice="$(printf 'Tier 1\nTier 2\n' | noctalia dmenu -p "$PERLA_NAME")" || exit 0
     case "$choice" in
-      "Quick chat") mode="voice"; tier=2 ;;
-      "Full mode")  mode="voice"; tier=2 ;;
+      "Tier 1") mode="voice"; tier=1 ;;
+      "Tier 2") mode="voice"; tier=2 ;;
       *) exit 0 ;;
     esac
   fi

@@ -3,6 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#17131a" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Perla" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="apple-touch-icon" href="/api/avatar" />
 <title>Perla</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%0A%20%20%3Cdefs%3E%0A%20%20%20%20%3CradialGradient%20id%3D%22glow%22%20cx%3D%2235%25%22%20cy%3D%2230%25%22%20r%3D%2270%25%22%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%23c97b8d%22%20stop-opacity%3D%220.35%22/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23c97b8d%22%20stop-opacity%3D%220%22/%3E%0A%20%20%20%20%3C/radialGradient%3E%0A%20%20%3C/defs%3E%0A%20%20%3Ccircle%20cx%3D%2232%22%20cy%3D%2232%22%20r%3D%2230%22%20fill%3D%22%2317131a%22/%3E%0A%20%20%3Ccircle%20cx%3D%2232%22%20cy%3D%2232%22%20r%3D%2230%22%20fill%3D%22url%28%23glow%29%22/%3E%0A%20%20%3Ccircle%20cx%3D%2232%22%20cy%3D%2232%22%20r%3D%2229%22%20fill%3D%22none%22%20stroke%3D%22%238c4f5c%22%20stroke-width%3D%221.5%22/%3E%0A%20%20%3Ctext%20x%3D%2232%22%20y%3D%2233%22%20text-anchor%3D%22middle%22%20dominant-baseline%3D%22central%22%0A%20%20%20%20%20%20%20%20font-family%3D%22Iowan%20Old%20Style%2C%20Palatino%20Linotype%2C%20Palatino%2C%20Georgia%2C%20serif%22%0A%20%20%20%20%20%20%20%20font-size%3D%2230%22%20font-weight%3D%22500%22%20fill%3D%22%23e4a2b2%22%3EP%3C/text%3E%0A%3C/svg%3E%0A" />
 <style>
@@ -32,6 +39,11 @@
     background: var(--bg);
     color: var(--ink);
     font-family: var(--font-serif);
+    /* overflow hidden here (not just on .app) is what stops the desktop
+       card's extra 28px top/bottom padding from creating a page-level
+       scrollbar — .app itself scrolls internally via .page, the shell
+       never needs to. */
+    overflow: hidden;
   }
 
   body {
@@ -149,6 +161,12 @@
   /* ---------- App shell ---------- */
   .app {
     height: 100dvh;
+    /* JS overrides height (and top) to track the live visualViewport
+       while the on-screen keyboard is open, so the whole shell (header
+       included) shrinks to the visible area instead of the header
+       getting pushed off-screen or the composer floating above the
+       keyboard. position:fixed is what makes the JS-set `top` do
+       anything — see the @media(max-width) override below. */
     display: flex;
     flex-direction: column;
     max-width: 640px;
@@ -157,13 +175,21 @@
     border-right: 1px solid var(--rule-faint);
   }
 
+  @media (max-width: 640px) {
+    .app {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      width: 100%;
+    }
+  }
+
   .content-wrap {
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    will-change: transform;
-    transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
   .app-header {
@@ -603,7 +629,12 @@
   }
 
   @media (min-width: 641px) {
-    body { padding: 28px 0; }
+    body {
+      padding: 28px 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
     .app {
       height: calc(100dvh - 56px);
       border-radius: 16px;
@@ -937,6 +968,10 @@
         <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
         <span class="menu-item-label">History</span>
       </button>
+      <button id="clearChatBtn" class="menu-item">
+        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span>
+        <span class="menu-item-label">Clear chat</span>
+      </button>
     </nav>
 
     <div id="historyPanel" class="dropdown-panel" hidden>
@@ -1015,8 +1050,6 @@
 
   let authToken = sessionStorage.getItem("perla_session_token") || null;
 
-  let customAvatarUrl = null;
-
   // ---------- Custom avatar (profile.jpg) ----------
   // Unauthenticated probe — the server serves this without auth since a
   // profile picture isn't sensitive, and the browser's own favicon fetch
@@ -1027,7 +1060,6 @@
     const avatarUrl = CONFIG.ENDPOINT + CONFIG.AVATAR_PATH;
     const probe = new Image();
     probe.onload = () => {
-      customAvatarUrl = avatarUrl;
       document.querySelectorAll("#gateMark, #brandMark").forEach((mark) => {
         mark.textContent = "";
         const img = document.createElement("img");
@@ -1288,6 +1320,10 @@
           }
         }, (data.expires_in || 0) * 1000);
       } else {
+        if (res.status === 401) {
+          relockSession();
+          return;
+        }
         elevateStatus.textContent = data.error || "Failed";
       }
     } catch (e) {
@@ -1391,13 +1427,20 @@
     card.className = "welcome";
     const mark = document.createElement("div");
     mark.className = "welcome-mark";
-    if (customAvatarUrl) {
-      const img = document.createElement("img");
-      img.src = customAvatarUrl;
-      img.alt = "Perla";
-      mark.appendChild(img);
-    } else {
+    if (!CONFIG.ENDPOINT) {
       mark.textContent = "P";
+    } else {
+      // Render the avatar immediately — no waiting on the async loadAvatar
+      // probe, which used to leave a welcome card stuck on "P" when the
+      // card was painted before the probe's onload fired. If the avatar
+      // file genuinely isn't there, the img errors out and we fall back.
+      const img = document.createElement("img");
+      img.src = CONFIG.ENDPOINT + CONFIG.AVATAR_PATH;
+      img.alt = "Perla";
+      img.onerror = () => {
+        if (mark.contains(img)) mark.textContent = "P";
+      };
+      mark.appendChild(img);
     }
     const title = document.createElement("h2");
     title.textContent = active === 2 ? "Full Mode" : "Perla";
@@ -1677,6 +1720,10 @@
       });
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 401) {
+          relockSession();
+          return;
+        }
         if (res.status === 403 && data.error) {
           addEntry("system", "", data.error);
         } else {
@@ -1784,6 +1831,10 @@
       });
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 401) {
+          relockSession();
+          return;
+        }
         if (res.status === 403 && data.error) {
           if (data.transcript) addEntry("user", "You", data.transcript);
           addEntry("system", "", data.error);
@@ -2133,32 +2184,103 @@
     return list;
   }
 
-  // ---------- Mobile keyboard slide-up ----------
-  // When the on-screen keyboard opens on a phone, slide the message list and
-  // composer up by the keyboard's height with a smooth transition, instead of
-  // letting the browser pan/scroll the page behind the keyboard. Only the
-  // .content-wrap moves — the header stays pinned at the top. visualViewport
-  // shrinks when the keyboard shows; the delta becomes the translate offset.
-  (function keyboardSlide() {
-    const wrap = document.querySelector(".content-wrap");
-    if (!window.visualViewport || !wrap) return;
-    const applyKeyboardOffset = () => {
+  // ---------- Mobile keyboard handling (chat-app style) ----------
+  // The on-screen keyboard shrinks the visualViewport rather than the
+  // layout viewport, so with a plain 100dvh app shell the composer ends
+  // up hidden behind the keyboard while the page silently scrolls under
+  // it. Real chat apps instead resize the whole chat surface to fit the
+  // visible area: header stays pinned at its natural position, the
+  // composer sits right on top of the keyboard, and the message list is
+  // the only thing that shrinks (and auto-scrolls to keep the latest
+  // message in view). We do that here by driving --app-height / .app's
+  // height directly from visualViewport instead of translating anything.
+  (function keyboardResize() {
+    const appEl = document.getElementById("app");
+    if (!window.visualViewport || !appEl) return;
+
+    let rafId = null;
+
+    const applyViewportHeight = () => {
       const vv = window.visualViewport;
-      // Ignore pinch-zoom: only a shrunk viewport at scale 1 means the
-      // on-screen keyboard is up.
-      if (vv.scale > 1.01) {
-        wrap.style.transform = "";
-        return;
-      }
-      // Bottom of the visible viewport in layout px; anything below it is
-      // covered by the keyboard, the composer must clear it.
-      const visualBottom = vv.height + vv.offsetTop;
-      const covered = Math.max(0, (window.innerHeight || vv.height) - visualBottom);
-      wrap.style.transform = covered > 40 ? `translateY(${-covered}px)` : "";
+
+      // Ignore pinch-zoom: only care about the keyboard-driven case,
+      // which is a shrink at scale ~1.
+      const height = vv.scale > 1.01 ? window.innerHeight : vv.height;
+
+      appEl.style.height = height + "px";
+
+      // visualViewport can be offset from the top (e.g. address bar
+      // collapse behavior on some browsers) — pin the app shell's top
+      // to that offset so it tracks the actually-visible region rather
+      // than drifting under content the user can't see.
+      appEl.style.top = vv.offsetTop ? vv.offsetTop + "px" : "";
+
+      // Keep the newest message visible once the keyboard has finished
+      // animating in/out and the new height has settled.
+      output.scrollIntoView({ block: "end" });
     };
-    window.visualViewport.addEventListener("resize", applyKeyboardOffset);
-    window.visualViewport.addEventListener("scroll", applyKeyboardOffset);
+
+    const scheduleApply = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(applyViewportHeight);
+    };
+
+    window.visualViewport.addEventListener("resize", scheduleApply);
+    window.visualViewport.addEventListener("scroll", scheduleApply);
+
+    // Also apply on focus/blur of the composer input directly — on some
+    // mobile browsers the visualViewport resize event fires a beat late,
+    // which shows up as a visible jump. Nudging it right on focus/blur
+    // covers that gap.
+    if (textInput) {
+      textInput.addEventListener("focus", () => setTimeout(scheduleApply, 50));
+      textInput.addEventListener("blur", () => setTimeout(scheduleApply, 50));
+    }
+
+    // Initial sizing in case the page loads with the viewport already
+    // in a non-default state (e.g. rotated device).
+    applyViewportHeight();
   })();
+
+  // ---------- Session expiry / re-lock ----------
+  // The daemon's session tokens are in-memory: a restart (or switch) makes
+  // the stored token stale, and every authenticated call returns 401. Rather
+  // than surfacing that as a generic "Couldn't reach Perla", toss the token
+  // and bounce back to the gate.
+  function relockSession() {
+    sessionStorage.removeItem("perla_session_token");
+    sessionStorage.removeItem("perla_elevate_until");
+    sessionStorage.removeItem("perla_elevated");
+    sessionStorage.removeItem("perla_tier2_unread");
+    authToken = null;
+    stopTierTimer();
+    app.hidden = true;
+    gate.style.display = "";
+    gateError.hidden = false;
+    gateError.textContent = "Session expired — enter your password.";
+    gatePassword.value = "";
+    gatePassword.focus();
+  }
+
+  // ---------- Clear conversation ----------
+  const clearChatBtn = document.getElementById("clearChatBtn");
+
+  clearChatBtn.addEventListener("click", () => {
+    closeAppMenu();
+    // Back out of an overlay first so the chat transcript is the thing
+    // on screen — otherwise the wipe would silently apply to the chat
+    // hidden underneath the history/reminders view.
+    if (activeOverlay === "history") {
+      closeHistoryPanel();
+    } else if (activeOverlay === "reminders") {
+      closeRemindersPanel();
+    }
+    if (!output.querySelector(".entry")) return;
+    if (!window.confirm("Clear this conversation?")) return;
+    output.innerHTML = "";
+    setChatLog(activeTier, "");
+    showWelcome(activeTier);
+  });
 
   // ---------- Deferred init ----------
   // Runs after every const/function above is declared. Handles the

@@ -1023,6 +1023,40 @@ class CompanionHandler(BaseHTTPRequestHandler):
                 self.send_error(404)
             return
 
+        if path == "/manifest.webmanifest":
+            # PWA metadata for install-to-home-screen. Unauthenticated (same
+            # trust tier as /api/avatar) — it just names the palette and the
+            # avatar icon; no session data. Reuses profile.jpg as the icon so
+            # no extra assets need to ship.
+            ext = ""
+            if os.path.exists(PERLA_AVATAR):
+                ext = os.path.splitext(PERLA_AVATAR)[1].lower()
+            icon_type = {
+                ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".webp": "image/webp", ".gif": "image/gif",
+            }.get(ext, "image/png")
+            manifest = {
+                "name": "Perla",
+                "short_name": "Perla",
+                "start_url": "/",
+                "display": "standalone",
+                "background_color": "#17131a",
+                "theme_color": "#17131a",
+                "icons": [{
+                    "src": "/api/avatar",
+                    "sizes": "any",
+                    "type": icon_type,
+                }],
+            }
+            payload = json.dumps(manifest).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/manifest+json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+
         if path.startswith("/api/audio/"):
             if not self.check_auth():
                 return

@@ -359,14 +359,18 @@ in {
   };
 
   # === Noctalia dmenu entry ===
+  # Noctalia substitutes {selection} into exec, so picking "Tier 1"/"Tier 2"
+  # in the /perla launcher menu passes the tier straight to `perla voice` —
+  # no second menu, no separate hotkey hop. (The old "perla hotkey" exec
+  # ignored the selection and re-opened perla's own menu: the double prompt.)
   programs.noctalia.settings = {
     shell.launcher.dmenu.entry.perla = {
-      command = "printf 'Quick chat\nFull mode\n'";
+      command = "printf 'Tier 1\nTier 2\n'";
       label = cfg.assistant_name;
       prefix = "/perla";
       glyph = "user";
       global = true;
-      exec = "perla hotkey";
+      exec = "perla voice \"{selection}\"";
     };
   };
 
