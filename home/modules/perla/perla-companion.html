@@ -340,6 +340,69 @@
     font-size: 14px;
   }
 
+  /* Markdown container — used for Perla's bubbles (live chat + history
+     replay). Everything is HTML-escaped before this renders, so these
+     rules only ever see tags the renderer itself emits. */
+  .entry .md {
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--ink);
+  }
+  .entry .md p { margin: 0 0 10px; font-size: inherit; line-height: inherit; }
+  .entry .md p:last-child { margin-bottom: 0; }
+  .entry .md h1, .entry .md h2, .entry .md h3, .entry .md h4 {
+    margin: 12px 0 6px;
+    line-height: 1.3;
+    font-weight: 600;
+  }
+  .entry .md h1 { font-size: 1.3em; }
+  .entry .md h2 { font-size: 1.2em; }
+  .entry .md h3, .entry .md h4 { font-size: 1.1em; }
+  .entry .md pre {
+    margin: 8px 0;
+    padding: 10px 12px;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid var(--rule-faint);
+    border-radius: 8px;
+    overflow-x: auto;
+    white-space: pre;
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13.5px;
+    line-height: 1.5;
+  }
+  .entry .md code {
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9em;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--rule-faint);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  .entry .md pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+  }
+  .entry .md ul, .entry .md ol { margin: 6px 0; padding-left: 22px; }
+  .entry .md li { margin: 2px 0; }
+  .entry .md a {
+    color: var(--brass-bright);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .entry .md blockquote {
+    margin: 8px 0;
+    padding: 2px 0 2px 12px;
+    border-left: 3px solid var(--brass-dim);
+    color: var(--ink-dim);
+  }
+  .entry .md hr {
+    border: none;
+    border-top: 1px solid var(--rule-faint);
+    margin: 10px 0;
+  }
+
   /* Meta row (timestamp + optional play button) sits below the bubble
      and stays hidden until the message is hovered, focused (keyboard
      nav), or tapped — tap support is via the .meta-visible class, which
@@ -1542,6 +1605,119 @@
     entry.classList.toggle("meta-visible", !wasVisible);
   });
 
+  // ---------- Markdown rendering ----------
+  // Pure-function mini renderer for Perla's bubbles. Everything begins as
+  // HTML-escaped text, so the only tags that can reach the DOM are the ones
+  // these transforms emit — safe by construction, no sanitizer needed.
+  // Fenced code blocks are hoisted first so inline rules never touch them.
+  function renderMarkdown(text) {
+    function esc(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    // Inline transforms, applied only on already-escaped source text.
+    function inline(s) {
+      s = s.replace(/`([^`]+)`/g, (m, code) => "<code>" + code + "</code>");
+      s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+      s = s.replace(/(^|[^_])_([^_\n]+)_(?!_)/g, "$1<em>$2</em>");
+      s = s.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+      s = s.replace(/\[([^\]]+)\]\(((?:[^()]|\([^()]*\))*)\)/g, (m, label, url) => {
+        if (/^[a-z][a-z0-9+.-]*:/i.test(url) && !/^(https?|mailto|tel):/i.test(url)) {
+          return m; // render the raw text — never emit javascript:/data:/vbscript:/file: etc.
+        }
+        return '<a href="' + url + '" target="_blank" rel="noopener">' + label + "</a>";
+      });
+      return s;
+    }
+
+    const lines = String(text).replace(/\r\n/g, "\n").split("\n");
+    const out = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      const fence = line.match(/^```([\w+-]*)\s*$/);
+      if (fence) {
+        const buf = [];
+        i++;
+        while (i < lines.length && !/^```/.test(lines[i])) {
+          buf.push(lines[i]);
+          i++;
+        }
+        i++;
+        out.push("<pre><code>" + esc(buf.join("\n")) + "</code></pre>");
+        continue;
+      }
+
+      const heading = line.match(/^(#{1,4})\s+(.*)$/);
+      if (heading) {
+        const level = heading[1].length;
+        out.push("<h" + level + ">" + inline(esc(heading[2])) + "</h" + level + ">");
+        i++;
+        continue;
+      }
+
+      const quote = line.match(/^>\s?/);
+      if (quote) {
+        const buf = [];
+        while (i < lines.length && /^>\s?/.test(lines[i])) {
+          buf.push(lines[i].replace(/^>\s?/, ""));
+          i++;
+        }
+        out.push("<blockquote>" + inline(esc(buf.join(" "))) + "</blockquote>");
+        continue;
+      }
+
+      const ordered = /^\d+[.)]\s/.test(line);
+      if (ordered || /^[-*+]\s/.test(line)) {
+        const items = [];
+        while (i < lines.length && (/^\d+[.)]\s/.test(lines[i]) || /^[-*+]\s/.test(lines[i]))) {
+          const item = lines[i].replace(/^(?:[-*+]|\d+[.)])\s/, "");
+          items.push("<li>" + inline(esc(item)) + "</li>");
+          i++;
+        }
+        out.push((ordered ? "<ol>" : "<ul>") + items.join("") + (ordered ? "</ol>" : "</ul>"));
+        continue;
+      }
+
+      if (/^-{3,}$/.test(line) || /^\*{3,}$/.test(line)) {
+        out.push("<hr>");
+        i++;
+        continue;
+      }
+
+      if (line.trim() === "") {
+        i++;
+        continue;
+      }
+
+      const buf = [];
+      while (
+        i < lines.length &&
+        lines[i].trim() !== "" &&
+        !/^```/.test(lines[i]) &&
+        !/^(#{1,4})\s/.test(lines[i]) &&
+        !/^>\s?/.test(lines[i]) &&
+        !/^\d+[.)]\s/.test(lines[i]) &&
+        !/^[-*+]\s/.test(lines[i]) &&
+        !/^-{3,}$/.test(lines[i])
+      ) {
+        buf.push(lines[i]);
+        i++;
+      }
+      out.push("<p>" + inline(esc(buf.join(" "))) + "</p>");
+    }
+
+    return out.join("");
+  }
+
   function addEntry(kind, label, text) {
     // A real exchange replaces the welcome card.
     if (kind !== "system") {
@@ -1550,10 +1726,12 @@
     const entry = document.createElement("div");
     entry.className = "entry entry-" + kind;
     const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const useMd = kind.startsWith("perla");
     entry.innerHTML =
-      `<div class="entry-bubble"><p></p></div>` +
+      `<div class="entry-bubble">` + (useMd ? `<div class="md"></div>` : `<p></p>`) + `</div>` +
       (kind !== "system" ? `<div class="entry-meta"><span class="entry-time">${time}</span></div>` : "");
-    entry.querySelector("p").textContent = text;
+    if (useMd) entry.querySelector(".md").innerHTML = renderMarkdown(text);
+    else entry.querySelector("p").textContent = text;
     if (kind === "perla") addCopyButton(entry, text);
     output.appendChild(entry);
     output.scrollIntoView({ block: "end" });
@@ -2366,10 +2544,12 @@
     const entry = document.createElement("div");
     entry.className = "entry entry-" + kind.split(" ")[0];
     if (kind.includes("entry-tier0")) entry.classList.add("entry-tier0");
+    const useMd = kind.startsWith("perla");
     entry.innerHTML =
-      `<div class="entry-bubble"><p></p></div>` +
+      `<div class="entry-bubble">` + (useMd ? `<div class="md"></div>` : `<p></p>`) + `</div>` +
       `<div class="entry-meta"><span class="entry-time">${timeStr || ""}</span></div>`;
-    entry.querySelector("p").textContent = text;
+    if (useMd) entry.querySelector(".md").innerHTML = renderMarkdown(text);
+    else entry.querySelector("p").textContent = text;
     output.appendChild(entry);
     return entry;
   }

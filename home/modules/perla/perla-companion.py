@@ -370,7 +370,10 @@ def tier0_dispatch(text):
         if "open code" in lower:
             run_detached(["codium"], "perla-codium")
             return "Opening the editor.", None
-        if "lock" in lower and "unlock" not in lower:
+        # Word-boundary match: "lock" as a standalone word only. A naive
+        # `"lock" in lower` also fires on "block", "blockquote", "blocked"
+        # — a message like "code block" in markdown locked the screen.
+        if re.search(r"\block\b", lower) and "unlock" not in lower:
             subprocess.run(["noctalia", "msg", "session", "lock"], timeout=5)
             return "Locked.", None
         if "unmute" in lower:
