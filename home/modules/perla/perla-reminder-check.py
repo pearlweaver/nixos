@@ -20,15 +20,26 @@ Delivery rules:
   separate interruptions back to back.
 - Missed group fires before on-time group if both are non-empty in the
   same tick (chronological sense — catch up on the past before the present).
+- Recurring reminders: a pending row may carry `| repeat:<token> |` where
+  token is one of hourly, daily, weekly, monthly, yearly, every:<N>h/<N>d/<N>w.
+  The absolute timestamp on the row is the NEXT occurrence (and the anchor
+  for the cadence). When a repeating row is due it fires with normal on-time
+  framing and is REWRITTEN in place with the next occurrence instead of
+  being marked [x]; it never enters the missed group and is never GC'd.
+  The recurrence arithmetic lives here, not in Perla — the LLM only ever
+  writes the token and a first occurrence.
 """
 
+import calendar
+import fcntl
 import json
 import os
 import re
 import subprocess
 import sys
 import time
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import datetime, timedelta
 
 CONFIG_FILE = os.path.expanduser("~/.config/perla/perla.env")
 
@@ -63,13 +74,39 @@ else:
 
 REMINDERS_FILE = os.path.join(PERLA_VAULT, "Reminders.md")
 LOCK_FILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "perla", "reminder-check.lock")
+# Advisory flock shared with the companion daemon (perla-companion.py) so a
+# daemon reminder create/cancel and this periodic rewrite never interleave.
+# Same canonical path/logic — anchored under ~/.local/share/perla because the
+# timer environment may not carry XDG_RUNTIME_DIR.
+REMINDER_FILE_LOCK = os.path.join(
+    os.path.expanduser("~/.local/share/perla"), "reminders-file.lock"
+)
 GC_AFTER_HOURS = 48
 MISSED_THRESHOLD_MIN = 6
 MAX_INDIVIDUAL = 3
 STAGGER_SECONDS = 4
 
-LINE_RE = re.compile(r"^- \[ \] ([0-9T:-]+) \| id:([a-f0-9]+) \| (.*)$")
+LINE_RE = re.compile(
+    r"^- \[ \] (?P<due>[0-9T:-]+) \| id:(?P<rid>[a-f0-9]+)"
+    r"(?: \| repeat:(?P<repeat>[a-zA-Z0-9:]+))?"
+    r" \| (?P<text>.*)$"
+)
 DONE_RE = re.compile(r"^- \[x\] ([0-9T:-]+) \| id:([a-f0-9]+) \|.*delivered ([0-9T:-]+)")
+
+
+@contextmanager
+def reminder_lock():
+    """Exclusive flock across read-modify-write of Reminders.md, shared with
+    the companion daemon's mutation functions."""
+    lock_dir = os.path.dirname(REMINDER_FILE_LOCK)
+    os.makedirs(lock_dir, exist_ok=True)
+    f = open(REMINDER_FILE_LOCK, "a+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(f, fcntl.LOCK_UN)
+        f.close()
 
 
 def log(msg):
@@ -163,6 +200,66 @@ def deliver_group(items, missed):
     return delivered
 
 
+def _next_day_clamped(year, month, day):
+    """Calendar day clamped to the last day of the month (e.g. 31 -> Feb 28)."""
+    return min(day, calendar.monthrange(year, month)[1])
+
+
+def _next_occurrence(due_dt, token, now_dt):
+    """Compute the next occurrence strictly after `now_dt` for a repeat row.
+
+    `due_dt` is the first-occurrence timestamp written to Reminders.md and is
+    the recurrence anchor. Clock-anchored tokens (daily/weekly/monthly/yearly)
+    hold a fixed wall-clock time; period-anchored ones (hourly, every:) hold a
+    fixed phase from `due_dt`. Returns None for unknown tokens.
+    """
+    token = token.lower()
+    anchor = due_dt.replace(second=0, microsecond=0)
+
+    if token in ("hourly", "every:1h"):
+        period = timedelta(hours=1)
+    elif token.startswith("every:"):
+        m = re.fullmatch(r"every:(\d+)([hdw])", token)
+        if m is None or int(m.group(1)) < 1:
+            return None
+        factor = {"h": 3600, "d": 86400, "w": 604800}[m.group(2)]
+        period = timedelta(seconds=factor * int(m.group(1)))
+    elif token == "daily":
+        nxt = now_dt.replace(hour=anchor.hour, minute=anchor.minute, second=0, microsecond=0)
+        while nxt <= now_dt:
+            nxt += timedelta(days=1)
+        return nxt
+    elif token == "weekly":
+        nxt = now_dt.replace(hour=anchor.hour, minute=anchor.minute, second=0, microsecond=0)
+        nxt += timedelta(days=(anchor.weekday() - nxt.weekday()) % 7)
+        while nxt <= now_dt:
+            nxt += timedelta(days=7)
+        return nxt
+    elif token == "monthly":
+        nxt = now_dt.replace(hour=anchor.hour, minute=anchor.minute, second=0, microsecond=0)
+        nxt = nxt.replace(day=_next_day_clamped(nxt.year, nxt.month, anchor.day))
+        while nxt <= now_dt:
+            ny, nm = (nxt.year + 1, 1) if nxt.month == 12 else (nxt.year, nxt.month + 1)
+            nxt = nxt.replace(year=ny, month=nm, day=_next_day_clamped(ny, nm, anchor.day))
+        return nxt
+    elif token == "yearly":
+        nxt = now_dt.replace(
+            hour=anchor.hour, minute=anchor.minute, second=0, microsecond=0,
+            month=anchor.month, day=_next_day_clamped(now_dt.year, anchor.month, anchor.day),
+        )
+        while nxt <= now_dt:
+            y = nxt.year + 1
+            nxt = nxt.replace(year=y, day=_next_day_clamped(y, anchor.month, anchor.day))
+        return nxt
+    else:
+        return None
+
+    nxt = anchor + period
+    while nxt <= now_dt:
+        nxt += period
+    return nxt
+
+
 def main():
     os.makedirs(os.path.dirname(LOCK_FILE), exist_ok=True)
 
@@ -195,54 +292,82 @@ def _run():
     if not os.path.exists(REMINDERS_FILE):
         return
 
-    with open(REMINDERS_FILE) as f:
-        lines = f.read().splitlines()
+    with reminder_lock():
+        with open(REMINDERS_FILE) as f:
+            lines = f.read().splitlines()
 
-    now = time.time()
-    on_time_items = []
-    missed_items = []
-    kept_lines = []
-    due_line_indices = {}  # rid -> original line index, for rewriting
+        now = time.time()
+        now_iso = datetime.now().isoformat(timespec="minutes")
+        on_time_items = []
+        missed_items = []
+        kept_lines = []
+        due_line_indices = {}  # rid -> (idx, due_ts, text)  -> rewritten as [x]
+        reschedule_map = {}    # rid -> (idx, due_ts, repeat_token, text) -> rewritten as next [ ]
 
-    for idx, line in enumerate(lines):
-        m = LINE_RE.match(line)
-        if m:
-            due_ts, rid, text = m.groups()
-            due_epoch = parse_ts(due_ts)
-            if due_epoch is not None and now >= due_epoch:
-                overdue_min = (now - due_epoch) / 60
-                due_line_indices[rid] = (idx, due_ts, text)
-                if overdue_min >= MISSED_THRESHOLD_MIN:
-                    missed_items.append((due_ts, rid, text, overdue_min))
-                else:
-                    on_time_items.append((due_ts, rid, text, overdue_min))
-                continue  # don't keep as-is; will be replaced below
-        kept_lines.append((idx, line))
+        for idx, line in enumerate(lines):
+            m = LINE_RE.match(line)
+            if m:
+                due_ts = m.group("due")
+                rid = m.group("rid")
+                repeat_token = m.group("repeat")
+                text = (m.group("text") or "").strip()
+                due_epoch = parse_ts(due_ts)
+                if due_epoch is not None and now >= due_epoch:
+                    overdue_min = (now - due_epoch) / 60
+                    if repeat_token:
+                        # Repeats always fire with the normal on-time framing —
+                        # the "missed while you were away" fanfare would repeat
+                        # every period. The checker reschedules the row.
+                        on_time_items.append((due_ts, rid, text, overdue_min))
+                        reschedule_map[rid] = (idx, due_ts, repeat_token, text)
+                        continue
+                    due_line_indices[rid] = (idx, due_ts, text)
+                    if overdue_min >= MISSED_THRESHOLD_MIN:
+                        missed_items.append((due_ts, rid, text, overdue_min))
+                    else:
+                        on_time_items.append((due_ts, rid, text, overdue_min))
+                    continue  # don't keep as-is; will be replaced below
+            kept_lines.append((idx, line))
 
-    if not on_time_items and not missed_items:
-        # Still run GC pass even if nothing fired this tick.
-        _garbage_collect(lines)
-        return
+        if not on_time_items and not missed_items:
+            # Still run GC pass even if nothing fired this tick.
+            _garbage_collect(lines)
+            return
+
+        missed_rids = {rid for (_, rid, _, _) in missed_items}
+
+        # Rebuild file: kept lines as-is, plus rewritten delivered lines,
+        # in original order. All inside the lock so a concurrent daemon
+        # create/cancel can't interleave with this rewrite. Delivered stamps
+        # use this tick's now_iso (delivery itself happens below, after the
+        # lock is released — never hold the flock across TTS/sleeps).
+        new_lines: list[str | None] = [None] * len(lines)
+        for idx, line in kept_lines:
+            new_lines[idx] = line
+        for rid, (idx, due_ts, text) in due_line_indices.items():
+            suffix = ", missed" if rid in missed_rids else ""
+            new_lines[idx] = f"- [x] {due_ts} | id:{rid} | {text} (delivered {now_iso}{suffix})"
+        for rid, (idx, due_ts, repeat_token, text) in reschedule_map.items():
+            next_dt = _next_occurrence(
+                datetime.fromisoformat(due_ts), repeat_token, datetime.now()
+            )
+            if next_dt is None:
+                # Unknown token — can't reschedule safely; one-shot fallback.
+                log(f"WARNING: unknown repeat token '{repeat_token}' on {rid}, treating as one-shot.")
+                new_lines[idx] = f"- [x] {due_ts} | id:{rid} | {text} (delivered {now_iso})"
+                continue
+            next_ts = next_dt.strftime("%Y-%m-%dT%H:%M")
+            log(f"Rescheduling reminder {rid} ({repeat_token}) to {next_ts}.")
+            new_lines[idx] = f"- [ ] {next_ts} | id:{rid} | repeat:{repeat_token} | {text}"
+
+        final_lines = [l for l in new_lines if l is not None]
+        _garbage_collect_and_write(final_lines)
 
     # Missed group first (catch up on the past), then on-time.
-    delivered = []
-    delivered += deliver_group(missed_items, missed=True)
-    delivered += deliver_group(on_time_items, missed=False)
-
-    delivered_map = {rid: (ts, missed) for rid, ts, missed in delivered}
-
-    # Rebuild file: kept lines as-is, plus rewritten delivered lines,
-    # in original order.
-    new_lines = [None] * len(lines)
-    for idx, line in kept_lines:
-        new_lines[idx] = line
-    for rid, (idx, due_ts, text) in due_line_indices.items():
-        delivered_ts, missed = delivered_map[rid]
-        suffix = ", missed" if missed else ""
-        new_lines[idx] = f"- [x] {due_ts} | id:{rid} | {text} (delivered {delivered_ts}{suffix})"
-
-    final_lines = [l for l in new_lines if l is not None]
-    _garbage_collect_and_write(final_lines)
+    if missed_items:
+        deliver_group(missed_items, missed=True)
+    if on_time_items:
+        deliver_group(on_time_items, missed=False)
 
 
 def _garbage_collect(lines):

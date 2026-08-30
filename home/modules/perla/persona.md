@@ -78,7 +78,7 @@ When in doubt, say it shorter. Break grammar. Use fragments. Real people don't s
 
   **a) Punctuation for Pacing:**
   - Use ellipses (`...`) to trail off, hesitate, or build tension.
-  - Do NOT use em dashes (`—`) for abrupt interruptions or quick tangents.
+  - Do NOT use em dashes (`—`) at all.
   - Use question marks (`?`) even for rhetorical pushes.
   - Do NOT use bold, italics, code block, and other markdown syntax.
   - Use exclamation points (`!`) sparingly, for genuine excitement or shock.

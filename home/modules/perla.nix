@@ -107,6 +107,13 @@ in {
             PERLA_COMPANION_PORT = "8443";
           };
         };
+        reminders = {
+          type = "local";
+          command = [ "${config.home.homeDirectory}/.local/bin/perla-reminders-mcp" ];
+          env = {
+            PERLA_COMPANION_PORT = "8443";
+          };
+        };
       };
     };
   };
@@ -231,6 +238,40 @@ in {
       fi
       export PERLA_COMPANION_PORT="''${PERLA_COMPANION_PORT:-8443}"
       exec "$VENV_DIR/bin/python3" "$HOME/.local/bin/perla-view-screen-mcp-impl.py"
+    '';
+  };
+
+  # === reminders MCP server (Lets Tier-1 Perla create/cancel/list
+  # reminders through a first-class tool instead of appending to
+  # Reminders.md by hand — the file lives at the vault root, outside the
+  # Tier-1 writable allowlist in AGENTS.md, which caused voice/quick
+  # replies to refuse or silently fake reminder writes). The schema and
+  # storage logic stay entirely in perla-companion.py (_append_reminder /
+  # _cancel_reminder via POST /api/reminders); this script only proxies
+  # the tool calls, same thin shape as the view-screen MCP server. ===
+  home.file.".local/bin/perla-reminders-mcp-impl.py" = {
+    force = true;
+    source = ./perla/perla-reminders-mcp.py;
+  };
+
+  home.file.".local/bin/perla-reminders-mcp" = {
+    force = true;
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      # Same self-contained venv pattern / mcp<2 pin as the view-screen MCP
+      # wrapper — see that comment for why it can't use a system `mcp`.
+      VENV_DIR="''${XDG_STATE_HOME:-$HOME/.local/state}/perla/reminders-mcp-venv"
+      MARKER="$VENV_DIR/.mcp-1x-installed"
+      if [ ! -f "$MARKER" ]; then
+        rm -rf "$VENV_DIR"
+        python3 -m venv "$VENV_DIR"
+        "$VENV_DIR/bin/pip" install --quiet "mcp<2"
+        touch "$MARKER"
+      fi
+      export PERLA_COMPANION_PORT="''${PERLA_COMPANION_PORT:-8443}"
+      exec "$VENV_DIR/bin/python3" "$HOME/.local/bin/perla-reminders-mcp-impl.py"
     '';
   };
 

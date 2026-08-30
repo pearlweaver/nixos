@@ -1,3 +1,3 @@
-# Version 26.8.30.3
+# Version 26.8.30.4
 
-- Fixed Perla's history view ending at new line and not showing complete responses.
+- Trying to make Reminder MCP for Perla

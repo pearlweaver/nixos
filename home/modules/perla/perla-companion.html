@@ -1111,6 +1111,18 @@
     margin-top: 3px;
   }
 
+  .reminder-cadence {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--brass-dim);
+  }
+  .reminder-cadence svg { flex-shrink: 0; }
+
   .reminder-empty {
     color: var(--ink-faint);
     font-style: italic;
@@ -2690,6 +2702,23 @@
     return section;
   }
 
+  function repeatLabel(token) {
+    if (!token) return "";
+    const t = token.toLowerCase();
+    if (t === "hourly") return "repeats hourly";
+    if (t === "daily") return "repeats daily";
+    if (t === "weekly") return "repeats weekly";
+    if (t === "monthly") return "repeats monthly";
+    if (t === "yearly") return "repeats yearly";
+    const m = t.match(/^every:(\d+)([hdw])$/);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      const unit = { h: "hour", d: "day", w: "week" }[m[2]];
+      return `repeats every ${n} ${unit}${n > 1 ? "s" : ""}`;
+    }
+    return "";
+  }
+
   function buildReminderList(items, statusClass, metaFn) {
     const list = document.createElement("div");
     const glyphSVGs = {
@@ -2712,6 +2741,16 @@
       const text = document.createElement("div");
       text.className = "reminder-text";
       text.textContent = r.text;
+      const cadenceLabel = repeatLabel(r.repeat);
+      if (cadenceLabel) {
+        const cadence = document.createElement("div");
+        cadence.className = "reminder-cadence";
+        cadence.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>';
+        const span = document.createElement("span");
+        span.textContent = cadenceLabel;
+        cadence.appendChild(span);
+        body.appendChild(cadence);
+      }
       const meta = document.createElement("div");
       meta.className = "reminder-meta";
       meta.textContent = metaFn(r);

@@ -20,8 +20,10 @@ Tailscale) go through the gate-password -> session-token flow as before.
 """
 
 import base64
+import fcntl
 import json
 import os
+import random
 import re
 import shlex
 import signal
@@ -29,6 +31,7 @@ import subprocess
 import tempfile
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -552,6 +555,7 @@ def call_opencode(sid, port, text, tier, image_path=None):
             "obsidian_write_note", "obsidian_patch_note", "obsidian_append_to_note",
             "obsidian_replace_in_note", "obsidian_manage_tags", "obsidian_delete_note",
             "obsidian_manage_frontmatter",
+            "create_reminder", "cancel_reminder",
         }
         obsidian_write = any(
             p.get("tool", "") in obsidian_writes
@@ -779,8 +783,11 @@ def get_history_for_day(date_str):
 # Same file/schema perla-reminder-check.py already owns; this is read-only.
 # ---------------------------------------------------------------------------
 REMINDER_PENDING_RE = re.compile(
-    r"^-\s\[\s\]\s([0-9T:-]+)\s\|\sid:([a-f0-9]+)\s\|\s(.*)$"
+    r"^-\s\[\s\]\s([0-9T:-]+)\s\|\sid:([a-f0-9]+)"
+    r"(?:\s\|\srepeat:([a-zA-Z0-9:]+))?"
+    r"\s\|\s(.*)$"
 )
+REMINDER_DUE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")
 REMINDER_DONE_RE = re.compile(
     r"^-\s\[x\]\s([0-9T:-]+)\s\|\sid:([a-f0-9]+)\s\|\s(.*?)\s\(delivered\s([0-9T:-]+)(,\smissed)?\)\s*$"
 )
@@ -804,11 +811,12 @@ def get_reminders():
     for line in lines:
         m = REMINDER_PENDING_RE.match(line)
         if m:
-            due, rid, text = m.groups()
+            due, rid, repeat_token, text = m.groups()
             pending.append({
                 "id": rid,
                 "due": due,
-                "text": text,
+                "repeat": repeat_token,
+                "text": text.strip(),
                 "overdue": due <= now_iso,
             })
             continue
@@ -835,6 +843,148 @@ def get_reminders():
     delivered.sort(key=lambda e: e["due"], reverse=True)
 
     return {"pending": pending, "missed": missed, "delivered": delivered}
+
+
+# ---------------------------------------------------------------------------
+# Reminders — mutations (create/cancel) backing the reminders MCP tool.
+# The row format is identical to what the checker writes/reads
+# (perla-reminder-check.py validates the same lines with its own regex), and
+# get_reminders() above parses exactly the rows these functions produce, so
+# the web view and the delivery job keep working with MCP-created reminders.
+# A shared flock serializes these mutations against the checker's periodic
+# rewrite of the same file.
+# ---------------------------------------------------------------------------
+
+# Advisory lock shared with perla-reminder-check.py. Anchored under
+# ~/.local/share/perla (matching perla-audio / perla-screenshots) rather than
+# XDG_RUNTIME_DIR because the checker runs from a systemd timer whose
+# environment may not carry XDG_RUNTIME_DIR — both processes resolve the
+# same canonical path for the same user.
+REMINDER_FILE_LOCK = os.path.join(
+    os.path.expanduser("~/.local/share/perla"), "reminders-file.lock"
+)
+REPEAT_TOKEN_RE = re.compile(r"^every:(\d+)([hdw])$")
+_REPEAT_TOKENS = {"hourly", "daily", "weekly", "monthly", "yearly"}
+
+
+@contextmanager
+def reminder_lock():
+    """Hold an exclusive flock across a read-modify-write of Reminders.md so
+    daemon mutations and the checker's rewrite never interleave."""
+    lock_dir = os.path.dirname(REMINDER_FILE_LOCK)
+    os.makedirs(lock_dir, exist_ok=True)
+    f = open(REMINDER_FILE_LOCK, "a+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(f, fcntl.LOCK_UN)
+        f.close()
+
+
+def _valid_repeat(token):
+    """Normalize a repeat token to exactly what the checker understands, or
+    return None. Callers ask whether the trimmed/lowercased token is valid;
+    an empty value means 'no repeat' (None is also None, meaning one-shot)."""
+    if not token:
+        return None
+    t = token.strip().lower()
+    if t in _REPEAT_TOKENS:
+        return t
+    m = REPEAT_TOKEN_RE.match(t)
+    if m and int(m.group(1)) >= 1:
+        return t
+    return None
+
+
+def _read_reminders_raw():
+    path = os.path.join(PERLA_VAULT, "Reminders.md")
+    try:
+        with open(path, "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
+
+
+def _unique_reminder_id(existing_lines):
+    used = {
+        m.group(2) for line in existing_lines
+        for m in [REMINDER_PENDING_RE.match(line)] if m
+    }
+    while True:
+        rid = "".join(random.choice("0123456789abcdef") for _ in range(4))
+        if rid not in used:
+            return rid
+
+
+def _append_reminder(text, due, repeat=None):
+    """Create a reminder row. Returns (True, id) on success, or (False,
+    human-readable error). Caller (the MCP tool) surfaces the error to the
+    model, which passes it back to the user as-is."""
+    text = (text or "").strip()
+    if not text:
+        return False, "Reminder text is empty."
+    try:
+        datetime.fromisoformat(due)
+    except (TypeError, ValueError):
+        return False, (
+            f"Couldn't parse due '{due}' — expected YYYY-MM-DDTHH:MM "
+            "(local time), e.g. 2026-08-30T18:00."
+        )
+    if not REMINDER_DUE_RE.match((due or "").strip()):
+        return False, (
+            f"Due must be a full timestamp in YYYY-MM-DDTHH:MM form "
+            "(local time), e.g. 2026-08-30T18:00 — got '{due}'."
+        )
+    repeat_token = _valid_repeat(repeat)
+    if repeat and repeat_token is None:
+        return False, (
+            f"Unknown repeat '{repeat}' — use hourly, daily, weekly, "
+            "monthly, yearly, or every:Nh / every:Nd / every:Nw."
+        )
+
+    with reminder_lock():
+        raw = _read_reminders_raw()
+        lines = raw.splitlines()
+        rid = _unique_reminder_id(lines)
+        segment = f" | repeat:{repeat_token}" if repeat_token else ""
+        row = f"- [ ] {due} | id:{rid}{segment} | {text}"
+        if not raw:
+            raw = "# Reminders\n"
+        elif not raw.endswith("\n"):
+            raw += "\n"
+        path = os.path.join(PERLA_VAULT, "Reminders.md")
+        with open(path, "w") as f:
+            f.write(raw + row + "\n")
+    return True, rid
+
+
+def _cancel_reminder(rid):
+    """Remove a single pending reminder by id. Returns (True, message) on
+    success, or (False, human-readable error). Other rows are untouched."""
+    rid = (rid or "").strip()
+    with reminder_lock():
+        lines = _read_reminders_raw().splitlines()
+        kept, found = [], False
+        for line in lines:
+            m = REMINDER_PENDING_RE.match(line)
+            if m and m.group(2) == rid:
+                found = True
+                continue
+            kept.append(line)
+        if not found:
+            return False, f"No pending reminder with id '{rid}'."
+        while kept and kept[-1] == "":
+            kept.pop()
+        content = "\n".join(kept)
+        if content:
+            content += "\n"
+        if not content:
+            content = "# Reminders\n"
+        path = os.path.join(PERLA_VAULT, "Reminders.md")
+        with open(path, "w") as f:
+            f.write(content)
+    return True, f"Cancelled reminder {rid}."
 
 
 def log_memory_mismatch(input_text, response, tier, source="remote"):
@@ -1215,6 +1365,10 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.handle_internal_screenshot()
             return
 
+        if path == "/api/reminders":
+            self.handle_reminders_post()
+            return
+
         self.send_error(404)
 
     def handle_gate(self):
@@ -1421,6 +1575,45 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": "Captured the screen but couldn't read it back."})
             return
         self.send_json(200, {"image_base64": encoded, "mime": "image/png"})
+
+    def handle_reminders_post(self):
+        """Local-only: create/cancel/list reminders, backing the reminders
+        MCP tool. Same local-token surface as /api/internal/screenshot. All
+        reminder rows flow through _append_reminder/_cancel_reminder so the
+        schema contract stays in exactly one place."""
+        if self.get_source() != "local":
+            self.send_json(403, {"error": "local only"})
+            return
+        try:
+            body = json.loads(self.read_body())
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(400, {"error": "invalid JSON"})
+            return
+
+        action = body.get("action")
+        if action == "create":
+            ok, detail = _append_reminder(
+                body.get("text", ""), body.get("due", ""), body.get("repeat")
+            )
+            self.send_json(200, {
+                "ok": ok,
+                "id": detail if ok else None,
+                "error": None if ok else detail,
+            })
+            return
+        if action == "cancel":
+            ok, detail = _cancel_reminder(body.get("id", ""))
+            self.send_json(200, {
+                "ok": ok,
+                "id": detail if ok else None,
+                "error": None if ok else detail,
+            })
+            return
+        if action == "list":
+            reminders = get_reminders()
+            self.send_json(200, {"ok": True, "pending": reminders.get("pending", [])})
+            return
+        self.send_json(400, {"error": f"unknown action '{action}'"})
 
     def _parse_multipart_field(self, raw, boundary, field_name):
         """Extract a single named field's raw bytes from multipart form
