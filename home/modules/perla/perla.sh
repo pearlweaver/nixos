@@ -4,7 +4,7 @@
 # This used to talk to OpenCode directly and keep its own session file,
 # which meant a laptop conversation and a phone conversation were two
 # different OpenCode sessions even at the same tier. All of that logic
-# (sessions, OpenCode calls, logging, tier0 dispatch) now lives in
+# (sessions, OpenCode calls, logging, system actions) now lives in
 # perla-companion.py — the single daemon every surface talks to. This
 # script's only remaining jobs: capture mic audio, hotkey/dmenu UI, and
 # play responses through local speakers.

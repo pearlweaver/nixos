@@ -12,10 +12,9 @@ tools can. See https://github.com/anomalyco/opencode/issues/9539.
 This server does NOT reimplement screenshot capture or lock-detection.
 It calls perla-companion's existing local-only endpoint
 (POST /api/internal/screenshot), which reuses the exact same
-capture_screenshot() function already used by the tier0 "send me a
-screenshot" command and the fixed-phrase vision path. This keeps the
-lock/standby safety check defined in exactly one place, regardless of
-which of the three surfaces triggers a capture.
+capture_screenshot() function already used by the fixed-phrase vision
+path. This keeps the lock/standby safety check defined in exactly one
+place, regardless of which surface triggers a capture.
 
 Registered in opencode-t1.json (and Tier 2's config) as a local MCP
 server, same shape as perla-obsidian-mcp, so the model can call it from

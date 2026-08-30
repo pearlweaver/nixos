@@ -1,3 +1,3 @@
-# Version 26.8.30.4
+# Version 26.8.30.5
 
-- Trying to make Reminder MCP for Perla
+- Converted Tier 0 to its own mcp server to avoid accidental invokes.

@@ -350,58 +350,240 @@ def capture_screenshot():
         return None, "Something went wrong capturing the screen."
 
 
-def tier0_dispatch(text):
-    """Try to handle text as a direct system action. Returns
-    (response_text, image_path) if handled — image_path is None unless
-    the action produced one (e.g. a screenshot) — or (None, None) if this
-    isn't a tier0 command."""
-    lower = text.lower()
+# ---------------------------------------------------------------------------
+# System actions — the fixed allowlist the system_action MCP tool can
+# trigger. There is deliberately NO keyword/phrase matching anywhere here:
+# an action only ever runs because the model called the tool with an
+# explicit action name, so nothing in the spoken/texted message can match
+# accidentally. (The old tier0 pre-LLM dispatcher fired on substrings —
+# "block" locked the screen, "commute" muted audio, "sleep well" suspended
+# the machine.) Execution happens in this daemon, not in the MCP server, so
+# it reuses the user-session environment the daemon already runs in
+# (Wayland/Noctalia bus, PipeWire, user systemd bus).
+# ---------------------------------------------------------------------------
+SYSTEM_ACTIONS = ("lock", "shutdown", "restart", "suspend", "mute", "unmute",
+                  "open_app", "open_folder")
 
-    def run_detached(cmd_list, unit):
-        subprocess.Popen(
-            ["systemd-run", "--user", f"--unit={unit}"] + cmd_list,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+# Normalized app name -> (launch args, stable systemd-run unit name).
+# "unlock" is deliberately absent from the allowlist. This map is the fast
+# path; open_app ALSO resolves any installed app from its .desktop file
+# (see resolve_app_target below), so the model is never limited to these.
+APP_LAUNCH = {
+    "firefox": (["firefox"], "perla-firefox"),
+    "browser": (["firefox"], "perla-firefox"),
+    "terminal": (["kitty"], "perla-terminal"),
+    "kitty": (["kitty"], "perla-terminal"),
+    "code": (["codium"], "perla-code"),
+    "codium": (["codium"], "perla-code"),
+    "editor": (["codium"], "perla-code"),
+}
+APP_LABELS = "firefox (browser), terminal, code (editor) — or any installed app by name"
+
+
+def run_detached(cmd_list, unit):
+    subprocess.Popen(
+        ["systemd-run", "--user", f"--unit={unit}"] + cmd_list,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+
+
+# --- Desktop-file resolution for open_app ----------------------------------
+# open_app is not limited to the alias map: ANY installed app can be opened
+# by name. The resolver reads the standard applications dirs, so anything
+# the user installed shows up automatically. It still never passes free-form
+# input to a shell — it only ever runs the Exec line from an installed
+# .desktop file, detached (setsid-ish via systemd-run), same as the aliases.
+DESKTOP_SCAN_DIRS = (
+    os.path.expanduser("~/.local/share/applications"),
+    "/usr/local/share/applications",
+    "/usr/share/applications",
+)
+
+_FIELD_CODE_RE = re.compile(r"%[A-Za-z]")
+
+
+def desktop_dir_override():
+    env = os.environ.get("PERLA_DESKTOP_DIRS", "").strip()
+    return tuple(d for d in env.split(":") if d) if env else None
+
+
+def field_strip(exec_line):
+    """Remove .desktop field codes (%U, %F, %f, …) and collapse %% -> %,
+    leaving a bare launchable command line."""
+    out = re.sub(r"%%", "\0", exec_line)
+    out = _FIELD_CODE_RE.sub("", out)
+    return out.replace("\0", "%")
+
+
+def desktop_unit(label):
+    """Stable systemd-run unit name derived from an arbitrary app label."""
+    slug = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
+    return "perla-app-" + (slug[:50] or "app")
+
+
+def parse_desktop_file(path):
+    """Minimal .desktop parser. Returns {name, exec, type, nodisplay,
+    hidden} from the [Desktop Entry] section (localized Name keys are
+    ignored — the plain Name wins), or None if malformed/lacking a Name."""
+    fields = {}
+    in_desktop_entry = False
+    try:
+        with open(path, "r", errors="replace") as f:
+            for line in f:
+                line = line.rstrip("\r\n")
+                if not line:
+                    continue
+                if line.startswith("["):
+                    in_desktop_entry = line.strip() == "[Desktop Entry]"
+                    continue
+                if not in_desktop_entry or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                value = value.strip()
+                if key == "Name":
+                    fields["name"] = value
+                elif key == "Exec":
+                    fields["exec"] = value
+                elif key == "Type":
+                    fields["type"] = value
+                elif key == "NoDisplay":
+                    fields["nodisplay"] = value.lower() == "true"
+                elif key == "Hidden":
+                    fields["hidden"] = value.lower() == "true"
+    except OSError:
+        return None
+    if not fields.get("name"):
+        return None
+    return fields
+
+
+def scan_desktop_apps():
+    """Map lowercased app Name -> (display Name, raw Exec) for every
+    installed .desktop launcher: Type=Application (absent defaults to
+    Application per the spec), not Hidden, not NoDisplay, with an Exec.
+    PERLA_DESKTOP_DIRS (colon-separated; replaces the standard dirs
+    entirely) exists only for tests."""
+    dirs = desktop_dir_override() or DESKTOP_SCAN_DIRS
+    apps = {}
+    for directory in dirs:
+        try:
+            entries = os.listdir(directory)
+        except OSError:
+            continue
+        for filename in entries:
+            if not filename.endswith(".desktop"):
+                continue
+            info = parse_desktop_file(os.path.join(directory, filename))
+            if not info:
+                continue
+            if (info.get("type", "Application") != "Application"
+                    or info.get("nodisplay") or info.get("hidden")):
+                continue
+            exec_line = (info.get("exec") or "").strip()
+            if not exec_line:
+                continue
+            apps[info["name"].strip().lower()] = (info["name"].strip(), exec_line)
+    return apps
+
+
+def resolve_app_target(target):
+    """Resolve an app name to a detached launch — (display label, command
+    list, systemd-run unit), or None if nothing matches. Known aliases win
+    instantly; otherwise installed apps are matched by exact Name, then
+    exact Exec basename ("vlc" -> its player), then best case-insensitive
+    substring against Name (shortest label wins, so "spot" -> Spotify).
+    The returned command is the desktop Exec with field codes stripped and
+    tokenized — no shell is ever involved."""
+    query = (target or "").strip().lower()
+    if not query:
+        return None
+    if query in APP_LAUNCH:
+        cmd, unit = APP_LAUNCH[query]
+        return (query, cmd, unit)
+    apps = scan_desktop_apps()
+    match = None
+    if query in apps:
+        match = apps[query]
+    if match is None:
+        for key, (label, exec_line) in apps.items():
+            if os.path.basename(exec_line.split(" ", 1)[0]).lower() == query:
+                match = (label, exec_line)
+                break
+    if match is None:
+        best_key, best = "", None
+        for key, (label, exec_line) in apps.items():
+            if query in key or key in query:
+                if best is None or len(key) < len(best_key):
+                    best_key, best = key, (label, exec_line)
+        if best is not None:
+            match = best
+    if match is None:
+        return None
+    label, exec_line = match
+    cmd = shlex.split(field_strip(exec_line))
+    if not cmd:
+        return None
+    return (label, cmd, desktop_unit(label))
+
+
+def execute_system_action(action, target=None):
+    """Execute one allowlisted system action. Returns (ok, message) — errors
+    are phrased so the model can relay them to the user as-is. `target` is
+    only meaningful for open_app / open_folder."""
+    action = (action or "").strip().lower()
+    if action not in SYSTEM_ACTIONS:
+        return False, (
+            f"'{action}' isn't a system action I'm allowed to run. I can: "
+            "lock, shutdown, restart, suspend, mute, unmute, "
+            f"open_app ({APP_LABELS}), open_folder."
         )
 
-    try:
-        if "open firefox" in lower:
-            run_detached(["firefox"], "perla-firefox")
-            return "Opening Firefox.", None
-        if "open terminal" in lower:
-            run_detached(["kitty"], "perla-kitty")
-            return "Opening a terminal.", None
-        if "open code" in lower:
-            run_detached(["codium"], "perla-codium")
-            return "Opening the editor.", None
-        # Word-boundary match: "lock" as a standalone word only. A naive
-        # `"lock" in lower` also fires on "block", "blockquote", "blocked"
-        # — a message like "code block" in markdown locked the screen.
-        if re.search(r"\block\b", lower) and "unlock" not in lower:
-            subprocess.run(["noctalia", "msg", "session", "lock"], timeout=5)
-            return "Locked.", None
-        if "unmute" in lower:
-            subprocess.run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "0"], timeout=5)
-            return "Unmuted.", None
-        if "mute" in lower:
-            subprocess.run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "1"], timeout=5)
-            return "Muted.", None
-        if any(p in lower for p in (
-            "screenshot", "capture my screen", "capture the screen",
-            "send me my screen", "send my screen", "show me my screen",
-            "take a screenshot", "take a picture of my screen",
-        )):
-            path, error = capture_screenshot()
-            if error:
-                return error, None
-            return "Here's your screen.", path
-        if "suspend" in lower or "sleep" in lower:
-            subprocess.run(["systemctl", "suspend"], timeout=5)
-            return "Suspending.", None
-    except Exception as e:
-        print(f"ERROR: tier0 dispatch failed: {e}", flush=True)
-        return None, None
+    def run(cmd, timeout=5):
+        subprocess.run(cmd, timeout=timeout)
 
-    return None, None
+    try:
+        if action == "lock":
+            run(["noctalia", "msg", "session", "lock"])
+            return True, "Locked."
+        if action == "unmute":
+            run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "0"])
+            return True, "Unmuted."
+        if action == "mute":
+            run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "1"])
+            return True, "Muted."
+        if action == "suspend":
+            run(["systemctl", "suspend"])
+            return True, "Suspending."
+        if action == "shutdown":
+            run(["systemctl", "poweroff"])
+            return True, "Shutting down."
+        if action == "restart":
+            run(["systemctl", "reboot"])
+            return True, "Restarting."
+        if action == "open_app":
+            name = (target or "").strip().lower()
+            if not name:
+                return False, "open_app needs an app name."
+            resolved = resolve_app_target(name)
+            if resolved is None:
+                return False, (
+                    f"I couldn't find an app called '{name}' on this system. "
+                    f"I can open: {APP_LABELS}."
+                )
+            label, cmd, unit = resolved
+            run_detached(cmd, unit)
+            return True, f"Opening {label}."
+        if action == "open_folder":
+            path = (target or "").strip()
+            if not path:
+                return False, "open_folder needs a folder path."
+            run_detached(["xdg-open", path], "perla-open-folder")
+            return True, f"Opening {path}."
+    except Exception as e:
+        print(f"ERROR: system action '{action}' failed: {e}", flush=True)
+        return False, f"Couldn't run '{action}' — try again."
+
+    return False, f"Couldn't run '{action}'."
 
 
 # ---------------------------------------------------------------------------
@@ -1022,10 +1204,10 @@ def is_destructive(text):
 
 def is_screen_vision_request(text):
     """Phrases that mean 'look at my screen and tell me about it' — these
-    need the LLM (to actually describe/reason about the image), so they
-    must NOT be handled by tier0_dispatch, which bypasses the model
-    entirely. Deliberately distinct from the tier0 'send me a screenshot'
-    phrases (which just want the raw image, no description)."""
+    need the LLM (to actually describe/reason about the image), so they go
+    to the model with a screenshot attached. Deliberately distinct from the
+    screenshot-capture path (view_screen MCP tool), which just returns the
+    raw image with no description."""
     lower = text.lower()
     vision_phrases = (
         "what's on my screen", "whats on my screen",
@@ -1040,34 +1222,29 @@ def is_screen_vision_request(text):
 
 
 def process_message(message, tier, source, confirm=False, user_image_paths=None):
-    """The single entrypoint every surface funnels through: tier0 check,
-    then OpenCode, then logging. Returns (response_text, tool_used,
-    confirm_required, confirm_action, image_path). image_path is None
-    except for tier0 actions that produce one (screenshot capture) or a
-    screen-vision request (captured screenshot sent alongside the
-    model's description). When the user attaches their own image(s)
-    (user_image_paths), they win over tier0 dispatch and screen capture,
-    are sent to the model instead, and the temp files are removed
-    afterwards."""
+    """The single entrypoint every surface funnels through: OpenCode, then
+    logging. Returns (response_text, tool_used, confirm_required,
+    confirm_action, image_path). image_path is None except for a screen-vision
+    request (captured screenshot sent alongside the model's description).
+    When the user attaches their own image(s) (user_image_paths), they win
+    over screen capture, are sent to the model instead, and the temp files
+    are removed afterwards. System actions are not matched by keywords in
+    the text — the model triggers them explicitly via the system_action MCP
+    tool, so there is no accidental keyword self-triggering."""
 
     vision_image_path = None
     if user_image_paths:
         # Explicit attachment(s) take precedence: the user wants those
-        # images analyzed, not a system action ("lock"-style text is
-        # ignored now) and not a fresh screen grab.
+        # images analyzed, not a fresh screen grab.
         pass
     else:
-        # Tier 0 direct dispatch — bypasses the LLM entirely, same for every surface.
-        tier0_response, tier0_image = tier0_dispatch(message)
-        if tier0_response is not None:
-            log_request(message, tier0_response, 0, True, source=source)
-            return tier0_response, True, False, None, tier0_image
-
-        # Screen vision — deliberately NOT tier0: needs the model to actually
-        # look at and describe the image, so it goes through the normal
-        # OpenCode call below with an image part attached. Available at every
-        # tier, same as screenshot capture, since it uses the same lock-safe
-        # capture_screenshot() and carries no elevated privilege.
+        # Screen vision — needs the model to actually look at and describe
+        # the image, so it goes through the normal OpenCode call below with
+        # an image part attached. Available at every tier, same as screenshot
+        # capture, since it uses the same lock-safe capture_screenshot() and
+        # carries no elevated privilege. (Direct system actions are NOT
+        # matched by keywords here — the model triggers them deliberately
+        # via the system_action MCP tool.)
         if is_screen_vision_request(message):
             vision_image_path, capture_error = capture_screenshot()
             if capture_error:
@@ -1365,6 +1542,10 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.handle_internal_screenshot()
             return
 
+        if path == "/api/internal/system-action":
+            self.handle_internal_system_action()
+            return
+
         if path == "/api/reminders":
             self.handle_reminders_post()
             return
@@ -1555,11 +1736,10 @@ class CompanionHandler(BaseHTTPRequestHandler):
     def handle_internal_screenshot(self):
         """Local-only: capture a screenshot and return it as base64, for
         the view_screen MCP tool (perla-view-screen-mcp.py) to call. Reuses
-        the exact same lock-safe capture_screenshot() used by the tier0
-        'send me my screen' command and the vision-phrase path, so the
-        lock/standby check is defined in exactly one place regardless of
-        which of the three surfaces (tier0 dispatch, vision phrases, or
-        the model calling this tool on its own) triggers a capture."""
+        the exact same lock-safe capture_screenshot() used by the
+        vision-phrase path, so the lock/standby check is defined in exactly
+        one place regardless of which surface (the vision phrase, or the
+        model calling view_screen on its own) triggers a capture."""
         if self.get_source() != "local":
             self.send_json(403, {"error": "local only"})
             return
@@ -1575,6 +1755,28 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": "Captured the screen but couldn't read it back."})
             return
         self.send_json(200, {"image_base64": encoded, "mime": "image/png"})
+
+    def handle_internal_system_action(self):
+        """Local-only: run one allowlisted system action, backing the
+        system_action MCP tool. Execution lives here (in the daemon's
+        user-session environment) rather than in the MCP server, so the
+        invocation semantics are exactly the daemon's. There is no
+        keyword/phrase matching anywhere — a command runs only because the
+        model called the tool with an explicit action name."""
+        if self.get_source() != "local":
+            self.send_json(403, {"error": "local only"})
+            return
+        try:
+            body = json.loads(self.read_body())
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(400, {"error": "invalid JSON"})
+            return
+        ok, detail = execute_system_action(body.get("action"), body.get("target"))
+        self.send_json(200, {
+            "ok": ok,
+            "error": None if ok else detail,
+            "message": detail if ok else None,
+        })
 
     def handle_reminders_post(self):
         """Local-only: create/cancel/list reminders, backing the reminders

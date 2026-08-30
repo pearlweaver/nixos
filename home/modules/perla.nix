@@ -114,6 +114,13 @@ in {
             PERLA_COMPANION_PORT = "8443";
           };
         };
+        system-action = {
+          type = "local";
+          command = [ "${config.home.homeDirectory}/.local/bin/perla-system-action-mcp" ];
+          env = {
+            PERLA_COMPANION_PORT = "8443";
+          };
+        };
       };
     };
   };
@@ -272,6 +279,40 @@ in {
       fi
       export PERLA_COMPANION_PORT="''${PERLA_COMPANION_PORT:-8443}"
       exec "$VENV_DIR/bin/python3" "$HOME/.local/bin/perla-reminders-mcp-impl.py"
+    '';
+  };
+
+  # === system_action MCP server (Replaces the old pre-LLM //word-substring//
+  # tier0 dispatcher in perla-companion.py, which fired on accidental matches
+  # like "code block" -> lock screen. Now EVERY message goes to the model, and
+  # system actions (lock, shutdown, restart, suspend, mute, unmute, open_app,
+  # open_folder) only run when the model deliberately calls this tool. The
+  # allowlist + execution live in perla-companion.py (execute_system_action
+  # behind POST /api/internal/system-action); this script only proxies, same
+  # thin shape as the reminders / view-screen MCP servers. ===
+  home.file.".local/bin/perla-system-action-mcp-impl.py" = {
+    force = true;
+    source = ./perla/perla-system-action-mcp.py;
+  };
+
+  home.file.".local/bin/perla-system-action-mcp" = {
+    force = true;
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      # Same self-contained venv pattern / mcp<2 pin as the other MCP wrappers
+      # — see the view-screen wrapper comment for why it can't use a system `mcp`.
+      VENV_DIR="''${XDG_STATE_HOME:-$HOME/.local/state}/perla/system-action-mcp-venv"
+      MARKER="$VENV_DIR/.mcp-1x-installed"
+      if [ ! -f "$MARKER" ]; then
+        rm -rf "$VENV_DIR"
+        python3 -m venv "$VENV_DIR"
+        "$VENV_DIR/bin/pip" install --quiet "mcp<2"
+        touch "$MARKER"
+      fi
+      export PERLA_COMPANION_PORT="''${PERLA_COMPANION_PORT:-8443}"
+      exec "$VENV_DIR/bin/python3" "$HOME/.local/bin/perla-system-action-mcp-impl.py"
     '';
   };
 
