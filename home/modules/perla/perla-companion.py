@@ -415,6 +415,11 @@ def model_part():
 
 
 MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_IMAGES_PER_MESSAGE = 6  # MiMo-V2.5 has no documented hard per-request
+# image cap — images are tokenized into the 1M-token context window like
+# any other input, so the real constraint is context budget, not a fixed
+# count. 6 is a practical UI/UX ceiling (payload size, upload time,
+# review time before sending), not a model limitation.
 _UPLOAD_MIME_EXT = {"image/png": ".png", "image/jpeg": ".jpg"}
 
 
@@ -449,13 +454,42 @@ def decode_upload_image(data_url, filename=None):
     return path, None
 
 
+def decode_upload_images(data_urls):
+    """Plural form of decode_upload_image for multi-image messages.
+    Returns (paths, error). On any single failure, every path already
+    decoded earlier in the batch is cleaned up and (None, error) is
+    returned — an all-or-nothing batch is simpler to reason about for
+    the caller than a partial list with holes."""
+    if not isinstance(data_urls, list) or not data_urls:
+        return None, "images must be a non-empty list"
+    if len(data_urls) > MAX_IMAGES_PER_MESSAGE:
+        return None, f"too many images (max {MAX_IMAGES_PER_MESSAGE} per message)"
+    paths = []
+    for data_url in data_urls:
+        path, error = decode_upload_image(data_url)
+        if error:
+            for p in paths:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+            return None, error
+        paths.append(path)
+    return paths, None
+
+
 def call_opencode(sid, port, text, tier, image_path=None):
     """Send a message to OpenCode. If image_path is given, attaches it as
-    a file part alongside the text part — mimo-v2.5-free (the deployed
-    model per perla-config.nix) accepts image input natively. The request
+    one or more file parts alongside the text part — mimo-v2.5-free (the
+    deployed model per perla-config.nix) accepts multi-image input
+    natively; the model tokenizes each image into its context window
+    like any other input, so there's no fixed per-message image count to
+    enforce here beyond MAX_IMAGES_PER_MESSAGE (checked earlier, at
+    upload time). image_path may be a single path string (backward
+    compatible with existing callers) or a list of paths. The request
     body is piped over stdin rather than passed as a curl argv string,
-    since an inlined base64 image can be large enough to risk hitting
-    OS argument-length limits as a single -d argument.
+    since inlined base64 images can be large enough to risk hitting OS
+    argument-length limits as a single -d argument.
     """
     if session_mgr.should_inject_persona(tier):
         persona = read_persona()
@@ -470,21 +504,24 @@ def call_opencode(sid, port, text, tier, image_path=None):
     parts = [{"type": "text", "text": text}]
 
     if image_path:
-        try:
-            with open(image_path, "rb") as f:
-                encoded = base64.b64encode(f.read()).decode("ascii")
-            ext = os.path.splitext(image_path)[1].lower()
-            mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(ext, "image/png")
-            parts.append({
-                "type": "file",
-                "mime": mime,
-                "filename": os.path.basename(image_path),
-                "url": f"data:{mime};base64,{encoded}",
-            })
-        except Exception as e:
-            print(f"ERROR: failed to read image for OpenCode: {e}", flush=True)
-            # Fall through with just the text part rather than failing the
-            # whole request — Perla will just not have the image to look at.
+        image_paths = [image_path] if isinstance(image_path, str) else list(image_path)
+        for path in image_paths:
+            try:
+                with open(path, "rb") as f:
+                    encoded = base64.b64encode(f.read()).decode("ascii")
+                ext = os.path.splitext(path)[1].lower()
+                mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(ext, "image/png")
+                parts.append({
+                    "type": "file",
+                    "mime": mime,
+                    "filename": os.path.basename(path),
+                    "url": f"data:{mime};base64,{encoded}",
+                })
+            except Exception as e:
+                print(f"ERROR: failed to read image for OpenCode: {e}", flush=True)
+                # Skip this one image rather than failing the whole
+                # request — Perla will just not have that particular
+                # image to look at, but still sees the rest plus the text.
 
     body = json.dumps({
         "parts": parts,
@@ -837,21 +874,22 @@ def is_screen_vision_request(text):
     return any(p in lower for p in vision_phrases)
 
 
-def process_message(message, tier, source, confirm=False, user_image_path=None):
+def process_message(message, tier, source, confirm=False, user_image_paths=None):
     """The single entrypoint every surface funnels through: tier0 check,
     then OpenCode, then logging. Returns (response_text, tool_used,
     confirm_required, confirm_action, image_path). image_path is None
     except for tier0 actions that produce one (screenshot capture) or a
     screen-vision request (captured screenshot sent alongside the
-    model's description). When the user attaches their own image
-    (user_image_path), it wins over tier0 dispatch and screen capture, is
-    sent to the model instead, and the temp file is removed afterwards."""
+    model's description). When the user attaches their own image(s)
+    (user_image_paths), they win over tier0 dispatch and screen capture,
+    are sent to the model instead, and the temp files are removed
+    afterwards."""
 
     vision_image_path = None
-    if user_image_path:
-        # Explicit attachment takes precedence: the user wants THAT image
-        # analyzed, not a system action ("lock"-style text is ignored now)
-        # and not a fresh screen grab.
+    if user_image_paths:
+        # Explicit attachment(s) take precedence: the user wants those
+        # images analyzed, not a system action ("lock"-style text is
+        # ignored now) and not a fresh screen grab.
         pass
     else:
         # Tier 0 direct dispatch — bypasses the LLM entirely, same for every surface.
@@ -871,7 +909,7 @@ def process_message(message, tier, source, confirm=False, user_image_path=None):
                 log_request(message, capture_error, tier, False, source=source)
                 return capture_error, False, False, None, None
 
-    attach_path = user_image_path or vision_image_path
+    attach_paths = user_image_paths if user_image_paths else ([vision_image_path] if vision_image_path else None)
 
     try:
         if tier == 2 and is_destructive(message) and not confirm:
@@ -886,7 +924,7 @@ def process_message(message, tier, source, confirm=False, user_image_path=None):
 
         port = SERVER_PORT_T1 if tier == 1 else SERVER_PORT_T2
         response_text, tool_used, obsidian_write = call_opencode(
-            sid, port, message, tier, image_path=attach_path
+            sid, port, message, tier, image_path=attach_paths
         )
 
         log_request(message, response_text, tier, tool_used, source=source)
@@ -896,15 +934,16 @@ def process_message(message, tier, source, confirm=False, user_image_path=None):
             print("WARNING: memory-worthy input with no Obsidian write detected", flush=True)
 
         # image_path returned to the caller is the CAPTURED screenshot (which
-        # the web UI re-serves via /api/screenshot); a user upload is instead
-        # echoed client-side from the data URL, so nothing to re-serve.
+        # the web UI re-serves via /api/screenshot); user uploads are instead
+        # echoed client-side from their data URLs, so nothing to re-serve.
         return response_text, tool_used, False, None, vision_image_path
     finally:
-        if user_image_path:
-            try:
-                os.unlink(user_image_path)
-            except OSError:
-                pass
+        if user_image_paths:
+            for p in user_image_paths:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
 
 
 # ---------------------------------------------------------------------------
@@ -1186,38 +1225,45 @@ class CompanionHandler(BaseHTTPRequestHandler):
             return
 
         message = body.get("message", "").strip()
-        image_field = body.get("image")
-        if not message and not image_field:
+        # `images` (a list) is the current field; `image` (a single data
+        # URL) is kept working for any older client that hasn't switched
+        # to multi-image yet.
+        images_field = body.get("images")
+        if images_field is None and body.get("image"):
+            images_field = [body.get("image")]
+        if not message and not images_field:
             self.send_json(400, {"error": "empty message"})
             return
 
-        user_image_path = None
-        if image_field:
-            user_image_path, upload_error = decode_upload_image(
-                image_field, body.get("filename")
-            )
+        user_image_paths = None
+        if images_field:
+            user_image_paths, upload_error = decode_upload_images(images_field)
             if upload_error:
                 self.send_json(400, {"error": upload_error, "message": message})
                 return
             if not message:
                 # Image-only send: give the model something to do with it.
-                message = "Analyze this image."
+                message = (
+                    "Analyze this image." if len(user_image_paths) == 1
+                    else f"Analyze these {len(user_image_paths)} images."
+                )
 
         confirm = body.get("confirm", False)
         requested_tier = body.get("tier")  # local callers (perla.sh) may pass this
         source = self.get_source()
         tier, tier_error = self.get_effective_tier(requested_tier)
         if tier_error:
-            if user_image_path:
-                try:
-                    os.unlink(user_image_path)
-                except OSError:
-                    pass
+            if user_image_paths:
+                for p in user_image_paths:
+                    try:
+                        os.unlink(p)
+                    except OSError:
+                        pass
             self.send_json(403, {"error": tier_error})
             return
 
         response_text, tool_used, confirm_required, action, image_path = process_message(
-            message, tier, source, confirm=confirm, user_image_path=user_image_path
+            message, tier, source, confirm=confirm, user_image_paths=user_image_paths
         )
 
         if confirm_required:
