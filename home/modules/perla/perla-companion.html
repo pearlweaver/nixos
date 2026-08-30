@@ -1428,7 +1428,7 @@
     </header>
 
     <nav id="appMenu" class="floating-menu app-menu" aria-hidden="true">
-      <button id="tier1Btn" class="menu-item tier-item active">
+      <button id="tier1Btn" class="menu-item tier-item">
         <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span>
         <span class="menu-item-label">Tier 1 chat</span>
         <span class="menu-item-badge" id="tier1Badge"></span>
@@ -1720,8 +1720,7 @@
     }
     setElevated(isElevated);
     tierBadge.textContent = "T" + activeTier;
-    tier1Btn.classList.toggle("active", activeTier === 1);
-    tier2Btn.classList.toggle("active", activeTier === 2);
+    updateTierButtonHighlight();
     updateTier2UnreadBadge();
     const savedLog = getChatLog(activeTier);
     if (savedLog) {
@@ -2139,7 +2138,14 @@
     if (e.target === lightbox) closeLightbox();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !lightbox.hidden) closeLightbox();
+    if (e.key !== "Escape") return;
+    // Image editor sits above the lightbox (z-index 110 vs 100) — if both
+    // were somehow open, Escape should back out of the topmost one first.
+    if (!imgEditor.hidden) {
+      closeImageEditor();
+      return;
+    }
+    if (!lightbox.hidden) closeLightbox();
   });
 
   // ---------- Welcome empty state ----------
@@ -2257,8 +2263,29 @@
     tierTimerInterval = setInterval(tickTierTimer, 500);
   }
 
+  // Tier 1/2 sidebar buttons should only show "active" when that tier's
+  // plain chat is actually on screen — not while History/Reminders (or any
+  // future overlay) is showing over it. Centralized here and called from
+  // every place that changes activeTier or activeOverlay, so the two
+  // buttons and the overlay buttons are never highlighted at the same time.
+  function updateTierButtonHighlight() {
+    tier1Btn.classList.toggle("active", activeOverlay === null && activeTier === 1);
+    tier2Btn.classList.toggle("active", activeOverlay === null && activeTier === 2);
+  }
+
+  // Disables the actual input controls (not just hiding the composer's
+  // container) whenever a read-only overlay like History is on screen —
+  // belt-and-suspenders against a stray Enter keypress or programmatic
+  // submit reaching OpenCode while the user is looking at old messages,
+  // not just relying on `composer.hidden` keeping them out of tab order.
+  function setComposerDisabled(disabled) {
+    textInput.disabled = disabled;
+    sendText.disabled = disabled || !(textInput.value.trim() || attachQueue.length > 0);
+    micBtn.disabled = disabled;
+    attachBtn.disabled = disabled;
+  }
+
   function switchTier(tier) {
-    if (tier === activeTier) return;
     if (tier === 2 && !isElevated) {
       // Route to elevation instead of silently failing — one tap gets
       // you to the thing you actually need to do.
@@ -2267,15 +2294,30 @@
       return;
     }
 
-    // Persist current tier's transcript before swapping.
-    if (activeOverlay === null) setChatLog(activeTier, output.innerHTML);
+    // Tapping a tier button always means "show me that tier's chat" —
+    // whether we're currently on the other tier, viewing History/
+    // Reminders, or even already on this tier but buried in an overlay.
+    // Close any open overlay first (this restores the composer and clears
+    // liveOutputHTML) so the code below always ends up painting the
+    // requested tier's transcript into a plain, composer-visible chat view,
+    // instead of leaving the overlay's read-only chrome in place.
+    const wasSameTier = tier === activeTier;
+    const hadOverlay = activeOverlay !== null;
+    if (activeOverlay === "history") closeHistoryPanel();
+    else if (activeOverlay === "reminders") closeRemindersPanel();
+
+    if (wasSameTier && !hadOverlay) return; // nothing actually changed
+
+    // Persist current tier's transcript before swapping (skip if we just
+    // closed an overlay — closing already restored the live chat html,
+    // and it belongs to the tier we're about to leave, not a stale copy).
+    if (!hadOverlay) setChatLog(activeTier, output.innerHTML);
 
     activeTier = tier;
     sessionStorage.setItem("perla_active_tier", String(tier));
     tierBadge.textContent = "T" + tier;
 
-    tier1Btn.classList.toggle("active", tier === 1);
-    tier2Btn.classList.toggle("active", tier === 2);
+    updateTierButtonHighlight();
 
     if (tier === 2) {
       tier2Unread = false;
@@ -2283,13 +2325,11 @@
     }
     updateTier2UnreadBadge();
 
-    if (activeOverlay === null) {
-      output.innerHTML = getChatLog(tier);
-      if (!output.innerHTML) {
-        showWelcome(tier);
-      }
-      output.scrollIntoView({ block: "end" });
+    output.innerHTML = getChatLog(tier);
+    if (!output.innerHTML) {
+      showWelcome(tier);
     }
+    output.scrollIntoView({ block: "end" });
   }
 
   tier1Btn.addEventListener("click", () => { closeAppMenu(); switchTier(1); });
@@ -3262,10 +3302,12 @@
     historyBtn.classList.remove("active");
     historyPanel.hidden = true;
     composer.hidden = false;
+    setComposerDisabled(false);
     historyDaySelect.value = "";
     historyStatus.textContent = "";
     output.innerHTML = liveOutputHTML !== null ? liveOutputHTML : "";
     output.scrollIntoView({ block: "end" });
+    updateTierButtonHighlight();
   }
 
   async function openHistoryPanel() {
@@ -3279,8 +3321,10 @@
 
     activeOverlay = "history";
     historyBtn.classList.add("active");
+    updateTierButtonHighlight();
     historyPanel.hidden = false;
     composer.hidden = true;
+    setComposerDisabled(true);
     liveOutputHTML = output.innerHTML;
     output.innerHTML = "";
     addEntry("system", "", "Viewing past conversations — read only.");
@@ -3390,9 +3434,11 @@
     remindersBtn.classList.remove("active");
     remindersBar.hidden = true;
     composer.hidden = false;
+    setComposerDisabled(false);
     remindersStatus.textContent = "";
     output.innerHTML = liveOutputHTML !== null ? liveOutputHTML : "";
     output.scrollIntoView({ block: "end" });
+    updateTierButtonHighlight();
   }
 
   async function openRemindersPanel() {
@@ -3406,8 +3452,10 @@
 
     activeOverlay = "reminders";
     remindersBtn.classList.add("active");
+    updateTierButtonHighlight();
     remindersBar.hidden = false;
     composer.hidden = true;
+    setComposerDisabled(true);
     liveOutputHTML = output.innerHTML;
     output.innerHTML = "";
     remindersStatus.textContent = "Loading…";
