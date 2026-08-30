@@ -1,3 +1,4 @@
-# Version 26.8.30.5
+# Version 26.8.30.6
 
-- Converted Tier 0 to its own mcp server to avoid accidental invokes.
+- Trying to make a separate opencode config for perla tier 2 instead of just relying on the default opencode config
+-  Now editing images in perla web interface is possible

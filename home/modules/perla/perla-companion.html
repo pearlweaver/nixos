@@ -804,6 +804,251 @@
   .lightbox-close:hover { border-color: var(--brass-dim); color: var(--brass-bright); }
   @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
+  /* ---------- Image editor (crop + pen) ---------- */
+  .img-editor {
+    position: fixed;
+    inset: 0;
+    z-index: 110;
+    background: rgba(12,10,14,0.92);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: flex;
+    flex-direction: column;
+    animation: fade-in 0.18s ease;
+  }
+  .img-editor[hidden] { display: none; }
+
+  /* Canvas fills the whole editor — every control floats above it. */
+  .img-editor-canvas-wrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    position: relative;
+    touch-action: none;
+    overflow: hidden;
+  }
+
+  .img-editor-canvas-inner {
+    position: relative;
+    line-height: 0;
+    /* Base fit-to-screen size is set inline via JS (--fit-w/--fit-h) once
+       the image loads; zoom then scales on top of that via --editor-zoom,
+       and pan offsets via --editor-pan-x/--editor-pan-y. Transform-based
+       zoom (rather than resizing the canvas element) keeps
+       getBoundingClientRect() — and therefore all pointer-to-canvas
+       coordinate mapping — correct at any zoom level for free. */
+    width: var(--fit-w, auto);
+    height: var(--fit-h, auto);
+    max-width: none;
+    max-height: none;
+    transform: translate(var(--editor-pan-x, 0px), var(--editor-pan-y, 0px)) scale(var(--editor-zoom, 1));
+    transform-origin: center center;
+  }
+
+  #editorCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 8px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    touch-action: none;
+    cursor: crosshair;
+  }
+
+  .crop-box {
+    position: absolute;
+    border: 1.5px dashed var(--brass-bright);
+    background: rgba(201,123,141,0.08);
+    box-shadow: 0 0 0 2000px rgba(0,0,0,0.45);
+    pointer-events: none;
+  }
+  .crop-handle {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--brass-bright);
+    border: 1.5px solid var(--bg);
+    pointer-events: auto;
+  }
+  .crop-handle.nw { top: -7px; left: -7px; cursor: nwse-resize; }
+  .crop-handle.ne { top: -7px; right: -7px; cursor: nesw-resize; }
+  .crop-handle.sw { bottom: -7px; left: -7px; cursor: nesw-resize; }
+  .crop-handle.se { bottom: -7px; right: -7px; cursor: nwse-resize; }
+
+  /* Shared floating-pill shell used by every editor control cluster. */
+  .editor-float {
+    position: absolute;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px;
+    border-radius: 22px;
+    background: rgba(23,19,26,0.82);
+    border: 1px solid var(--rule);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .editor-float[hidden] { display: none; }
+
+  /* Top-center: Crop / Pen mode switch — the only always-visible control. */
+  .editor-mode-switch {
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  /* Top-right: close button, on its own so it never competes with modes. */
+  .editor-close-float {
+    top: 12px;
+    right: 12px;
+    padding: 0;
+  }
+
+  /* Top-left: undo/reset, small and out of the way. */
+  .editor-history-float {
+    top: 12px;
+    left: 12px;
+  }
+
+  /* Bottom-center: whatever the active mode needs (pen options, or apply-crop). */
+  .editor-context-float {
+    bottom: calc(12px + var(--safe-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100vw - 24px);
+  }
+
+  /* Bottom-right: Save. Kept apart from context controls so it's always reachable. */
+  .editor-save-float {
+    bottom: calc(12px + var(--safe-bottom));
+    right: 12px;
+  }
+
+  /* Bottom-left: zoom controls */
+  .editor-zoom-float {
+    bottom: calc(12px + var(--safe-bottom));
+    left: 12px;
+  }
+  .editor-zoom-label {
+    font-size: 11px;
+    color: var(--ink-faint);
+    width: 34px;
+    text-align: center;
+    flex-shrink: 0;
+    user-select: none;
+  }
+
+  .editor-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--ink-dim);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .editor-icon-btn:hover { color: var(--ink); background: rgba(255,255,255,0.06); }
+  .editor-icon-btn.active {
+    color: var(--brass-bright);
+    background: rgba(201,123,141,0.18);
+  }
+  .editor-icon-btn svg { flex-shrink: 0; }
+
+  .editor-pill-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 14px;
+    border-radius: 18px;
+    border: none;
+    background: transparent;
+    color: var(--brass-bright);
+    font-family: var(--font-serif);
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .editor-pill-btn:hover { background: rgba(201,123,141,0.14); }
+  .editor-pill-btn.primary {
+    background: linear-gradient(180deg, rgba(201,123,141,0.28), rgba(201,123,141,0.12));
+  }
+  .editor-pill-btn.primary:hover { background: rgba(201,123,141,0.34); }
+
+  .editor-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--rule);
+    flex-shrink: 0;
+    margin: 0 1px;
+  }
+
+  .img-editor-colors {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .color-swatch {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  .color-swatch.active {
+    border-color: var(--ink);
+    box-shadow: 0 0 0 2px rgba(23,19,26,0.8);
+  }
+
+  .img-editor-size {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 90px;
+  }
+  .img-editor-size input[type="range"] {
+    width: 70px;
+    accent-color: var(--brass-bright);
+  }
+  .img-editor-size-label {
+    font-size: 10px;
+    color: var(--ink-faint);
+    width: 26px;
+    flex-shrink: 0;
+    text-align: right;
+  }
+
+  .attach-thumb-edit {
+    position: absolute;
+    bottom: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid var(--brass-dim);
+    background: rgba(23,19,26,0.85);
+    color: var(--brass-bright);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .attach-thumb-edit:hover { background: rgba(201,123,141,0.2); }
+
   @media (prefers-reduced-motion: reduce) {
     .mic-btn.recording .ring-1,
     .mic-btn.recording .ring-2 { animation: none; }
@@ -1279,6 +1524,89 @@
   </div>
 
   <audio id="responseAudio" hidden></audio>
+
+  <div id="imgEditor" class="img-editor" hidden>
+    <div class="img-editor-canvas-wrap" id="editorCanvasWrap">
+      <div class="img-editor-canvas-inner" id="editorCanvasInner">
+        <canvas id="editorCanvas"></canvas>
+        <div id="cropBox" class="crop-box" hidden>
+          <div class="crop-handle nw" data-handle="nw"></div>
+          <div class="crop-handle ne" data-handle="ne"></div>
+          <div class="crop-handle sw" data-handle="sw"></div>
+          <div class="crop-handle se" data-handle="se"></div>
+        </div>
+      </div>
+
+      <!-- Top-center: mode switch, the only control always visible -->
+      <div class="editor-float editor-mode-switch">
+        <button class="editor-icon-btn" data-tool="crop" id="toolCrop" aria-label="Crop mode" title="Crop">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>
+        </button>
+        <button class="editor-icon-btn active" data-tool="pen" id="toolPen" aria-label="Pen mode" title="Pen">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><path d="M13.5 3.5l5 5L7 20l-5.5 1.5L3 16z"/></svg>
+        </button>
+      </div>
+
+      <!-- Top-left: undo/reset -->
+      <div class="editor-float editor-history-float">
+        <button class="editor-icon-btn" id="toolUndo" aria-label="Undo" title="Undo">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="3 8 3 3 8 3"/><path d="M3 3l6.5 6.5a7 7 0 1 1-1.5 7.5"/></svg>
+        </button>
+        <div class="editor-divider"></div>
+        <button class="editor-icon-btn" id="editorReset" aria-label="Reset image" title="Reset">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 3 3 8 8 8"/></svg>
+        </button>
+      </div>
+
+      <!-- Top-right: close -->
+      <div class="editor-float editor-close-float">
+        <button class="editor-icon-btn" id="editorClose" aria-label="Close editor" title="Close">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><line x1="4" y1="4" x2="18" y2="18"/><line x1="18" y1="4" x2="4" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Bottom-left: zoom -->
+      <div class="editor-float editor-zoom-float">
+        <button class="editor-icon-btn" id="zoomOut" aria-label="Zoom out" title="Zoom out">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><circle cx="10" cy="10" r="7"/><line x1="15.2" y1="15.2" x2="20" y2="20"/><line x1="7" y1="10" x2="13" y2="10"/></svg>
+        </button>
+        <span class="editor-zoom-label" id="zoomLabel">100%</span>
+        <button class="editor-icon-btn" id="zoomIn" aria-label="Zoom in" title="Zoom in">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><circle cx="10" cy="10" r="7"/><line x1="15.2" y1="15.2" x2="20" y2="20"/><line x1="10" y1="7" x2="10" y2="13"/><line x1="7" y1="10" x2="13" y2="10"/></svg>
+        </button>
+        <div class="editor-divider"></div>
+        <button class="editor-icon-btn" id="zoomReset" aria-label="Reset zoom" title="Fit to screen">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M3 8V4h4"/><path d="M19 8V4h-4"/><path d="M3 14v4h4"/><path d="M19 14v4h-4"/></svg>
+        </button>
+      </div>
+
+      <!-- Bottom-center: contextual controls for the active mode -->
+      <div class="editor-float editor-context-float" id="penOptionsRow">
+        <div class="img-editor-colors" id="penColors">
+          <button class="color-swatch active" data-color="#e94f4f" style="background:#e94f4f"></button>
+          <button class="color-swatch" data-color="#f2c94c" style="background:#f2c94c"></button>
+          <button class="color-swatch" data-color="#6fcf97" style="background:#6fcf97"></button>
+          <button class="color-swatch" data-color="#56ccf2" style="background:#56ccf2"></button>
+          <button class="color-swatch" data-color="#c97b8d" style="background:#c97b8d"></button>
+          <button class="color-swatch" data-color="#f2f2f2" style="background:#f2f2f2"></button>
+          <button class="color-swatch" data-color="#17131a" style="background:#17131a"></button>
+        </div>
+        <div class="editor-divider"></div>
+        <div class="img-editor-size">
+          <input type="range" id="penWidth" min="2" max="24" value="6">
+          <span class="img-editor-size-label" id="penWidthLabel">6px</span>
+        </div>
+      </div>
+      <div class="editor-float editor-context-float" id="cropOptionsRow" hidden>
+        <button class="editor-pill-btn primary" id="applyCrop">Apply crop</button>
+      </div>
+
+      <!-- Bottom-right: save -->
+      <div class="editor-float editor-save-float">
+        <button class="editor-pill-btn primary" id="editorSave">Save</button>
+      </div>
+    </div>
+  </div>
 
   <div id="lightbox" class="lightbox" hidden>
     <button id="lightboxClose" class="lightbox-close" aria-label="Close image" title="Close">✕</button>
@@ -2064,6 +2392,15 @@
       const img = document.createElement("img");
       img.src = item.dataUrl;
       img.alt = item.filename || "Attached image";
+      const editBtn = document.createElement("button");
+      editBtn.className = "attach-thumb-edit";
+      editBtn.setAttribute("aria-label", "Edit image");
+      editBtn.title = "Edit";
+      editBtn.innerHTML = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><path d="M13.5 3.5l5 5L7 20l-5.5 1.5L3 16z"/></svg>';
+      editBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openImageEditor(index);
+      });
       const removeBtn = document.createElement("button");
       removeBtn.className = "attach-thumb-remove";
       removeBtn.setAttribute("aria-label", "Remove image");
@@ -2075,6 +2412,7 @@
         updateComposerState();
       });
       thumb.appendChild(img);
+      thumb.appendChild(editBtn);
       thumb.appendChild(removeBtn);
       attachPreview.appendChild(thumb);
     });
@@ -2194,6 +2532,481 @@
   window.addEventListener("resize", () => {
     if (attachMenu.classList.contains("open")) positionAttachMenu();
   });
+
+  // ---------- Image editor (crop + pen) ----------
+  const imgEditor = document.getElementById("imgEditor");
+  const editorClose = document.getElementById("editorClose");
+  const editorCanvas = document.getElementById("editorCanvas");
+  const editorCtx = editorCanvas.getContext("2d");
+  const editorCanvasWrap = document.getElementById("editorCanvasWrap");
+  const editorCanvasInner = document.getElementById("editorCanvasInner");
+  const cropBox = document.getElementById("cropBox");
+  const toolCrop = document.getElementById("toolCrop");
+  const toolPen = document.getElementById("toolPen");
+  const toolUndo = document.getElementById("toolUndo");
+  const penOptionsRow = document.getElementById("penOptionsRow");
+  const cropOptionsRow = document.getElementById("cropOptionsRow");
+  const penColors = document.getElementById("penColors");
+  const penWidth = document.getElementById("penWidth");
+  const penWidthLabel = document.getElementById("penWidthLabel");
+  const applyCropBtn = document.getElementById("applyCrop");
+  const editorReset = document.getElementById("editorReset");
+  const editorSave = document.getElementById("editorSave");
+  const zoomIn = document.getElementById("zoomIn");
+  const zoomOut = document.getElementById("zoomOut");
+  const zoomReset = document.getElementById("zoomReset");
+  const zoomLabel = document.getElementById("zoomLabel");
+
+  let editorQueueIndex = -1;
+  let editorOriginalDataUrl = null; // original image as loaded when editor opened, for Reset
+  let editorTool = "pen"; // "pen" | "crop"
+  let editorPenColor = "#e94f4f";
+  let editorPenWidth = 6;
+  let editorUndoStack = []; // dataURLs of canvas state before each committed change
+  let editorDrawing = false;
+  let editorLastPoint = null;
+
+  // Zoom/pan state. fitScale is the CSS px-per-canvas-px ratio that makes
+  // the image fit inside the wrap at 100% — zoomLevel is a multiplier on
+  // top of that (1 = fit, 2 = fit x2, etc). Applied as a CSS transform on
+  // editorCanvasInner, which keeps getBoundingClientRect() (and therefore
+  // every pointer-to-canvas coordinate calc below) correct for free —
+  // nothing else needs to know about zoom.
+  let editorFitScale = 1;
+  let editorZoomLevel = 1;
+  let editorPanX = 0;
+  let editorPanY = 0;
+  const MIN_ZOOM = 0.25; // allow zooming out well past "fit" for a wide view
+  const MAX_ZOOM = 8;
+
+  // Crop state (in canvas pixel coordinates, not display coordinates)
+  let cropRect = null; // {x, y, w, h}
+  let cropDrag = null; // {mode: "new"|"move"|handle, startX, startY, orig}
+
+  function setEditorTool(tool) {
+    editorTool = tool;
+    toolCrop.classList.toggle("active", tool === "crop");
+    toolPen.classList.toggle("active", tool === "pen");
+    penOptionsRow.hidden = tool !== "pen";
+    cropOptionsRow.hidden = tool !== "crop";
+    if (tool !== "crop") {
+      cropBox.hidden = true;
+      cropRect = null;
+    }
+  }
+
+  toolCrop.addEventListener("click", () => setEditorTool("crop"));
+  toolPen.addEventListener("click", () => setEditorTool("pen"));
+
+  penColors.addEventListener("click", (e) => {
+    const btn = e.target.closest(".color-swatch");
+    if (!btn) return;
+    editorPenColor = btn.dataset.color;
+    penColors.querySelectorAll(".color-swatch").forEach((s) => s.classList.remove("active"));
+    btn.classList.add("active");
+  });
+
+  penWidth.addEventListener("input", () => {
+    editorPenWidth = parseInt(penWidth.value, 10);
+    penWidthLabel.textContent = editorPenWidth + "px";
+  });
+
+  function pushUndo() {
+    editorUndoStack.push(editorCanvas.toDataURL("image/png"));
+    if (editorUndoStack.length > 20) editorUndoStack.shift();
+  }
+
+  function editorUndo() {
+    if (editorUndoStack.length === 0) return;
+    const prev = editorUndoStack.pop();
+    const img = new Image();
+    img.onload = () => {
+      editorCanvas.width = img.naturalWidth;
+      editorCanvas.height = img.naturalHeight;
+      editorCtx.drawImage(img, 0, 0);
+      // Undo can revert a crop (changing pixel dimensions), so recompute
+      // the fit size — otherwise --fit-w/--fit-h would still reflect the
+      // old (cropped) dimensions and the image would render stretched.
+      fitEditorToScreen();
+    };
+    img.src = prev;
+  }
+  toolUndo.addEventListener("click", editorUndo);
+
+  function loadImageIntoCanvas(dataUrl) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        editorCanvas.width = img.naturalWidth;
+        editorCanvas.height = img.naturalHeight;
+        editorCtx.drawImage(img, 0, 0);
+        resolve();
+      };
+      img.src = dataUrl;
+    });
+  }
+
+  // ---- Zoom / pan ----
+  // Computes the CSS size that fits the image (at its natural canvas
+  // resolution) inside the wrap, sets that as the base size, then resets
+  // zoom/pan to 1/0/0 (fit, centered). Called on open and on Reset.
+  function fitEditorToScreen() {
+    const wrapRect = editorCanvasWrap.getBoundingClientRect();
+    const availW = Math.max(1, wrapRect.width - 32);   // minus wrap padding
+    const availH = Math.max(1, wrapRect.height - 32);
+    const naturalW = editorCanvas.width || 1;
+    const naturalH = editorCanvas.height || 1;
+    editorFitScale = Math.min(availW / naturalW, availH / naturalH, 1);
+    // Never upscale a small image past its own pixel size at "fit" — only
+    // shrink large ones. Zooming further in is still available via controls.
+    if (editorFitScale <= 0 || !isFinite(editorFitScale)) editorFitScale = 1;
+    editorCanvasInner.style.setProperty("--fit-w", (naturalW * editorFitScale) + "px");
+    editorCanvasInner.style.setProperty("--fit-h", (naturalH * editorFitScale) + "px");
+    editorZoomLevel = 1;
+    editorPanX = 0;
+    editorPanY = 0;
+    applyZoomTransform();
+  }
+
+  function applyZoomTransform() {
+    editorCanvasInner.style.setProperty("--editor-zoom", String(editorZoomLevel));
+    editorCanvasInner.style.setProperty("--editor-pan-x", editorPanX + "px");
+    editorCanvasInner.style.setProperty("--editor-pan-y", editorPanY + "px");
+    zoomLabel.textContent = Math.round(editorFitScale * editorZoomLevel * 100) + "%";
+  }
+
+  function clampPan() {
+    // Keep at least a sliver of the image reachable/on-screen rather than
+    // letting it be panned away entirely.
+    const wrapRect = editorCanvasWrap.getBoundingClientRect();
+    const w = (editorCanvas.width * editorFitScale * editorZoomLevel);
+    const h = (editorCanvas.height * editorFitScale * editorZoomLevel);
+    const maxX = Math.max(0, (w - wrapRect.width) / 2 + wrapRect.width * 0.4);
+    const maxY = Math.max(0, (h - wrapRect.height) / 2 + wrapRect.height * 0.4);
+    editorPanX = Math.max(-maxX, Math.min(maxX, editorPanX));
+    editorPanY = Math.max(-maxY, Math.min(maxY, editorPanY));
+  }
+
+  function setZoom(newLevel, anchorClientX, anchorClientY) {
+    newLevel = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newLevel));
+    if (newLevel === editorZoomLevel) return;
+
+    // Zoom toward the anchor point (cursor position, or pinch midpoint)
+    // rather than the center, so the thing the user is looking at stays
+    // under their fingers/cursor.
+    if (anchorClientX !== undefined && anchorClientY !== undefined) {
+      const wrapRect = editorCanvasWrap.getBoundingClientRect();
+      const centerX = wrapRect.left + wrapRect.width / 2;
+      const centerY = wrapRect.top + wrapRect.height / 2;
+      const offsetX = anchorClientX - centerX - editorPanX;
+      const offsetY = anchorClientY - centerY - editorPanY;
+      const ratio = newLevel / editorZoomLevel;
+      editorPanX -= offsetX * (ratio - 1);
+      editorPanY -= offsetY * (ratio - 1);
+    }
+
+    editorZoomLevel = newLevel;
+    clampPan();
+    applyZoomTransform();
+  }
+
+  zoomIn.addEventListener("click", () => setZoom(editorZoomLevel * 1.5));
+  zoomOut.addEventListener("click", () => setZoom(editorZoomLevel / 1.5));
+  zoomReset.addEventListener("click", () => fitEditorToScreen());
+
+  // Scroll wheel / trackpad zoom over the canvas wrap. Plain wheel zooms
+  // (rather than requiring Ctrl) since the editor has no other use for
+  // vertical scroll — there's nothing to scroll past the image itself.
+  editorCanvasWrap.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const delta = -e.deltaY;
+    const factor = Math.exp(delta * 0.0015);
+    setZoom(editorZoomLevel * factor, e.clientX, e.clientY);
+  }, { passive: false });
+
+  // Pinch-to-zoom (two-finger touch). Tracked separately from the single-
+  // finger draw/crop handlers below — a second touch point promotes the
+  // gesture to a pinch and suppresses drawing for that gesture.
+  let pinchState = null; // {startDist, startZoom, midX, midY}
+
+  function touchDist(t0, t1) {
+    return Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+  }
+  function touchMid(t0, t1) {
+    return { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
+  }
+
+  editorCanvasWrap.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      editorDrawing = false; // cancel any in-progress single-finger stroke
+      cropDrag = null;
+      const mid = touchMid(e.touches[0], e.touches[1]);
+      pinchState = {
+        startDist: touchDist(e.touches[0], e.touches[1]),
+        startZoom: editorZoomLevel,
+        midX: mid.x, midY: mid.y,
+      };
+    }
+  }, { passive: false });
+
+  editorCanvasWrap.addEventListener("touchmove", (e) => {
+    if (pinchState && e.touches.length === 2) {
+      e.preventDefault();
+      const dist = touchDist(e.touches[0], e.touches[1]);
+      const mid = touchMid(e.touches[0], e.touches[1]);
+      const scaleFactor = dist / (pinchState.startDist || 1);
+      setZoom(pinchState.startZoom * scaleFactor, mid.x, mid.y);
+    }
+  }, { passive: false });
+
+  function endPinch(e) {
+    if (pinchState && (!e.touches || e.touches.length < 2)) pinchState = null;
+  }
+  editorCanvasWrap.addEventListener("touchend", endPinch);
+  editorCanvasWrap.addEventListener("touchcancel", endPinch);
+
+  window.addEventListener("resize", () => {
+    if (!imgEditor.hidden) {
+      fitEditorToScreen();
+      renderCropBox();
+    }
+  });
+
+  function openImageEditor(index) {
+    if (!attachQueue[index]) return;
+    editorQueueIndex = index;
+    editorOriginalDataUrl = attachQueue[index].dataUrl;
+    editorUndoStack = [];
+    cropRect = null;
+    cropBox.hidden = true;
+    setEditorTool("pen");
+    penWidth.value = "6";
+    editorPenWidth = 6;
+    penWidthLabel.textContent = "6px";
+    imgEditor.hidden = false;
+    loadImageIntoCanvas(editorOriginalDataUrl).then(() => {
+      // Wrap must be visible (imgEditor.hidden = false) before measuring
+      // it for fit-to-screen sizing, hence this runs after unhiding.
+      fitEditorToScreen();
+    });
+  }
+
+  function closeImageEditor() {
+    imgEditor.hidden = true;
+    editorQueueIndex = -1;
+    editorDrawing = false;
+    cropDrag = null;
+    pinchState = null;
+  }
+  editorClose.addEventListener("click", closeImageEditor);
+
+  editorReset.addEventListener("click", () => {
+    if (!editorOriginalDataUrl) return;
+    editorUndoStack = [];
+    cropRect = null;
+    cropBox.hidden = true;
+    loadImageIntoCanvas(editorOriginalDataUrl).then(() => {
+      fitEditorToScreen();
+    });
+  });
+
+  editorSave.addEventListener("click", () => {
+    if (editorQueueIndex < 0 || !attachQueue[editorQueueIndex]) {
+      closeImageEditor();
+      return;
+    }
+    const dataUrl = editorCanvas.toDataURL("image/png");
+    attachQueue[editorQueueIndex].dataUrl = dataUrl;
+    renderAttachPreview();
+    updateComposerState();
+    closeImageEditor();
+  });
+
+  // ---- Coordinate mapping: display (CSS px, as rendered) -> canvas pixels ----
+  function displayToCanvasPoint(clientX, clientY) {
+    const rect = editorCanvas.getBoundingClientRect();
+    const scaleX = editorCanvas.width / rect.width;
+    const scaleY = editorCanvas.height / rect.height;
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+    };
+  }
+
+  function eventPoint(e) {
+    if (e.touches && e.touches.length > 0) {
+      return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+    }
+    return { clientX: e.clientX, clientY: e.clientY };
+  }
+
+  // ---- Pen tool ----
+  function drawSegment(from, to) {
+    editorCtx.strokeStyle = editorPenColor;
+    editorCtx.lineWidth = editorPenWidth;
+    editorCtx.lineCap = "round";
+    editorCtx.lineJoin = "round";
+    editorCtx.beginPath();
+    editorCtx.moveTo(from.x, from.y);
+    editorCtx.lineTo(to.x, to.y);
+    editorCtx.stroke();
+  }
+
+  function drawDot(pt) {
+    editorCtx.fillStyle = editorPenColor;
+    editorCtx.beginPath();
+    editorCtx.arc(pt.x, pt.y, editorPenWidth / 2, 0, Math.PI * 2);
+    editorCtx.fill();
+  }
+
+  // ---- Crop box rendering (positions cropBox in DISPLAY coordinates over the canvas) ----
+  function renderCropBox() {
+    if (!cropRect) {
+      cropBox.hidden = true;
+      return;
+    }
+    const rect = editorCanvas.getBoundingClientRect();
+    const wrapRect = editorCanvasInner.getBoundingClientRect();
+    const scaleX = rect.width / editorCanvas.width;
+    const scaleY = rect.height / editorCanvas.height;
+    const left = (rect.left - wrapRect.left) + cropRect.x * scaleX;
+    const top = (rect.top - wrapRect.top) + cropRect.y * scaleY;
+    cropBox.style.left = left + "px";
+    cropBox.style.top = top + "px";
+    cropBox.style.width = (cropRect.w * scaleX) + "px";
+    cropBox.style.height = (cropRect.h * scaleY) + "px";
+    cropBox.hidden = false;
+  }
+
+  function clampCropRect(r) {
+    let { x, y, w, h } = r;
+    if (w < 0) { x += w; w = -w; }
+    if (h < 0) { y += h; h = -h; }
+    x = Math.max(0, Math.min(x, editorCanvas.width));
+    y = Math.max(0, Math.min(y, editorCanvas.height));
+    w = Math.max(1, Math.min(w, editorCanvas.width - x));
+    h = Math.max(1, Math.min(h, editorCanvas.height - y));
+    return { x, y, w, h };
+  }
+
+  function handleAt(clientX, clientY) {
+    const target = document.elementFromPoint(clientX, clientY);
+    const handleEl = target && target.closest ? target.closest(".crop-handle") : null;
+    return handleEl ? handleEl.dataset.handle : null;
+  }
+
+  function pointerDown(e) {
+    // Two-plus finger touches are pinch-zoom gestures, handled separately
+    // on editorCanvasWrap — bail out here so a pinch-start doesn't also
+    // begin a pen stroke or crop drag from its first touch point.
+    if (e.touches && e.touches.length > 1) return;
+
+    const p = eventPoint(e);
+    const canvasPt = displayToCanvasPoint(p.clientX, p.clientY);
+
+    if (editorTool === "pen") {
+      e.preventDefault();
+      pushUndo();
+      editorDrawing = true;
+      editorLastPoint = canvasPt;
+      drawDot(canvasPt);
+      return;
+    }
+
+    if (editorTool === "crop") {
+      e.preventDefault();
+      const handle = handleAt(p.clientX, p.clientY);
+      if (handle && cropRect) {
+        cropDrag = { mode: "handle", handle, orig: { ...cropRect } };
+        return;
+      }
+      if (cropRect &&
+          canvasPt.x >= cropRect.x && canvasPt.x <= cropRect.x + cropRect.w &&
+          canvasPt.y >= cropRect.y && canvasPt.y <= cropRect.y + cropRect.h) {
+        cropDrag = { mode: "move", startX: canvasPt.x, startY: canvasPt.y, orig: { ...cropRect } };
+        return;
+      }
+      cropDrag = { mode: "new", startX: canvasPt.x, startY: canvasPt.y };
+      cropRect = { x: canvasPt.x, y: canvasPt.y, w: 0, h: 0 };
+      renderCropBox();
+    }
+  }
+
+  function pointerMove(e) {
+    if (e.touches && e.touches.length > 1) return; // pinch handled separately
+    const p = eventPoint(e);
+    const canvasPt = displayToCanvasPoint(p.clientX, p.clientY);
+
+    if (editorTool === "pen" && editorDrawing) {
+      e.preventDefault();
+      drawSegment(editorLastPoint, canvasPt);
+      editorLastPoint = canvasPt;
+      return;
+    }
+
+    if (editorTool === "crop" && cropDrag) {
+      e.preventDefault();
+      if (cropDrag.mode === "new") {
+        cropRect = clampCropRect({
+          x: cropDrag.startX, y: cropDrag.startY,
+          w: canvasPt.x - cropDrag.startX, h: canvasPt.y - cropDrag.startY,
+        });
+      } else if (cropDrag.mode === "move") {
+        const dx = canvasPt.x - cropDrag.startX;
+        const dy = canvasPt.y - cropDrag.startY;
+        const o = cropDrag.orig;
+        let nx = o.x + dx, ny = o.y + dy;
+        nx = Math.max(0, Math.min(nx, editorCanvas.width - o.w));
+        ny = Math.max(0, Math.min(ny, editorCanvas.height - o.h));
+        cropRect = { x: nx, y: ny, w: o.w, h: o.h };
+      } else if (cropDrag.mode === "handle") {
+        const o = cropDrag.orig;
+        let { x, y, w, h } = o;
+        if (cropDrag.handle === "nw") { w = o.x + o.w - canvasPt.x; h = o.y + o.h - canvasPt.y; x = canvasPt.x; y = canvasPt.y; }
+        else if (cropDrag.handle === "ne") { w = canvasPt.x - o.x; h = o.y + o.h - canvasPt.y; y = canvasPt.y; }
+        else if (cropDrag.handle === "sw") { w = o.x + o.w - canvasPt.x; h = canvasPt.y - o.y; x = canvasPt.x; }
+        else if (cropDrag.handle === "se") { w = canvasPt.x - o.x; h = canvasPt.y - o.y; }
+        cropRect = clampCropRect({ x, y, w, h });
+      }
+      renderCropBox();
+    }
+  }
+
+  function pointerUp() {
+    editorDrawing = false;
+    editorLastPoint = null;
+    cropDrag = null;
+  }
+
+  editorCanvas.addEventListener("mousedown", pointerDown);
+  window.addEventListener("mousemove", pointerMove);
+  window.addEventListener("mouseup", pointerUp);
+  editorCanvas.addEventListener("touchstart", pointerDown, { passive: false });
+  window.addEventListener("touchmove", pointerMove, { passive: false });
+  window.addEventListener("touchend", pointerUp);
+
+  // Crop handles need pointerdown too, since elementFromPoint resolves to
+  // the handle element itself (crop-handle has pointer-events:auto).
+  cropBox.addEventListener("mousedown", (e) => { if (e.target.closest(".crop-handle")) pointerDown(e); });
+  cropBox.addEventListener("touchstart", (e) => { if (e.target.closest(".crop-handle")) pointerDown(e); }, { passive: false });
+
+  applyCropBtn.addEventListener("click", () => {
+    if (!cropRect || cropRect.w < 2 || cropRect.h < 2) return;
+    pushUndo();
+    const { x, y, w, h } = cropRect;
+    const cropped = editorCtx.getImageData(x, y, w, h);
+    editorCanvas.width = w;
+    editorCanvas.height = h;
+    editorCtx.putImageData(cropped, 0, 0);
+    cropRect = null;
+    cropBox.hidden = true;
+    // Pixel dimensions changed — recompute the fit size so the cropped
+    // result isn't rendered at the old (larger) canvas's CSS size.
+    fitEditorToScreen();
+  });
+
+  // ---------- End image editor ----------
 
   // Send button enablement + mic visibility follow what's being composed:
   // typing hides the voice button (voice becomes irrelevant while you're

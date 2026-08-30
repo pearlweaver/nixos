@@ -125,6 +125,22 @@ in {
     };
   };
 
+  # === OpenCode Tier 2 config (full mode — superpowers + the SAME local
+  # Perla MCP servers as Tier 1: obsidian, view-screen, reminders,
+  # system-action). No permission denies: this is the "Full Mode" tier that
+  # Tier-1's AGENTS.md points to for file editing, code, and arbitrary
+  # commands. Built by the pure opencode-t2-config.nix (testable on its
+  # own); served to Tier 2 through its isolated config dir (perla-t2-server
+  # below), so the user's interactive ~/.config/opencode/opencode.json is
+  # never touched. ===
+  xdg.configFile."opencode/opencode-t2.json" = {
+    force = true;
+    text = (import ./perla/opencode-t2-config.nix) {
+      homeDirectory = config.home.homeDirectory;
+      model = cfg.opencode_model;
+    };
+  };
+
   # === Sops: decrypt secrets at rebuild time ===
   sops = {
     defaultSopsFile = ../../secrets/perla.yaml;
@@ -423,6 +439,36 @@ in {
       fi
       export XDG_CONFIG_HOME="$config_home"
       exec opencode serve --port 13101
+    '';
+  };
+
+  # === T2 OpenCode server (full mode — superpowers + the same local MCPs
+  # as Tier 1, from its own isolated config dir). Spawned on demand by the
+  # companion daemon (perla-companion.py _start_server), NOT a systemd
+  # service — the exact lifecycle Tier 2 had when it ran plain
+  # `opencode serve --port ...` against the hand-managed config, only with
+  # the hand-managed config replaced by the repo-managed opencode-t2.json. ===
+  home.file.".local/bin/perla-t2-server" = {
+    force = true;
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      # Persistent, reusable config dir — NOT mktemp -d. This is spawned by
+      # a daemon that (re)starts servers on demand, so a fresh mktemp -d
+      # here would leak one full copy of ~/.config/opencode into /tmp every
+      # time, with nothing ever cleaning it up. Same rationale as
+      # perla-t1-server.
+      port="''${1:-13102}"
+      config_home="''${XDG_RUNTIME_DIR:-/tmp}/perla/t2-config"
+      mkdir -p "$config_home/opencode"
+      if [ ! -f "$config_home/.synced" ] || [ "$HOME/.config/opencode" -nt "$config_home/.synced" ]; then
+        cp -r "$HOME/.config/opencode/"* "$config_home/opencode/"
+        cp "$HOME/.config/opencode/opencode-t2.json" "$config_home/opencode/opencode.json"
+        touch "$config_home/.synced"
+      fi
+      export XDG_CONFIG_HOME="$config_home"
+      exec opencode serve --port "$port"
     '';
   };
 

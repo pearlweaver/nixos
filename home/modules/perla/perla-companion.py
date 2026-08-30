@@ -187,8 +187,11 @@ class SessionManager:
                 start_new_session=True
             )
         else:
+            # Tier 2 = full mode, from its own isolated config dir
+            # (perla-t2-server provisions it with opencode-t2.json), exactly
+            # like Tier 1 — never the user's interactive opencode config.
             subprocess.Popen(
-                ["opencode", "serve", "--port", str(port)],
+                [os.path.expanduser("~/.local/bin/perla-t2-server"), str(port)],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True
             )
