@@ -703,6 +703,7 @@ def _parse_log_file(path):
 
     current = None
     pending_field = None  # "input" or "response", for multi-line continuation
+    pending_blanks = 0    # blank lines inside the block (paragraph breaks)
 
     def flush():
         if current is not None and (current["input"] or current["response"]):
@@ -721,6 +722,7 @@ def _parse_log_file(path):
                 "response": "",
             }
             pending_field = None
+            pending_blanks = 0
             continue
 
         if current is None:
@@ -730,20 +732,30 @@ def _parse_log_file(path):
         if input_m:
             current["input"] = input_m.group(1)
             pending_field = "input"
+            pending_blanks = 0
             continue
 
         response_m = HISTORY_RESPONSE_RE.match(line)
         if response_m:
             current["response"] = response_m.group(1)
             pending_field = "response"
+            pending_blanks = 0
             continue
 
         if line.strip() == "":
-            pending_field = None
+            # Blank lines inside a multi-line block are paragraph breaks,
+            # NOT the end of the block. Buffer them and only commit if the
+            # block keeps going; a structural line (header/Input/Response)
+            # or EOF drops the buffer.
+            if pending_field in ("input", "response"):
+                pending_blanks += 1
             continue
 
         # Continuation line of a multi-line input/response block.
         if pending_field in ("input", "response"):
+            if pending_blanks:
+                current[pending_field] += "\n" * pending_blanks
+                pending_blanks = 0
             current[pending_field] = (current[pending_field] + "\n" + line).rstrip()
 
     flush()

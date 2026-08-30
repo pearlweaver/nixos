@@ -1,3 +1,3 @@
-# Version 26.8.30.2
+# Version 26.8.30.3
 
-- Added markdown view for Perla's messages
+- Fixed Perla's history view ending at new line and not showing complete responses.
