@@ -518,6 +518,56 @@
        and inset from the sides so it reads as a floating docked bar. */
     margin: 0 14px calc(14px + var(--safe-bottom));
   }
+  .composer[hidden] { display: none; }
+
+  /* Replaces .composer in the exact same footer slot whenever Tier 2's
+     chat is on screen but not yet elevated — same floating-bar shell so
+     the transition to/from the real composer doesn't jump the layout. */
+  .elevate-composer {
+    padding: 12px 14px;
+    background: var(--bg-panel);
+    border: 1px solid var(--wax);
+    border-radius: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0 14px calc(14px + var(--safe-bottom));
+  }
+  /* Without this, the [hidden] attribute set from JS is silently beaten
+     by the `display: flex` rule above (same specificity, and this class
+     rule wins), so the bar stayed visible on every tier — this is the fix. */
+  .elevate-composer[hidden] { display: none; }
+  .elevate-composer-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .elevate-composer-icon {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--wax-bright);
+    background: rgba(184,69,47,0.14);
+  }
+  .elevate-composer input[type="password"] {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--rule);
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 15px;
+    padding: 8px 2px;
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+  .elevate-composer input[type="password"]::placeholder { color: var(--ink-faint); }
+  .elevate-composer input[type="password"]:focus { border-bottom-color: var(--wax); }
 
   .attach-btn {
     display: inline-flex;
@@ -777,31 +827,41 @@
     animation: fade-in 0.18s ease;
   }
   .lightbox[hidden] { display: none; }
-  .lightbox img {
-    max-width: 94vw;
-    max-height: 92vh;
-    border-radius: 10px;
-    border: 1px solid var(--rule);
-    box-shadow: 0 30px 80px rgba(0,0,0,0.6);
-  }
-  .lightbox-close {
-    position: absolute;
-    top: 16px;
-    right: 16px;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    border: 1px solid var(--rule);
-    background: rgba(23,19,26,0.6);
-    color: var(--ink);
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
+
+  /* Positioned wrap/inner pair, same pattern as the image editor's
+     editorCanvasWrap/editorCanvasInner: --fit-w/--fit-h set the base
+     "fits the screen" size in JS once the image loads, and zoom/pan on
+     top of that apply as a CSS transform on the inner element — which
+     keeps getBoundingClientRect() correct for any pointer math at any
+     zoom level without the editor's code needing to know about zoom. */
+  .lightbox-canvas-wrap {
+    position: relative;
+    width: 100%;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
+    overflow: hidden;
+    touch-action: none;
   }
-  .lightbox-close:hover { border-color: var(--brass-dim); color: var(--brass-bright); }
+  .lightbox-canvas-inner {
+    position: relative;
+    line-height: 0;
+    width: var(--fit-w, auto);
+    height: var(--fit-h, auto);
+    transform: translate(var(--lightbox-pan-x, 0px), var(--lightbox-pan-y, 0px)) scale(var(--lightbox-zoom, 1));
+    transform-origin: center center;
+  }
+  .lightbox img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 10px;
+    border: 1px solid var(--rule);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+    cursor: grab;
+  }
+  .lightbox img:active { cursor: grabbing; }
   @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
   /* ---------- Image editor (crop + pen) ---------- */
@@ -1439,10 +1499,6 @@
         <span class="menu-item-badge" id="tier2Badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><rect x="4" y="11" width="16" height="11" rx="2" ry="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
       </button>
       <div class="menu-divider"></div>
-      <button id="elevateBtn" class="menu-item">
-        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
-        <span class="menu-item-label">Full Mode</span>
-      </button>
       <button id="remindersBtn" class="menu-item">
         <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>
         <span class="menu-item-label">Reminders</span>
@@ -1464,14 +1520,6 @@
         </select>
       </div>
       <span id="historyStatus" class="panel-status"></span>
-    </div>
-
-    <div id="elevatePanel" class="dropdown-panel" hidden>
-      <div class="dropdown-row">
-        <input id="elevateInput" type="password" placeholder="Elevation token" autocomplete="off" />
-        <button id="elevateSubmit" class="elevate-submit">Activate</button>
-      </div>
-      <span id="elevateStatus" class="panel-status"></span>
     </div>
 
     <div id="remindersBar" class="dropdown-panel" hidden>
@@ -1509,6 +1557,16 @@
         </button>
       </div>
       <span id="micTimer" class="mic-timer"></span>
+    </footer>
+    <footer id="elevateComposer" class="elevate-composer" hidden>
+      <div class="elevate-composer-row">
+        <span class="elevate-composer-icon">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </span>
+        <input id="elevateInput" type="password" placeholder="Elevation token to unlock Full Mode" autocomplete="off" />
+        <button id="elevateSubmit" class="elevate-submit">Activate</button>
+      </div>
+      <span id="elevateStatus" class="panel-status"></span>
     </footer>
     <nav id="attachMenu" class="floating-menu attach-menu" aria-hidden="true">
       <button id="attachCameraBtn" class="menu-item">
@@ -1609,8 +1667,37 @@
   </div>
 
   <div id="lightbox" class="lightbox" hidden>
-    <button id="lightboxClose" class="lightbox-close" aria-label="Close image" title="Close">✕</button>
-    <img id="lightboxImage" alt="">
+    <div class="lightbox-canvas-wrap" id="lightboxWrap">
+      <div class="lightbox-canvas-inner" id="lightboxInner">
+        <img id="lightboxImage" alt="">
+      </div>
+
+      <div class="editor-float editor-close-float">
+        <button class="editor-icon-btn" id="lightboxClose" aria-label="Close image" title="Close">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><line x1="4" y1="4" x2="18" y2="18"/><line x1="18" y1="4" x2="4" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="editor-float editor-zoom-float">
+        <button class="editor-icon-btn" id="lightboxZoomOut" aria-label="Zoom out" title="Zoom out">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><circle cx="10" cy="10" r="7"/><line x1="15.2" y1="15.2" x2="20" y2="20"/><line x1="7" y1="10" x2="13" y2="10"/></svg>
+        </button>
+        <span class="editor-zoom-label" id="lightboxZoomLabel">100%</span>
+        <button class="editor-icon-btn" id="lightboxZoomIn" aria-label="Zoom in" title="Zoom in">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><circle cx="10" cy="10" r="7"/><line x1="15.2" y1="15.2" x2="20" y2="20"/><line x1="10" y1="7" x2="10" y2="13"/><line x1="7" y1="10" x2="13" y2="10"/></svg>
+        </button>
+        <div class="editor-divider"></div>
+        <button class="editor-icon-btn" id="lightboxZoomReset" aria-label="Reset zoom" title="Fit to screen">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M3 8V4h4"/><path d="M19 8V4h-4"/><path d="M3 14v4h4"/><path d="M19 14v4h-4"/></svg>
+        </button>
+      </div>
+
+      <div class="editor-float editor-save-float">
+        <button class="editor-icon-btn" id="lightboxDownload" aria-label="Download image" title="Download">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><path d="M11 3v12"/><polyline points="6 10 11 15 16 10"/><path d="M4 18h14"/></svg>
+        </button>
+      </div>
+    </div>
   </div>
 
 <script>
@@ -1664,6 +1751,7 @@
   // but a fresh gate unlock always starts clean at Tier 1 per spec.
   let activeTier = parseInt(sessionStorage.getItem("perla_active_tier") || "1", 10);
   let isElevated = sessionStorage.getItem("perla_elevated") === "1";
+  let tier1Unread = sessionStorage.getItem("perla_tier1_unread") === "1";
   let tier2Unread = sessionStorage.getItem("perla_tier2_unread") === "1";
 
   function getChatLog(tier) {
@@ -1713,9 +1801,11 @@
       sessionStorage.removeItem("perla_elevate_until");
       sessionStorage.setItem("perla_active_tier", "1");
       sessionStorage.setItem("perla_elevated", "0");
+      sessionStorage.setItem("perla_tier1_unread", "0");
       sessionStorage.setItem("perla_tier2_unread", "0");
       activeTier = 1;
       isElevated = false;
+      tier1Unread = false;
       tier2Unread = false;
     }
     setElevated(isElevated);
@@ -1854,22 +1944,20 @@
   });
 
   // ---------- Elevation (Tier 2) ----------
-  const elevateBtn = document.getElementById("elevateBtn");
-  const elevatePanel = document.getElementById("elevatePanel");
+  // Tier 2's chat is always viewable (including its history) whether or
+  // not the session is currently elevated — only SENDING requires the
+  // token. So instead of a separate "Full Mode" menu item + dropdown,
+  // elevation lives inline: the composer footer itself swaps for a token
+  // bar whenever Tier 2 is the active, on-screen chat and isn't elevated
+  // yet, and swaps back to the normal composer the moment it is. See
+  // updateComposerMode() below, called from switchTier/setElevated/the
+  // overlay open+close functions — anywhere the three inputs to "which
+  // footer, if any, should show" (activeTier, isElevated, activeOverlay)
+  // can change.
   const elevateInput = document.getElementById("elevateInput");
   const elevateSubmit = document.getElementById("elevateSubmit");
   const elevateStatus = document.getElementById("elevateStatus");
   const tierBadge = document.getElementById("tierBadge");
-
-  elevateBtn.addEventListener("click", () => {
-    closeAppMenu();
-    closeHistoryPanel();
-    closeRemindersPanel();
-    const opening = elevatePanel.hidden;
-    elevatePanel.hidden = !opening;
-    elevateBtn.classList.toggle("active", opening);
-    if (opening) elevateInput.focus();
-  });
 
   elevateSubmit.addEventListener("click", async () => {
     const token = elevateInput.value.trim();
@@ -1888,8 +1976,6 @@
       if (res.ok && data.tier === 2) {
         elevateStatus.textContent = "";
         elevateInput.value = "";
-        elevatePanel.hidden = true;
-        elevateBtn.classList.remove("active");
         setElevated(true);
         addEntry("system", "", "Full Mode activated for 5 minutes.");
 
@@ -1903,10 +1989,9 @@
           stopTierTimer();
           setElevated(false);
           if (activeTier === 2) {
-            switchTier(1);
-            addEntry("system", "", "Full Mode expired — back to Tier 1.");
+            addEntry("system", "", "Full Mode expired — Tier 2 is locked again.", 2);
           } else {
-            addEntry("system", "", "Full Mode expired.");
+            addEntry("system", "", "Full Mode expired.", 2);
           }
         }, (data.expires_in || 0) * 1000);
       } else {
@@ -2057,9 +2142,51 @@
     return out.join("");
   }
 
-  function addEntry(kind, label, text) {
-    // A real exchange replaces the welcome card.
-    if (kind !== "system") {
+  // ---- Delivering entries to a specific tier's chat, live or backgrounded ----
+  // A response belongs to whichever tier the request was SENT from, not
+  // whatever the user happens to be looking at when it arrives — someone
+  // can send in Tier 2, flip to Tier 1 (or open History/Reminders) before
+  // the reply comes back, and the reply must land in Tier 2's transcript
+  // either way: painted live if they're still looking at it, or saved
+  // silently into that tier's stored log (plus an unread badge) if not.
+  //
+  // A detached scratch element mirrors the exact DOM shape `output` would
+  // have gotten, so building an entry doesn't need two code paths — the
+  // caller always gets back the real, live `<div class="entry ...">` node
+  // (for addCopyButton/addReplayButton to attach to), and afterwards it's
+  // either already in the live page or copied into storage as HTML.
+  const backgroundScratch = document.createElement("div");
+
+  function isViewingTierChat(tier) {
+    return activeOverlay === null && activeTier === tier;
+  }
+
+  // Appends `entry` to the right place for `forTier`: live `output` if
+  // that tier's plain chat is on screen, otherwise a detached scratch pad
+  // that gets folded into that tier's saved chat log instead. Returns
+  // whether it went live, so callers can skip live-only side effects
+  // (scrolling into view, playing audio) when it didn't.
+  function deliverEntry(entry, forTier) {
+    if (isViewingTierChat(forTier)) {
+      output.appendChild(entry);
+      setChatLog(forTier, output.innerHTML);
+      return true;
+    }
+    backgroundScratch.innerHTML = "";
+    backgroundScratch.appendChild(entry);
+    const existing = getChatLog(forTier);
+    setChatLog(forTier, existing + backgroundScratch.innerHTML);
+    markTierUnread(forTier);
+    return false;
+  }
+
+  function addEntry(kind, label, text, forTier) {
+    const targetTier = forTier !== undefined ? forTier : activeTier;
+    const live = isViewingTierChat(targetTier);
+    // A real exchange replaces the welcome card — only meaningful when
+    // landing live, since a backgrounded reply's welcome card (if any)
+    // lives inside the stored HTML string, not in a queryable DOM.
+    if (kind !== "system" && live) {
       output.querySelectorAll(".welcome").forEach((w) => w.remove());
     }
     const entry = document.createElement("div");
@@ -2072,17 +2199,19 @@
     if (useMd) entry.querySelector(".md").innerHTML = renderMarkdown(text);
     else entry.querySelector("p").textContent = text;
     if (kind === "perla") addCopyButton(entry, text);
-    output.appendChild(entry);
-    output.scrollIntoView({ block: "end" });
-    entry.scrollIntoView({ behavior: "smooth", block: "end" });
-    if (activeOverlay === null) setChatLog(activeTier, output.innerHTML);
+    const wentLive = deliverEntry(entry, targetTier);
+    if (wentLive) {
+      output.scrollIntoView({ block: "end" });
+      entry.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
     return entry;
   }
 
   // Screenshot images require an authenticated fetch (same as audio) since
   // the endpoint is gated — a bare <img src> can't carry the bearer token.
   // Renders as its own bubble, with the caption text (if any) above it.
-  async function addImageEntry(label, imageUrl, captionText) {
+  async function addImageEntry(label, imageUrl, captionText, forTier) {
+    const targetTier = forTier !== undefined ? forTier : activeTier;
     const entry = document.createElement("div");
     entry.className = "entry entry-perla";
     const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -2094,9 +2223,22 @@
       `<div class="entry-meta"><span class="entry-time">${time}</span></div>`;
     if (captionText) entry.querySelector("p").textContent = captionText;
     if (captionText) addCopyButton(entry, captionText);
-    output.appendChild(entry);
-    output.scrollIntoView({ block: "end" });
-    entry.scrollIntoView({ behavior: "smooth", block: "end" });
+
+    const wentLiveEarly = isViewingTierChat(targetTier);
+    if (wentLiveEarly) {
+      // Still the right tab right now — show the loading placeholder live
+      // and let it pop in as the fetch resolves, same as before.
+      output.appendChild(entry);
+      output.scrollIntoView({ block: "end" });
+      entry.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+    // If it's NOT the live tab, deliberately skip appending anywhere yet —
+    // deliverEntry() below only ever serializes a node's CURRENT innerHTML
+    // into sessionStorage, so appending the placeholder now and mutating
+    // it after the fetch would freeze "Loading screenshot…" into storage
+    // forever (the mutation happens on a node that's already been copied
+    // out as a string). Resolving the image first means whichever branch
+    // delivers this entry always delivers the final state.
 
     const wrap = entry.querySelector(".entry-image-wrap");
     try {
@@ -2116,22 +2258,212 @@
       wrap.innerHTML = `<span class="entry-image-error">Couldn't load the screenshot.</span>`;
     }
 
-    if (activeOverlay === null) setChatLog(activeTier, output.innerHTML);
+    if (wentLiveEarly) {
+      // Entry is already live in the DOM (and may have moved tabs again
+      // while the fetch was in flight) — just persist whatever tab it's
+      // actually sitting in right now.
+      if (isViewingTierChat(targetTier)) {
+        setChatLog(targetTier, output.innerHTML);
+      } else {
+        // The user navigated away mid-fetch: the placeholder is still
+        // live in `output` under the OLD view, not under targetTier's
+        // storage. Move the resolved node's markup into targetTier's
+        // stored log and remove it from the live page so it doesn't
+        // linger under the wrong tab.
+        entry.remove();
+        backgroundScratch.innerHTML = "";
+        backgroundScratch.appendChild(entry);
+        setChatLog(targetTier, getChatLog(targetTier) + backgroundScratch.innerHTML);
+        markTierUnread(targetTier);
+      }
+    } else {
+      // Was never live — a blob: object URL only works for the page that
+      // created it anyway (same caveat the reload path already handles
+      // via the stale-blob cleanup in initAppState), so a background
+      // delivery that resolved to a real image still gets its markup
+      // saved, and will show the same "no longer available" fallback as
+      // any other blob URL would once the user actually switches to it
+      // and the objectUrl is inspected. This matches existing behavior
+      // rather than inventing a new persistence story for screenshots.
+      deliverEntry(entry, targetTier);
+    }
     return entry;
   }
 
-  // ---------- Image lightbox ----------
+  // ---------- Image lightbox (pan + zoom + download) ----------
   const lightbox = document.getElementById("lightbox");
+  const lightboxWrap = document.getElementById("lightboxWrap");
+  const lightboxInner = document.getElementById("lightboxInner");
   const lightboxImage = document.getElementById("lightboxImage");
   const lightboxClose = document.getElementById("lightboxClose");
+  const lightboxZoomIn = document.getElementById("lightboxZoomIn");
+  const lightboxZoomOut = document.getElementById("lightboxZoomOut");
+  const lightboxZoomReset = document.getElementById("lightboxZoomReset");
+  const lightboxZoomLabel = document.getElementById("lightboxZoomLabel");
+  const lightboxDownload = document.getElementById("lightboxDownload");
+
+  const LIGHTBOX_MIN_ZOOM = 0.25;
+  const LIGHTBOX_MAX_ZOOM = 8;
+  let lightboxFitScale = 1;
+  let lightboxZoomLevel = 1;
+  let lightboxPanX = 0;
+  let lightboxPanY = 0;
+  let lightboxPanDrag = null;   // {startX, startY, startPanX, startPanY} — middle-click OR left-drag pan
+  let lightboxPinchState = null;
+
+  function fitLightboxToScreen() {
+    const wrapRect = lightboxWrap.getBoundingClientRect();
+    const availW = Math.max(1, wrapRect.width - 48);
+    const availH = Math.max(1, wrapRect.height - 48);
+    const naturalW = lightboxImage.naturalWidth || 1;
+    const naturalH = lightboxImage.naturalHeight || 1;
+    lightboxFitScale = Math.min(availW / naturalW, availH / naturalH, 1);
+    if (lightboxFitScale <= 0 || !isFinite(lightboxFitScale)) lightboxFitScale = 1;
+    lightboxInner.style.setProperty("--fit-w", (naturalW * lightboxFitScale) + "px");
+    lightboxInner.style.setProperty("--fit-h", (naturalH * lightboxFitScale) + "px");
+    lightboxZoomLevel = 1;
+    lightboxPanX = 0;
+    lightboxPanY = 0;
+    applyLightboxZoomTransform();
+  }
+
+  function applyLightboxZoomTransform() {
+    lightboxInner.style.setProperty("--lightbox-zoom", String(lightboxZoomLevel));
+    lightboxInner.style.setProperty("--lightbox-pan-x", lightboxPanX + "px");
+    lightboxInner.style.setProperty("--lightbox-pan-y", lightboxPanY + "px");
+    lightboxZoomLabel.textContent = Math.round(lightboxFitScale * lightboxZoomLevel * 100) + "%";
+  }
+
+  function clampLightboxPan() {
+    const wrapRect = lightboxWrap.getBoundingClientRect();
+    const w = (lightboxImage.naturalWidth || 1) * lightboxFitScale * lightboxZoomLevel;
+    const h = (lightboxImage.naturalHeight || 1) * lightboxFitScale * lightboxZoomLevel;
+    const maxX = Math.max(0, (w - wrapRect.width) / 2 + wrapRect.width * 0.4);
+    const maxY = Math.max(0, (h - wrapRect.height) / 2 + wrapRect.height * 0.4);
+    lightboxPanX = Math.max(-maxX, Math.min(maxX, lightboxPanX));
+    lightboxPanY = Math.max(-maxY, Math.min(maxY, lightboxPanY));
+  }
+
+  function setLightboxZoom(newLevel, anchorClientX, anchorClientY) {
+    newLevel = Math.max(LIGHTBOX_MIN_ZOOM, Math.min(LIGHTBOX_MAX_ZOOM, newLevel));
+    if (newLevel === lightboxZoomLevel) return;
+    if (anchorClientX !== undefined && anchorClientY !== undefined) {
+      const wrapRect = lightboxWrap.getBoundingClientRect();
+      const centerX = wrapRect.left + wrapRect.width / 2;
+      const centerY = wrapRect.top + wrapRect.height / 2;
+      const offsetX = anchorClientX - centerX - lightboxPanX;
+      const offsetY = anchorClientY - centerY - lightboxPanY;
+      const ratio = newLevel / lightboxZoomLevel;
+      lightboxPanX -= offsetX * (ratio - 1);
+      lightboxPanY -= offsetY * (ratio - 1);
+    }
+    lightboxZoomLevel = newLevel;
+    clampLightboxPan();
+    applyLightboxZoomTransform();
+  }
+
+  lightboxZoomIn.addEventListener("click", () => setLightboxZoom(lightboxZoomLevel * 1.5));
+  lightboxZoomOut.addEventListener("click", () => setLightboxZoom(lightboxZoomLevel / 1.5));
+  lightboxZoomReset.addEventListener("click", () => fitLightboxToScreen());
+
+  lightboxWrap.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * 0.0015);
+    setLightboxZoom(lightboxZoomLevel * factor, e.clientX, e.clientY);
+  }, { passive: false });
+
+  // Pan: middle-click drag (matches the image editor) OR a plain left-
+  // click drag on the image itself, since the lightbox has no competing
+  // tool (pen/crop) that a left-drag would otherwise need to be reserved
+  // for — unlike the editor, dragging here can just always mean "pan."
+  function lightboxPanStart(e) {
+    if (e.button !== undefined && e.button !== 0 && e.button !== 1) return;
+    e.preventDefault();
+    lightboxPanDrag = { startX: e.clientX, startY: e.clientY, startPanX: lightboxPanX, startPanY: lightboxPanY };
+  }
+  function lightboxPanMove(e) {
+    if (!lightboxPanDrag) return;
+    e.preventDefault();
+    lightboxPanX = lightboxPanDrag.startPanX + (e.clientX - lightboxPanDrag.startX);
+    lightboxPanY = lightboxPanDrag.startPanY + (e.clientY - lightboxPanDrag.startY);
+    clampLightboxPan();
+    applyLightboxZoomTransform();
+  }
+  function lightboxPanEnd() {
+    lightboxPanDrag = null;
+  }
+  lightboxImage.addEventListener("mousedown", lightboxPanStart);
+  window.addEventListener("mousemove", lightboxPanMove);
+  window.addEventListener("mouseup", lightboxPanEnd);
+  lightboxImage.addEventListener("auxclick", (e) => { if (e.button === 1) e.preventDefault(); });
+  lightboxImage.addEventListener("dragstart", (e) => e.preventDefault()); // don't fight our own drag-pan with native image drag
+
+  function lightboxTouchDist(t0, t1) {
+    return Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+  }
+  function lightboxTouchMid(t0, t1) {
+    return { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
+  }
+  lightboxWrap.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      lightboxPanDrag = null;
+      lightboxPinchState = {
+        startDist: lightboxTouchDist(e.touches[0], e.touches[1]),
+        startZoom: lightboxZoomLevel,
+      };
+    } else if (e.touches.length === 1) {
+      const t = e.touches[0];
+      lightboxPanDrag = { startX: t.clientX, startY: t.clientY, startPanX: lightboxPanX, startPanY: lightboxPanY };
+    }
+  }, { passive: false });
+  lightboxWrap.addEventListener("touchmove", (e) => {
+    if (lightboxPinchState && e.touches.length === 2) {
+      e.preventDefault();
+      const dist = lightboxTouchDist(e.touches[0], e.touches[1]);
+      const mid = lightboxTouchMid(e.touches[0], e.touches[1]);
+      setLightboxZoom(lightboxPinchState.startZoom * (dist / (lightboxPinchState.startDist || 1)), mid.x, mid.y);
+    } else if (lightboxPanDrag && e.touches.length === 1) {
+      e.preventDefault();
+      const t = e.touches[0];
+      lightboxPanX = lightboxPanDrag.startPanX + (t.clientX - lightboxPanDrag.startX);
+      lightboxPanY = lightboxPanDrag.startPanY + (t.clientY - lightboxPanDrag.startY);
+      clampLightboxPan();
+      applyLightboxZoomTransform();
+    }
+  }, { passive: false });
+  function lightboxEndTouch(e) {
+    if (!e.touches || e.touches.length < 2) lightboxPinchState = null;
+    if (!e.touches || e.touches.length < 1) lightboxPanDrag = null;
+  }
+  lightboxWrap.addEventListener("touchend", lightboxEndTouch);
+  lightboxWrap.addEventListener("touchcancel", lightboxEndTouch);
+
+  window.addEventListener("resize", () => {
+    if (!lightbox.hidden) fitLightboxToScreen();
+  });
+
+  lightboxDownload.addEventListener("click", () => {
+    const src = lightboxImage.src;
+    if (!src) return;
+    const a = document.createElement("a");
+    a.href = src;
+    a.download = "perla-image-" + Date.now() + (src.includes("image/png") || src.startsWith("blob:") ? ".png" : ".jpg");
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
 
   function openLightbox(src) {
+    lightboxImage.onload = fitLightboxToScreen;
     lightboxImage.src = src;
     lightbox.hidden = false;
   }
   function closeLightbox() {
     lightbox.hidden = true;
     lightboxImage.removeAttribute("src");
+    lightboxPanDrag = null;
+    lightboxPinchState = null;
   }
   lightboxClose.addEventListener("click", closeLightbox);
   lightbox.addEventListener("click", (e) => {
@@ -2185,7 +2517,9 @@
   }
 
   // ---------- Thinking indicator ----------
-  function showThinking() {
+  function showThinking(forTier) {
+    const targetTier = forTier !== undefined ? forTier : activeTier;
+    if (!isViewingTierChat(targetTier)) return; // nothing to show in a view that's not on screen
     hideThinking();
     const el = document.createElement("div");
     el.className = "thinking";
@@ -2195,7 +2529,12 @@
     output.scrollIntoView({ block: "end" });
     el.scrollIntoView({ behavior: "smooth", block: "end" });
   }
-  function hideThinking() {
+  function hideThinking(forTier) {
+    // Only remove the indicator if we're still looking at the tier it was
+    // shown for — otherwise this could delete a DIFFERENT in-flight
+    // request's spinner after the user switched tiers mid-conversation.
+    const targetTier = forTier !== undefined ? forTier : activeTier;
+    if (!isViewingTierChat(targetTier)) return;
     const el = document.getElementById("thinkingIndicator");
     if (el) el.remove();
   }
@@ -2208,9 +2547,43 @@
 
   const LOCK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><rect x="4" y="11" width="16" height="11" rx="2" ry="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
 
-  function renderTier2Badge() {
+  // Marks `tier` as having a response waiting that the user hasn't seen —
+  // set whenever addEntry/addImageEntry deliver into a tier that isn't
+  // the live view, cleared the moment that tier's plain chat becomes the
+  // live view again (see switchTier). Tier 2 additionally shows a lock
+  // icon when not elevated, which unread always takes priority over.
+  function markTierUnread(tier) {
+    if (tier === 1) {
+      tier1Unread = true;
+      sessionStorage.setItem("perla_tier1_unread", "1");
+    } else {
+      tier2Unread = true;
+      sessionStorage.setItem("perla_tier2_unread", "1");
+    }
+    renderTierBadges();
+  }
+
+  function clearTierUnread(tier) {
+    if (tier === 1) {
+      tier1Unread = false;
+      sessionStorage.setItem("perla_tier1_unread", "0");
+    } else {
+      tier2Unread = false;
+      sessionStorage.setItem("perla_tier2_unread", "0");
+    }
+  }
+
+  function renderTierBadges() {
+    tier1Badge.classList.remove("unread");
+    if (activeTier !== 1 && tier1Unread) {
+      tier1Badge.textContent = "new";
+      tier1Badge.classList.add("unread");
+    } else {
+      tier1Badge.innerHTML = "";
+    }
+
     tier2Badge.classList.remove("locked", "unread");
-    if (activeTier === 1 && tier2Unread) {
+    if (activeTier !== 2 && tier2Unread) {
       tier2Badge.textContent = "new";
       tier2Badge.classList.add("unread");
     } else if (isElevated) {
@@ -2224,11 +2597,12 @@
   function setElevated(value) {
     isElevated = value;
     sessionStorage.setItem("perla_elevated", value ? "1" : "0");
-    renderTier2Badge();
+    renderTierBadges();
+    updateComposerMode();
   }
 
   function updateTier2UnreadBadge() {
-    renderTier2Badge();
+    renderTierBadges();
   }
 
   // ---------- Full Mode live countdown ----------
@@ -2285,18 +2659,42 @@
     attachBtn.disabled = disabled;
   }
 
-  function switchTier(tier) {
-    if (tier === 2 && !isElevated) {
-      // Route to elevation instead of silently failing — one tap gets
-      // you to the thing you actually need to do.
-      closeAppMenu();
-      elevateBtn.click();
+  // Decides which footer — the real composer, the elevate-token bar, or
+  // neither — belongs on screen right now, purely from the three bits of
+  // state that determine it: activeTier, isElevated, activeOverlay.
+  // Called from every place any of those three can change. History and
+  // Reminders always win (composer.hidden already handles that via
+  // setComposerDisabled elsewhere) — this only decides between the normal
+  // composer and the elevate bar for the plain-chat case.
+  function updateComposerMode() {
+    if (activeOverlay !== null) {
+      // A read-only overlay (History/Reminders) wins over both — hide
+      // the real composer and the elevate bar alike, and make sure the
+      // composer's own controls are disabled (not just hidden) so a
+      // stray keypress can't reach OpenCode while browsing old messages.
+      composer.hidden = true;
+      setComposerDisabled(true);
+      elevateComposer.hidden = true;
       return;
     }
+    const needsElevation = activeTier === 2 && !isElevated;
+    composer.hidden = needsElevation;
+    setComposerDisabled(needsElevation);
+    elevateComposer.hidden = !needsElevation;
+    if (needsElevation) {
+      elevateStatus.textContent = "";
+      elevateInput.focus();
+    }
+  }
 
+  function switchTier(tier) {
     // Tapping a tier button always means "show me that tier's chat" —
     // whether we're currently on the other tier, viewing History/
     // Reminders, or even already on this tier but buried in an overlay.
+    // Tier 2 is always viewable this way, elevated or not — reading its
+    // history doesn't need the token, only SENDING does (updateComposerMode
+    // below swaps in the elevate bar in place of the real composer whenever
+    // that's the case).
     // Close any open overlay first (this restores the composer and clears
     // liveOutputHTML) so the code below always ends up painting the
     // requested tier's transcript into a plain, composer-visible chat view,
@@ -2318,11 +2716,11 @@
     tierBadge.textContent = "T" + tier;
 
     updateTierButtonHighlight();
+    updateComposerMode();
 
-    if (tier === 2) {
-      tier2Unread = false;
-      sessionStorage.setItem("perla_tier2_unread", "0");
-    }
+    // Landing on a tier's own chat always clears its unread flag, whether
+    // it's Tier 1 or Tier 2 — both can now receive a backgrounded reply.
+    clearTierUnread(tier);
     updateTier2UnreadBadge();
 
     output.innerHTML = getChatLog(tier);
@@ -2414,6 +2812,8 @@
   const attachInput = document.getElementById("attachInput");
   const cameraInput = document.getElementById("cameraInput");
   const attachPreview = document.getElementById("attachPreview");
+  const composer = document.querySelector(".composer");
+  const elevateComposer = document.getElementById("elevateComposer");
 
   const MAX_IMAGES_PER_MESSAGE = 6; // keep in sync with perla-companion.py
 
@@ -2622,6 +3022,7 @@
   // Crop state (in canvas pixel coordinates, not display coordinates)
   let cropRect = null; // {x, y, w, h}
   let cropDrag = null; // {mode: "new"|"move"|handle, startX, startY, orig}
+  let panDrag = null;  // {startX, startY, startPanX, startPanY} — active while middle-click panning
 
   function setEditorTool(tool) {
     editorTool = tool;
@@ -2937,6 +3338,16 @@
   }
 
   function pointerDown(e) {
+    // Middle-click (or middle-finger... i.e. button 1) always pans,
+    // regardless of which tool (pen/crop) is active — this mirrors how
+    // most image editors reserve the middle mouse button for panning so
+    // it never has to fight with the active tool's own click behavior.
+    if (e.button === 1) {
+      e.preventDefault();
+      panDrag = { startX: e.clientX, startY: e.clientY, startPanX: editorPanX, startPanY: editorPanY };
+      return;
+    }
+
     // Two-plus finger touches are pinch-zoom gestures, handled separately
     // on editorCanvasWrap — bail out here so a pinch-start doesn't also
     // begin a pen stroke or crop drag from its first touch point.
@@ -2974,6 +3385,15 @@
   }
 
   function pointerMove(e) {
+    if (panDrag) {
+      e.preventDefault();
+      editorPanX = panDrag.startPanX + (e.clientX - panDrag.startX);
+      editorPanY = panDrag.startPanY + (e.clientY - panDrag.startY);
+      clampPan();
+      applyZoomTransform();
+      return;
+    }
+
     if (e.touches && e.touches.length > 1) return; // pinch handled separately
     const p = eventPoint(e);
     const canvasPt = displayToCanvasPoint(p.clientX, p.clientY);
@@ -3017,11 +3437,15 @@
     editorDrawing = false;
     editorLastPoint = null;
     cropDrag = null;
+    panDrag = null;
   }
 
   editorCanvas.addEventListener("mousedown", pointerDown);
   window.addEventListener("mousemove", pointerMove);
   window.addEventListener("mouseup", pointerUp);
+  // Suppress the browser's native middle-click autoscroll/context menu so
+  // it doesn't fire alongside (or instead of) the pan handled above.
+  editorCanvas.addEventListener("auxclick", (e) => { if (e.button === 1) e.preventDefault(); });
   editorCanvas.addEventListener("touchstart", pointerDown, { passive: false });
   window.addEventListener("touchmove", pointerMove, { passive: false });
   window.addEventListener("touchend", pointerUp);
@@ -3110,9 +3534,11 @@
       return;
     }
 
-    showThinking();
+    const requestTier = activeTier; // capture now — activeTier may change before the reply arrives
+
+    showThinking(requestTier);
     try {
-      const body = { message, tier: activeTier };
+      const body = { message, tier: requestTier };
       if (images.length > 0) {
         body.images = images.map((item) => item.dataUrl);
       }
@@ -3131,17 +3557,17 @@
           return;
         }
         if (res.status === 403 && data.error) {
-          addEntry("system", "", data.error);
+          addEntry("system", "", data.error, requestTier);
         } else {
           throw new Error("request failed");
         }
         return;
       }
       if (data.image) {
-        await addImageEntry("Perla", data.image, data.text || "");
+        await addImageEntry("Perla", data.image, data.text || "", requestTier);
       } else {
-        const entry = addEntry("perla", "Perla", data.text || "(no response)");
-        if (data.audio) {
+        const entry = addEntry("perla", "Perla", data.text || "(no response)", requestTier);
+        if (data.audio && isViewingTierChat(requestTier)) {
           playAudio(data.audio);
           addReplayButton(entry, data.audio);
         }
@@ -3149,11 +3575,11 @@
       statusDot.className = "status-dot ok";
       setStatusText("connected");
     } catch (e) {
-      addEntry("system", "", "Couldn't reach Perla. Check the connection.");
+      addEntry("system", "", "Couldn't reach Perla. Check the connection.", requestTier);
       statusDot.className = "status-dot err";
       setStatusText("unreachable");
     } finally {
-      hideThinking();
+      hideThinking(requestTier);
     }
   }
 
@@ -3224,11 +3650,13 @@
       return;
     }
 
-    showThinking();
+    const requestTier = activeTier; // capture now — activeTier may change before the reply arrives
+
+    showThinking(requestTier);
     try {
       const form = new FormData();
       form.append("audio", blob, "input.webm");
-      form.append("tier", String(activeTier));
+      form.append("tier", String(requestTier));
 
       const res = await fetch(CONFIG.ENDPOINT + CONFIG.VOICE_PATH, {
         method: "POST",
@@ -3242,20 +3670,20 @@
           return;
         }
         if (res.status === 403 && data.error) {
-          if (data.transcript) addEntry("user", "You", data.transcript);
-          addEntry("system", "", data.error);
+          if (data.transcript) addEntry("user", "You", data.transcript, requestTier);
+          addEntry("system", "", data.error, requestTier);
         } else {
           throw new Error("request failed");
         }
         return;
       }
 
-      if (data.transcript) addEntry("user", "You", data.transcript);
+      if (data.transcript) addEntry("user", "You", data.transcript, requestTier);
       if (data.image) {
-        await addImageEntry("Perla", data.image, data.text || "");
+        await addImageEntry("Perla", data.image, data.text || "", requestTier);
       } else {
-        const entry = addEntry("perla", "Perla", data.text || "(no response)");
-        if (data.audio) {
+        const entry = addEntry("perla", "Perla", data.text || "(no response)", requestTier);
+        if (data.audio && isViewingTierChat(requestTier)) {
           playAudio(data.audio);
           addReplayButton(entry, data.audio);
         }
@@ -3263,11 +3691,11 @@
       statusDot.className = "status-dot ok";
       setStatusText("connected");
     } catch (e) {
-      addEntry("system", "", "Couldn't reach Perla. Check the connection.");
+      addEntry("system", "", "Couldn't reach Perla. Check the connection.", requestTier);
       statusDot.className = "status-dot err";
       setStatusText("unreachable");
     } finally {
-      hideThinking();
+      hideThinking(requestTier);
       micTimer.textContent = "";
     }
   }
@@ -3277,7 +3705,6 @@
   const historyPanel = document.getElementById("historyPanel");
   const historyDaySelect = document.getElementById("historyDaySelect");
   const historyStatus = document.getElementById("historyStatus");
-  const composer = document.querySelector(".composer");
 
   let daysLoaded = false;
 
@@ -3301,13 +3728,12 @@
     activeOverlay = null;
     historyBtn.classList.remove("active");
     historyPanel.hidden = true;
-    composer.hidden = false;
-    setComposerDisabled(false);
     historyDaySelect.value = "";
     historyStatus.textContent = "";
     output.innerHTML = liveOutputHTML !== null ? liveOutputHTML : "";
     output.scrollIntoView({ block: "end" });
     updateTierButtonHighlight();
+    updateComposerMode();
   }
 
   async function openHistoryPanel() {
@@ -3315,16 +3741,13 @@
       addEntry("system", "", "Not linked to Perla yet — set CONFIG.ENDPOINT.");
       return;
     }
-    elevatePanel.hidden = true;
-    elevateBtn.classList.remove("active");
     closeRemindersPanel();
 
     activeOverlay = "history";
     historyBtn.classList.add("active");
     updateTierButtonHighlight();
     historyPanel.hidden = false;
-    composer.hidden = true;
-    setComposerDisabled(true);
+    updateComposerMode();
     liveOutputHTML = output.innerHTML;
     output.innerHTML = "";
     addEntry("system", "", "Viewing past conversations — read only.");
@@ -3433,12 +3856,11 @@
     activeOverlay = null;
     remindersBtn.classList.remove("active");
     remindersBar.hidden = true;
-    composer.hidden = false;
-    setComposerDisabled(false);
     remindersStatus.textContent = "";
     output.innerHTML = liveOutputHTML !== null ? liveOutputHTML : "";
     output.scrollIntoView({ block: "end" });
     updateTierButtonHighlight();
+    updateComposerMode();
   }
 
   async function openRemindersPanel() {
@@ -3446,16 +3868,13 @@
       addEntry("system", "", "Not linked to Perla yet — set CONFIG.ENDPOINT.");
       return;
     }
-    elevatePanel.hidden = true;
-    elevateBtn.classList.remove("active");
     closeHistoryPanel();
 
     activeOverlay = "reminders";
     remindersBtn.classList.add("active");
     updateTierButtonHighlight();
     remindersBar.hidden = false;
-    composer.hidden = true;
-    setComposerDisabled(true);
+    updateComposerMode();
     liveOutputHTML = output.innerHTML;
     output.innerHTML = "";
     remindersStatus.textContent = "Loading…";
@@ -3693,6 +4112,7 @@
     sessionStorage.removeItem("perla_session_token");
     sessionStorage.removeItem("perla_elevate_until");
     sessionStorage.removeItem("perla_elevated");
+    sessionStorage.removeItem("perla_tier1_unread");
     sessionStorage.removeItem("perla_tier2_unread");
     authToken = null;
     stopTierTimer();
