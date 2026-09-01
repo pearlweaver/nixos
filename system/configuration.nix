@@ -19,6 +19,7 @@
     ./modules/sops.nix
     ./modules/immich.nix
     ./modules/security.nix
+    ./modules/wireshark.nix
     inputs.home-manager.nixosModules.home-manager
 ];
 
