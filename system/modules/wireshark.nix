@@ -4,4 +4,6 @@
     # usbmon.enable = true;
     # dumpcap.enable = true;
   };
+
+  users.users.thedreamdev.extraGroups = [ "wireshark" ];
 }

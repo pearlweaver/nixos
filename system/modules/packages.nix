@@ -29,6 +29,7 @@
     ssh-to-age
     lazymc
     helium
+    wireshark
 
     inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default
   ];

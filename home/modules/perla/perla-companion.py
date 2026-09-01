@@ -301,17 +301,64 @@ def get_screen_lock_state():
         if not session_ids:
             return "unknown"
 
-        # If ANY of this user's sessions is locked, treat the screen as
-        # locked — conservative on multi-session setups (e.g. a spare TTY).
+        # Only the ACTIVE session's LockedHint matters when we can identify
+        # it. Checking every session for this user unconditionally (the old
+        # behavior) produced false positives whenever a stale/background
+        # session (a leftover display-manager session, a spare TTY, etc.)
+        # happened to carry LockedHint=yes while the real foreground session
+        # was unlocked.
+        #
+        # "Active" isn't populated consistently across all compositor/login
+        # setups (some manually-launched Wayland sessions outside a display
+        # manager don't set it the way GNOME/logind expects), so this also
+        # accepts State=active as an equivalent signal, and only degrades to
+        # the old any-session check as a last resort — not straight to
+        # "unknown" — since on single-session desktops (the common case)
+        # that old check was already correct.
+        active_results = []  # (locked_hint, is_active) per session, for fallback
+        saw_active_session = False
         for sid in session_ids:
-            result = subprocess.run(
+            # Query each property SEPARATELY. `loginctl show-session` with
+            # multiple -p flags and --value prints the values sorted
+            # alphabetically by property name (Active, LockedHint, State) —
+            # NOT in the order requested — so parsing one combined call by
+            # position silently swapped the fields and mis-detected an
+            # unlocked screen as locked. Individual -p --value calls are
+            # unambiguous.
+            locked_hint = subprocess.run(
                 ["loginctl", "show-session", sid, "-p", "LockedHint", "--value"],
                 capture_output=True, text=True, timeout=5
-            )
-            if result.returncode == 0 and result.stdout.strip() == "yes":
+            ).stdout.strip()
+            active_prop = subprocess.run(
+                ["loginctl", "show-session", sid, "-p", "Active", "--value"],
+                capture_output=True, text=True, timeout=5
+            ).stdout.strip()
+            state_prop = subprocess.run(
+                ["loginctl", "show-session", sid, "-p", "State", "--value"],
+                capture_output=True, text=True, timeout=5
+            ).stdout.strip()
+            is_active = active_prop == "yes" or state_prop == "active"
+            active_results.append((locked_hint == "yes", is_active))
+            if not is_active:
+                continue
+            saw_active_session = True
+            if locked_hint == "yes":
                 return "locked"
 
-        return "unlocked"
+        if saw_active_session:
+            return "unlocked"
+
+        # Couldn't positively identify an active session on this setup —
+        # fall back to: locked if ANY session for this user reports
+        # LockedHint=yes, unlocked otherwise. Less precise than the
+        # active-session check above, but still better than an automatic
+        # "unknown" refusal on setups where Active/State never resolve.
+        if any(locked_hint for locked_hint, _ in active_results):
+            return "locked"
+        if active_results:
+            return "unlocked"
+
+        return "unknown"
     except Exception as e:
         print(f"WARNING: lock state check failed: {e}", flush=True)
         return "unknown"
@@ -388,6 +435,34 @@ def run_detached(cmd_list, unit):
         ["systemd-run", "--user", f"--unit={unit}"] + cmd_list,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
+
+
+PERLA_COMPANION_UNIT = os.environ.get("PERLA_COMPANION_UNIT", "perla-companion.service")
+
+
+def restart_self_delayed(delay_seconds=1.0):
+    """Restart the perla-companion systemd --user service from a background
+    thread, after a short delay. The delay matters: this is called from
+    inside an HTTP request handler answering /api/internal/restart, and the
+    HTTP response for that request must actually reach the client before
+    systemctl kills this same process — restarting synchronously in the
+    handler would cut the connection before the client ever sees a reply.
+    `systemctl --user restart` on the unit currently running this process is
+    safe to call from within that same process: systemd stops the old cgroup
+    and starts a fresh one: it does not require the caller to survive.
+    """
+    def _do_restart():
+        time.sleep(delay_seconds)
+        try:
+            subprocess.Popen(
+                ["systemctl", "--user", "restart", PERLA_COMPANION_UNIT],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception as e:
+            print(f"ERROR: failed to trigger companion restart: {e}", flush=True)
+
+    threading.Thread(target=_do_restart, daemon=True).start()
 
 
 # --- Desktop-file resolution for open_app ----------------------------------
@@ -728,7 +803,7 @@ def call_opencode(sid, port, text, tier, image_path=None):
             input=body, capture_output=True, text=True, timeout=310
         )
         if result.returncode != 0:
-            return "OpenCode server error — try again.", False, False
+            return "OpenCode server error — try again.", False, False, False
 
         data = json.loads(result.stdout)
         response_text = " ".join(
@@ -747,13 +822,27 @@ def call_opencode(sid, port, text, tier, image_path=None):
             for p in data.get("parts", []) if p.get("type") == "tool"
         )
 
-        return response_text or "(no response)", tool_used, obsidian_write
+        # The view_screen MCP tool returns the screenshot to the MODEL as an
+        # image part, but that image is consumed inside the OpenCode session
+        # and never reaches the user. When the model used it, signal the
+        # caller (process_message) so it captures a matching screenshot and
+        # ships it to the UI, so the user actually SEES the picture — not
+        # just perla's text description of it. OpenCode names MCP tools as
+        # "<server>_<tool>", so the view-screen server's tool shows up as
+        # "view-screen_view_screen" — match on the ending to cover that and
+        # any bare "view_screen".
+        view_screen_used = any(
+            p.get("tool", "").endswith("view_screen")
+            for p in data.get("parts", []) if p.get("type") == "tool"
+        )
+
+        return response_text or "(no response)", tool_used, obsidian_write, view_screen_used
 
     except subprocess.TimeoutExpired:
-        return "Request timed out — the AI took too long to respond.", False, False
+        return "Request timed out — the AI took too long to respond.", False, False, False
     except Exception as e:
         print(f"ERROR: call_opencode failed: {e}", flush=True)
-        return "Failed to reach Perla's brain.", False, False
+        return "Failed to reach Perla's brain.", False, False, False
 
 
 def generate_tts(text):
@@ -1227,13 +1316,16 @@ def is_screen_vision_request(text):
 def process_message(message, tier, source, confirm=False, user_image_paths=None):
     """The single entrypoint every surface funnels through: OpenCode, then
     logging. Returns (response_text, tool_used, confirm_required,
-    confirm_action, image_path). image_path is None except for a screen-vision
-    request (captured screenshot sent alongside the model's description).
-    When the user attaches their own image(s) (user_image_paths), they win
-    over screen capture, are sent to the model instead, and the temp files
-    are removed afterwards. System actions are not matched by keywords in
-    the text — the model triggers them explicitly via the system_action MCP
-    tool, so there is no accidental keyword self-triggering."""
+    confirm_action, image_path). image_path is None except for two cases —
+    a screen-vision request (captured screenshot sent alongside the model's
+    description), or when the model used the view_screen MCP tool (whose
+    screenshot only reaches the model, so a fresh one is captured to show
+    the user). When the user attaches their own image(s)
+    (user_image_paths), they win over screen capture, are sent to the model
+    instead, and the temp files are removed afterwards. System actions are
+    not matched by keywords in the text — the model triggers them
+    explicitly via the system_action MCP tool, so there is no accidental
+    keyword self-triggering."""
 
     vision_image_path = None
     if user_image_paths:
@@ -1268,7 +1360,7 @@ def process_message(message, tier, source, confirm=False, user_image_paths=None)
             return "OpenCode server unavailable.", False, False, None, None
 
         port = SERVER_PORT_T1 if tier == 1 else SERVER_PORT_T2
-        response_text, tool_used, obsidian_write = call_opencode(
+        response_text, tool_used, obsidian_write, view_screen_used = call_opencode(
             sid, port, message, tier, image_path=attach_paths
         )
 
@@ -1278,10 +1370,23 @@ def process_message(message, tier, source, confirm=False, user_image_paths=None)
             log_memory_mismatch(message, response_text, tier, source=source)
             print("WARNING: memory-worthy input with no Obsidian write detected", flush=True)
 
+        # When the model used the view_screen MCP tool, it saw the screenshot
+        # but the user didn't — that tool returns the image to the model only,
+        # consumed inside the OpenCode session. Capture a matching screenshot
+        # so the UI can show the user the actual picture (same serving path as
+        # the fixed-phrase vision path below). The model already got its own
+        # copy from the MCP tool, so this one is only for display, not re-sent
+        # to OpenCode.
+        display_image_path = vision_image_path
+        if display_image_path is None and view_screen_used and not user_image_paths:
+            display_image_path, capture_error = capture_screenshot()
+            if capture_error:
+                print(f"WARNING: view_screen display capture failed: {capture_error}", flush=True)
+
         # image_path returned to the caller is the CAPTURED screenshot (which
         # the web UI re-serves via /api/screenshot); user uploads are instead
         # echoed client-side from their data URLs, so nothing to re-serve.
-        return response_text, tool_used, False, None, vision_image_path
+        return response_text, tool_used, False, None, display_image_path
     finally:
         if user_image_paths:
             for p in user_image_paths:
@@ -1492,6 +1597,17 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(200, {"date": date_str, "entries": entries})
             return
 
+        if path == "/api/session/check":
+            # Cheap, side-effect-free: just confirms the caller's bearer
+            # token is still valid. check_auth() already sends the 401
+            # itself when the token's dead, so a 200 here IS the "session
+            # is fine" signal — the hamburger menu's "Check Session" button
+            # calls this and only needs to look at the status code.
+            if not self.check_auth():
+                return
+            self.send_json(200, {"ok": True})
+            return
+
         if path == "/api/reminders":
             if not self.check_auth():
                 return
@@ -1539,6 +1655,10 @@ class CompanionHandler(BaseHTTPRequestHandler):
 
         if path == "/api/speak-local":
             self.handle_speak_local()
+            return
+
+        if path == "/api/internal/restart":
+            self.handle_internal_restart()
             return
 
         if path == "/api/internal/screenshot":
@@ -1735,6 +1855,23 @@ class CompanionHandler(BaseHTTPRequestHandler):
             return
         ok = speak_locally(text)
         self.send_json(200, {"spoken": ok})
+
+    def handle_internal_restart(self):
+        """Restart the perla-companion daemon itself. Deliberately gated on
+        normal check_auth() (any valid session, local or remote) rather than
+        the stricter local-only check used by system_action/screenshot —
+        this is a service-level admin action reachable from the hamburger
+        menu on any surface (including phone), not a machine-level action
+        like locking the screen or opening an app. It is, however, always
+        unconditional: the button has no "is a restart actually needed?"
+        logic — clicking it restarts the service, full stop. That check
+        belongs to /api/session/check instead, as a separate deliberate step.
+
+        The actual restart is deferred a moment (see restart_self_delayed)
+        so this response reaches the client before the process is killed.
+        """
+        restart_self_delayed()
+        self.send_json(200, {"ok": True, "message": "Restarting companion service..."})
 
     def handle_internal_screenshot(self):
         """Local-only: capture a screenshot and return it as base64, for

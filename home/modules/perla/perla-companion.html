@@ -1511,7 +1511,17 @@
         <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span>
         <span class="menu-item-label">Clear chat</span>
       </button>
+      <div class="menu-divider"></div>
+      <button id="checkSessionBtn" class="menu-item">
+        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><path d="M20 6L9 17l-5-5"/></svg></span>
+        <span class="menu-item-label">Check session</span>
+      </button>
+      <button id="restartServiceBtn" class="menu-item">
+        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></span>
+        <span class="menu-item-label">Restart service</span>
+      </button>
     </nav>
+
 
     <div id="historyPanel" class="dropdown-panel" hidden>
       <div class="dropdown-row">
@@ -1989,7 +1999,7 @@
           stopTierTimer();
           setElevated(false);
           if (activeTier === 2) {
-            addEntry("system", "", "Full Mode expired — Tier 2 is locked again.", 2);
+            addEntry("system", "", "Full Mode expired, Tier 2 is locked again.", 2);
           } else {
             addEntry("system", "", "Full Mode expired.", 2);
           }
@@ -2869,7 +2879,7 @@
     }
     const accepted = files.slice(0, remaining);
     if (files.length > accepted.length) {
-      addEntry("system", "", `Only added ${accepted.length} of ${files.length} images — max ${MAX_IMAGES_PER_MESSAGE} per message.`);
+      addEntry("system", "", `Only added ${accepted.length} of ${files.length} images, max ${MAX_IMAGES_PER_MESSAGE} per message.`);
     }
 
     accepted.forEach((file) => {
@@ -2878,7 +2888,7 @@
         return;
       }
       if (file.size > 10 * 1024 * 1024) {
-        addEntry("system", "", `${file.name || "That image"} is too large — max 10MB.`);
+        addEntry("system", "", `${file.name || "That image"} is too large, max 10MB.`);
         return;
       }
       const reader = new FileReader();
@@ -3530,7 +3540,7 @@
     updateComposerState();
 
     if (!CONFIG.ENDPOINT) {
-      addEntry("system", "", "Not linked to Perla yet — set CONFIG.ENDPOINT.");
+      addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
       return;
     }
 
@@ -3645,7 +3655,7 @@
     const blob = new Blob(audioChunks, { type: "audio/webm" });
 
     if (!CONFIG.ENDPOINT) {
-      addEntry("system", "", "Not linked to Perla yet — set CONFIG.ENDPOINT.");
+      addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
       micTimer.textContent = "";
       return;
     }
@@ -3718,8 +3728,8 @@
     yesterday.setDate(today.getDate() - 1);
     const isYesterday = dt.toDateString() === yesterday.toDateString();
     const label = dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
-    if (isToday) return `Today — ${label}`;
-    if (isYesterday) return `Yesterday — ${label}`;
+    if (isToday) return `Today: ${label}`;
+    if (isYesterday) return `Yesterday: ${label}`;
     return label;
   }
 
@@ -3738,7 +3748,7 @@
 
   async function openHistoryPanel() {
     if (!CONFIG.ENDPOINT) {
-      addEntry("system", "", "Not linked to Perla yet — set CONFIG.ENDPOINT.");
+      addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
       return;
     }
     closeRemindersPanel();
@@ -3750,7 +3760,7 @@
     updateComposerMode();
     liveOutputHTML = output.innerHTML;
     output.innerHTML = "";
-    addEntry("system", "", "Viewing past conversations — read only.");
+    addEntry("system", "", "Viewing past conversations [READ ONLY]");
 
     if (!daysLoaded) {
       historyStatus.textContent = "Loading days…";
@@ -3865,7 +3875,7 @@
 
   async function openRemindersPanel() {
     if (!CONFIG.ENDPOINT) {
-      addEntry("system", "", "Not linked to Perla yet — set CONFIG.ENDPOINT.");
+      addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
       return;
     }
     closeHistoryPanel();
@@ -3935,7 +3945,7 @@
     if (missed.length > 0) {
       output.appendChild(buildReminderSection(
         "missed", `Missed (${missed.length})`, missed,
-        (r) => `Was due ${formatReminderTime(r.due)} — caught at ${formatReminderTime(r.delivered)}`
+        (r) => `Was due ${formatReminderTime(r.due)}, caught at ${formatReminderTime(r.delivered)}`
       ));
     }
 
@@ -3943,7 +3953,7 @@
     // nothing pending rather than looking like the section didn't load.
     const upcomingSection = buildReminderSection(
       "pending", `Upcoming (${pending.length})`, pending,
-      (r) => r.overdue ? `Due ${formatReminderTime(r.due)} — waiting to fire` : `Due ${formatReminderTime(r.due)}`,
+      (r) => r.overdue ? `Due ${formatReminderTime(r.due)}, waiting to fire` : `Due ${formatReminderTime(r.due)}`,
       "Nothing on the books."
     );
     output.appendChild(upcomingSection);
@@ -4119,7 +4129,7 @@
     app.hidden = true;
     gate.style.display = "";
     gateError.hidden = false;
-    gateError.textContent = "Session expired — enter your password.";
+    gateError.textContent = "Session expired, enter your password.";
     gatePassword.value = "";
     gatePassword.focus();
   }
@@ -4142,6 +4152,85 @@
     output.innerHTML = "";
     setChatLog(activeTier, "");
     showWelcome(activeTier);
+  });
+
+  // ---------- Check session ----------
+  // Cheap, side-effect-free: pings a lightweight authenticated endpoint and
+  // reports whether the current token is still good. A dead token gets the
+  // normal 401 -> relockSession() bounce, same as any other authenticated
+  // call in this app; a live token just posts a confirmation into the chat.
+  // Deliberately does NOT restart anything on its own — that's a separate,
+  // deliberate action (Restart service, below), not something this check
+  // should trigger as a side effect.
+  const checkSessionBtn = document.getElementById("checkSessionBtn");
+
+  checkSessionBtn.addEventListener("click", async () => {
+    closeAppMenu();
+    if (!CONFIG.ENDPOINT) {
+      addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+      return;
+    }
+    if (!authToken) {
+      addEntry("system", "", "No active session to check.");
+      return;
+    }
+    try {
+      const res = await fetch(CONFIG.ENDPOINT + "/api/session/check", {
+        headers: { Authorization: "Bearer " + authToken },
+      });
+      if (res.status === 401) {
+        relockSession();
+        return;
+      }
+      if (!res.ok) {
+        addEntry("system", "", "Session check failed, unexpected response.");
+        return;
+      }
+      addEntry("system", "", "Session is active.");
+    } catch (err) {
+      addEntry("system", "", "Couldn't reach Perla to check the session.");
+    }
+  });
+
+  // ---------- Restart service ----------
+  // Unconditional: this always restarts perla-companion when clicked, with
+  // no "is it actually broken?" logic of its own — that's what Check
+  // session is for, as a separate step the user takes deliberately before
+  // (or instead of) reaching for this. Disruptive by nature (drops the
+  // current connection while the daemon restarts), so it confirms first.
+  const restartServiceBtn = document.getElementById("restartServiceBtn");
+
+  restartServiceBtn.addEventListener("click", async () => {
+    closeAppMenu();
+    if (!CONFIG.ENDPOINT) {
+      addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+      return;
+    }
+    if (!authToken) {
+      addEntry("system", "", "No active session, can't restart.");
+      return;
+    }
+    if (!window.confirm("Restart the Perla service? You'll be briefly disconnected.")) return;
+    try {
+      const res = await fetch(CONFIG.ENDPOINT + "/api/internal/restart", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + authToken },
+      });
+      if (res.status === 401) {
+        relockSession();
+        return;
+      }
+      if (!res.ok) {
+        addEntry("system", "", "Restart request failed, unexpected response.");
+        return;
+      }
+      addEntry("system", "", "Restarting the Perla service, this may take a few seconds.");
+    } catch (err) {
+      // A network error here is actually the EXPECTED outcome once the
+      // daemon has taken the connection down mid-restart, not necessarily
+      // a real failure — so this is phrased as informational, not an error.
+      addEntry("system", "", "Restart triggered, the connection dropped, which is expected while it comes back up.");
+    }
   });
 
   // ---------- Deferred init ----------
