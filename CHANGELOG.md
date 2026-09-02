@@ -1,3 +1,3 @@
-# Version 26.9.2.2
+# Version 26.9.2.3
 
-- A new system commands menu for Perla web.
+- Improved UI for the new system commands menu for Perla web.

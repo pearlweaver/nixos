@@ -413,6 +413,7 @@ def capture_screenshot():
 # (Wayland/Noctalia bus, PipeWire, user systemd bus).
 # ---------------------------------------------------------------------------
 SYSTEM_ACTIONS = ("lock", "shutdown", "restart", "suspend", "mute", "unmute",
+                  "mute_mic", "unmute_mic", "play_pause", "next_track", "prev_track",
                   "open_app", "open_folder")
 
 # Normalized app name -> (launch args, stable systemd-run unit name).
@@ -637,8 +638,8 @@ def execute_system_action(action, target=None):
     if action not in SYSTEM_ACTIONS:
         return False, (
             f"'{action}' isn't a system action I'm allowed to run. I can: "
-            "lock, shutdown, restart, suspend, mute, unmute, "
-            f"open_app ({APP_LABELS}), open_folder."
+            "lock, shutdown, restart, suspend, mute, unmute, mute_mic, unmute_mic, "
+            f"play_pause, next_track, prev_track, open_app ({APP_LABELS}), open_folder."
         )
 
     def run(cmd, timeout=5):
@@ -654,6 +655,21 @@ def execute_system_action(action, target=None):
         if action == "mute":
             run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "1"])
             return True, "Muted."
+        if action == "unmute_mic":
+            run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@", "0"])
+            return True, "Microphone unmuted."
+        if action == "mute_mic":
+            run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@", "1"])
+            return True, "Microphone muted."
+        if action == "play_pause":
+            run(["playerctl", "play-pause"])
+            return True, "Playback toggled."
+        if action == "next_track":
+            run(["playerctl", "next"])
+            return True, "Next track."
+        if action == "prev_track":
+            run(["playerctl", "previous"])
+            return True, "Previous track."
         if action == "suspend":
             run(["systemctl", "suspend"])
             return True, "Suspending."
@@ -680,11 +696,15 @@ def execute_system_action(action, target=None):
             path = (target or "").strip()
             if not path:
                 return False, "open_folder needs a folder path."
-            run_detached(["xdg-open", path], "perla-open-folder")
+            path = os.path.expanduser(path)
+            if not os.path.isdir(path):
+                return False, f"'{path}' doesn't exist or isn't a folder."
+            unit = "perla-folder-" + re.sub(r"[^a-z0-9]+", "-", path.lower()).strip("-")[:50]
+            run_detached(["nautilus", path], unit)
             return True, f"Opening {path}."
     except Exception as e:
         print(f"ERROR: system action '{action}' failed: {e}", flush=True)
-        return False, f"Couldn't run '{action}' — try again."
+        return False, f"Couldn't run '{action}', try again."
 
     return False, f"Couldn't run '{action}'."
 

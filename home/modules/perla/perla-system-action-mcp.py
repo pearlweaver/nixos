@@ -53,8 +53,13 @@ def system_action(action: str, target: str | None = None) -> str:
       - "shutdown" — power off the computer.
       - "restart" — reboot the computer.
       - "suspend" — put the computer to sleep.
-      - "mute" — mute audio output.
-      - "unmute" — unmute audio output.
+      - "mute" — mute audio output (speakers/headphones).
+      - "unmute" — unmute audio output (speakers/headphones).
+      - "mute_mic" — mute microphone input.
+      - "unmute_mic" — unmute microphone input.
+      - "play_pause" — toggle media playback (play/pause).
+      - "next_track" — skip to next media track.
+      - "prev_track" — return to previous media track.
       - "open_app" — open an application; `target` is the app name. Known
         shortcuts: firefox (also "browser"), terminal (also "kitty"), code
         (also "editor" / "codium"). Any OTHER installed app works too —

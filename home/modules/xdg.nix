@@ -38,7 +38,7 @@
       "application/pdf" = "org.pwmt.zathura.desktop";
 
       # File manager
-      "inode/directory" = "thunar.desktop";
+      "inode/directory" = "org.gnome.Nautilus.desktop";
 
       # Browser
       "x-scheme-handler/http" = "helium.desktop"; # "app.zen_browser.zen.desktop";
