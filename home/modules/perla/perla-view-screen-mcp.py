@@ -54,6 +54,16 @@ def view_screen():
     the current visual state of their display. Do not call this for
     questions that have nothing to do with the screen's contents.
 
+    This includes CASUAL phrasing, not just literal "look"/"view"
+    wording — treat all of these as equivalent triggers: "send me my
+    screen", "send me my laptop screen", "show me my screen", "what's
+    on my screen", "what am I looking at". Any request where the user
+    wants to see or know about their current screen means calling this
+    tool — never answer from assumption, memory of an earlier call, or
+    a guess about what's probably open. If you have not called this
+    tool in the last few messages, you do not know what is on the
+    screen right now.
+
     Returns the current screenshot as an image, or a short text
     explanation if the screen can't be captured right now (for example
     if the screen is locked).

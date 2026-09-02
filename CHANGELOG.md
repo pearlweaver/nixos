@@ -1,3 +1,3 @@
-# Version 26.9.1.1
+# Version 26.9.2.1
 
-- Wireshark configuration
+- Trying to make perla automatically invoke the view_screen tool instead of explicitly telling her.

@@ -830,10 +830,14 @@ def call_opencode(sid, port, text, tier, image_path=None):
         # just perla's text description of it. OpenCode names MCP tools as
         # "<server>_<tool>", so the view-screen server's tool shows up as
         # "view-screen_view_screen" — match on the ending to cover that and
-        # any bare "view_screen".
+        # any bare "view_screen". Matched case-insensitively and against
+        # both "tool" and "toolName" (seen used interchangeably across
+        # OpenCode server versions) since a naming-scheme mismatch here
+        # silently drops the image with no error anywhere in the pipeline.
+        tool_parts = [p for p in data.get("parts", []) if p.get("type") == "tool"]
+        tool_names = [p.get("tool") or p.get("toolName") or "" for p in tool_parts]
         view_screen_used = any(
-            p.get("tool", "").endswith("view_screen")
-            for p in data.get("parts", []) if p.get("type") == "tool"
+            name.lower().endswith("view_screen") for name in tool_names
         )
 
         return response_text or "(no response)", tool_used, obsidian_write, view_screen_used
