@@ -21,6 +21,7 @@ Tailscale) go through the gate-password -> session-token flow as before.
 
 import base64
 import fcntl
+import getpass
 import json
 import os
 import random
@@ -471,7 +472,31 @@ def restart_self_delayed(delay_seconds=1.0):
 # the user installed shows up automatically. It still never passes free-form
 # input to a shell — it only ever runs the Exec line from an installed
 # .desktop file, detached (setsid-ish via systemd-run), same as the aliases.
+#
+# NixOS does not populate /usr/share/applications (no FHS /usr merge by
+# default) — that's why those two paths are nearly always empty here, and
+# why open_app previously failed to resolve ANY app, not just uncommon
+# ones. On NixOS, .desktop files instead live under two profile locations:
+#   - home-manager packages (home.packages): symlinked into the user's Nix
+#     profile — /etc/profiles/per-user/<user>/share/applications with
+#     home-manager's useUserPackages, or ~/.nix-profile/share/applications
+#     / ~/.local/state/nix/profile/share/applications otherwise, depending
+#     on which profile mechanism is active.
+#   - environment.systemPackages: symlinked into the activated system
+#     profile at /run/current-system/sw/share/applications.
+# All of these are included below; ~/.local and /usr paths are kept too as
+# harmless fallbacks (e.g. non-NixOS testing, or a future FHS-compat env) —
+# scan_desktop_apps() already skips any directory that doesn't exist.
 DESKTOP_SCAN_DIRS = (
+    # Home-manager profile (per-user activation, useUserPackages = true)
+    f"/etc/profiles/per-user/{getpass.getuser()}/share/applications",
+    # Home-manager profile (classic ~/.nix-profile symlink)
+    os.path.expanduser("~/.nix-profile/share/applications"),
+    # Home-manager profile (newer `nix profile` state directory)
+    os.path.expanduser("~/.local/state/nix/profile/share/applications"),
+    # System-wide packages (environment.systemPackages), current generation
+    "/run/current-system/sw/share/applications",
+    # Non-NixOS / FHS fallbacks — harmless if absent
     os.path.expanduser("~/.local/share/applications"),
     "/usr/local/share/applications",
     "/usr/share/applications",
@@ -1677,6 +1702,10 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.handle_reminders_post()
             return
 
+        if path == "/api/quick-action":
+            self.handle_quick_action()
+            return
+
         self.send_error(404)
 
     def handle_gate(self):
@@ -1960,6 +1989,71 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(200, {"ok": True, "pending": reminders.get("pending", [])})
             return
         self.send_json(400, {"error": f"unknown action '{action}'"})
+
+    def handle_quick_action(self):
+        """Deterministic, no-LLM action dispatch backing the web UI's Quick
+        Actions panel. This exists because the model was unreliable about
+        actually calling its own MCP tools (view_screen especially) on
+        casual phrasing — sometimes confabulating a plausible-sounding
+        answer instead of looking. Rather than continuing to fight
+        prompt-following for actions that don't need any judgment ("show me
+        my screen" has exactly one correct behavior), this endpoint removes
+        the model from the loop entirely: tap a button, run the fixed
+        action, done — no chance of a hallucinated non-answer.
+
+        Gated by the normal check_auth() this request already passed in
+        do_POST (any valid session, local or remote/phone), NOT the
+        stricter local-only check used by /api/internal/* — this is meant
+        to be reachable from the phone's hamburger menu too, same trust
+        tier as /api/internal/restart.
+
+        `screenshot` and `list_reminders` are handled directly here since
+        they aren't part of the system_action allowlist. Every other action
+        name is passed straight through to execute_system_action(), so the
+        allowlist, validation, and error messages stay defined in exactly
+        one place (shared with the system_action MCP tool) rather than
+        being duplicated here.
+        """
+        try:
+            body = json.loads(self.read_body())
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(400, {"error": "invalid JSON"})
+            return
+
+        action = (body.get("action") or "").strip().lower()
+        target = body.get("target")
+        source = self.get_source()
+
+        if action == "screenshot":
+            path, error = capture_screenshot()
+            if error:
+                self.send_json(200, {"ok": False, "error": error, "image": None})
+                return
+            image_url = f"/api/screenshot/{os.path.basename(path)}"
+            log_request("[Quick Action: screenshot]", "(screenshot)", tier=0, tool_used=False, source=source)
+            self.send_json(200, {"ok": True, "error": None, "image": image_url})
+            return
+
+        if action == "list_reminders":
+            reminders = get_reminders()
+            self.send_json(200, {"ok": True, "error": None, "reminders": reminders})
+            return
+
+        if action not in SYSTEM_ACTIONS:
+            self.send_json(400, {
+                "ok": False,
+                "error": f"'{action}' isn't a recognized quick action.",
+            })
+            return
+
+        ok, detail = execute_system_action(action, target)
+        log_request(f"[Quick Action: {action}" + (f" {target}" if target else "") + "]",
+                    detail, tier=0, tool_used=False, source=source)
+        self.send_json(200, {
+            "ok": ok,
+            "error": None if ok else detail,
+            "message": detail if ok else None,
+        })
 
     def _parse_multipart_field(self, raw, boundary, field_name):
         """Extract a single named field's raw bytes from multipart form

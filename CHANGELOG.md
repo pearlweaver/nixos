@@ -1,3 +1,3 @@
-# Version 26.9.2.1
+# Version 26.9.2.2
 
-- Trying to make perla automatically invoke the view_screen tool instead of explicitly telling her.
+- A new system commands menu for Perla web.

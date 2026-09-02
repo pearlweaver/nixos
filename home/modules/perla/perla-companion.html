@@ -1453,6 +1453,124 @@
     margin-bottom: 22px;
   }
   .reminder-section:last-child { margin-bottom: 0; }
+
+  /* ---------- Quick Actions ---------- */
+  .qa-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .qa-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--rule);
+    background: var(--bg-panel);
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .qa-btn:hover {
+    background: rgba(201,123,141,0.08);
+    border-color: var(--brass-dim);
+  }
+  .qa-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+    background: var(--bg-panel);
+    border-color: var(--rule);
+  }
+  .qa-icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--brass-bright);
+  }
+  .qa-label { flex: 1; min-width: 0; }
+  .qa-btn-danger .qa-icon { color: var(--wax-bright); }
+  .qa-btn-danger:hover {
+    background: rgba(184,69,47,0.1);
+    border-color: var(--wax);
+  }
+  .qa-btn-input.active {
+    background: rgba(201,123,141,0.12);
+    border-color: var(--brass-dim);
+  }
+
+  .qa-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .qa-input-row[hidden] { display: none; }
+  .qa-input-row input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-panel);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    color: var(--ink);
+    padding: 10px 12px;
+    font-size: 0.9rem;
+    font-family: var(--font-serif);
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+  .qa-input-row input:focus { border-color: var(--brass-dim); }
+  .qa-input-go,
+  .qa-input-cancel {
+    flex-shrink: 0;
+    border-radius: 10px;
+    border: 1px solid var(--brass-dim);
+    background: linear-gradient(180deg, rgba(201,123,141,0.14), rgba(201,123,141,0.04));
+    color: var(--brass-bright);
+    font-family: var(--font-serif);
+    font-size: 0.85rem;
+    padding: 9px 14px;
+    cursor: pointer;
+  }
+  .qa-input-cancel {
+    padding: 9px 12px;
+    color: var(--ink-faint);
+    border-color: var(--rule);
+    background: transparent;
+  }
+
+  .qa-result {
+    margin-top: 12px;
+  }
+  .qa-result:empty { display: none; }
+  .qa-result-text {
+    font-size: 14px;
+    color: var(--ink);
+    padding: 4px 0;
+  }
+  .qa-result-text.error { color: var(--wax-bright); }
+  .qa-result-image-wrap {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--rule);
+    background: var(--bg);
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .qa-result-image {
+    display: block;
+    width: 100%;
+    max-height: 360px;
+    object-fit: contain;
+    cursor: zoom-in;
+    background: var(--bg);
+  }
 </style>
 </head>
 <body>
@@ -1499,6 +1617,10 @@
         <span class="menu-item-badge" id="tier2Badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><rect x="4" y="11" width="16" height="11" rx="2" ry="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
       </button>
       <div class="menu-divider"></div>
+      <button id="quickActionsBtn" class="menu-item">
+        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><polygon points="11 2 3 13 10 13 9 20 19 9 12 9 13 2"/></svg></span>
+        <span class="menu-item-label">Quick Actions</span>
+      </button>
       <button id="remindersBtn" class="menu-item">
         <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>
         <span class="menu-item-label">Reminders</span>
@@ -1534,6 +1656,58 @@
 
     <div id="remindersBar" class="dropdown-panel" hidden>
       <span id="remindersStatus" class="panel-status"></span>
+    </div>
+
+    <div id="quickActionsPanel" class="dropdown-panel" hidden>
+      <div class="qa-grid">
+        <button class="qa-btn" data-qa="screenshot">
+          <span class="qa-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><rect x="2" y="4" width="18" height="13" rx="2"/><path d="M7 20h8"/><path d="M10 17v3"/></svg></span>
+          <span class="qa-label">Send my screen</span>
+        </button>
+        <button class="qa-btn" data-qa="lock" data-confirm="Lock the screen?">
+          <span class="qa-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><rect x="4" y="10" width="14" height="10" rx="2"/><path d="M7 10V7a4 4 0 0 1 8 0v3"/></svg></span>
+          <span class="qa-label">Lock screen</span>
+        </button>
+        <button class="qa-btn" data-qa="mute">
+          <span class="qa-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><polygon points="4 8 8 8 12 4 12 18 8 14 4 14 4 8"/><line x1="16" y1="7" x2="20" y2="15"/><line x1="20" y1="7" x2="16" y2="15"/></svg></span>
+          <span class="qa-label">Mute</span>
+        </button>
+        <button class="qa-btn" data-qa="unmute">
+          <span class="qa-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><polygon points="4 8 8 8 12 4 12 18 8 14 4 14 4 8"/><path d="M16 8a4 4 0 0 1 0 6"/></svg></span>
+          <span class="qa-label">Unmute</span>
+        </button>
+        <button class="qa-btn" data-qa="suspend" data-confirm="Suspend the machine?">
+          <span class="qa-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M12 3a1 1 0 0 1 1 1v6h4l-6 9v-6H7l5-9z"/></svg></span>
+          <span class="qa-label">Suspend</span>
+        </button>
+        <button class="qa-btn" data-qa="list_reminders">
+          <span class="qa-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>
+          <span class="qa-label">List reminders</span>
+        </button>
+        <button class="qa-btn qa-btn-input" data-qa="open_app">
+          <span class="qa-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><rect x="3" y="3" width="16" height="16" rx="3"/><line x1="8" y1="3" x2="8" y2="19"/></svg></span>
+          <span class="qa-label">Open app…</span>
+        </button>
+        <button class="qa-btn qa-btn-input" data-qa="open_folder">
+          <span class="qa-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"/></svg></span>
+          <span class="qa-label">Open folder…</span>
+        </button>
+        <button class="qa-btn qa-btn-danger" data-qa="shutdown" data-confirm="Shut down the computer?">
+          <span class="qa-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><line x1="11" y1="2" x2="11" y2="10"/><path d="M6 6a8 8 0 1 0 10 0"/></svg></span>
+          <span class="qa-label">Shut down</span>
+        </button>
+        <button class="qa-btn qa-btn-danger" data-qa="restart" data-confirm="Restart the computer?">
+          <span class="qa-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></span>
+          <span class="qa-label">Restart PC</span>
+        </button>
+      </div>
+      <div id="qaInputRow" class="qa-input-row" hidden>
+        <input id="qaInputField" type="text" placeholder="" autocomplete="off" />
+        <button id="qaInputGo" class="qa-input-go">Go</button>
+        <button id="qaInputCancel" class="qa-input-cancel" aria-label="Cancel">✕</button>
+      </div>
+      <div id="qaResult" class="qa-result"></div>
+      <span id="quickActionsStatus" class="panel-status"></span>
     </div>
 
     <div class="content-wrap">
@@ -1721,6 +1895,7 @@
     HISTORY_DAYS_PATH: "/api/history/days",
     HISTORY_DAY_PATH: "/api/history/day",
     REMINDERS_PATH: "/api/reminders",
+    QUICK_ACTION_PATH: "/api/quick-action",
     AVATAR_PATH: "/api/avatar",
   };
 
@@ -2713,6 +2888,7 @@
     const hadOverlay = activeOverlay !== null;
     if (activeOverlay === "history") closeHistoryPanel();
     else if (activeOverlay === "reminders") closeRemindersPanel();
+    else if (activeOverlay === "quick-actions") closeQuickActionsPanel();
 
     if (wasSameTier && !hadOverlay) return; // nothing actually changed
 
@@ -3752,6 +3928,7 @@
       return;
     }
     closeRemindersPanel();
+    closeQuickActionsPanel();
 
     activeOverlay = "history";
     historyBtn.classList.add("active");
@@ -3879,6 +4056,7 @@
       return;
     }
     closeHistoryPanel();
+    closeQuickActionsPanel();
 
     activeOverlay = "reminders";
     remindersBtn.classList.add("active");
@@ -3911,6 +4089,218 @@
     } else {
       openRemindersPanel();
     }
+  });
+
+  // ---------- Quick Actions (deterministic, no-LLM commands) ----------
+  // Each button here calls /api/quick-action directly — never through
+  // OpenCode/the model. This exists because the model was unreliable
+  // about actually calling its own MCP tools on casual phrasing (e.g.
+  // "send me my screen" sometimes got a confabulated text description
+  // instead of an actual screenshot). A fixed menu removes the model
+  // from the decision entirely: tap a button, run the fixed action, done.
+  const quickActionsBtn = document.getElementById("quickActionsBtn");
+  const quickActionsPanel = document.getElementById("quickActionsPanel");
+  const quickActionsStatus = document.getElementById("quickActionsStatus");
+  const qaResult = document.getElementById("qaResult");
+  const qaInputRow = document.getElementById("qaInputRow");
+  const qaInputField = document.getElementById("qaInputField");
+  const qaInputGo = document.getElementById("qaInputGo");
+  const qaInputCancel = document.getElementById("qaInputCancel");
+
+  let qaPendingInputAction = null; // "open_app" | "open_folder" | null
+  let qaActiveInputBtn = null;
+
+  function closeQuickActionsPanel() {
+    if (activeOverlay !== "quick-actions") return;
+    activeOverlay = null;
+    quickActionsBtn.classList.remove("active");
+    quickActionsPanel.hidden = true;
+    quickActionsStatus.textContent = "";
+    qaResult.innerHTML = "";
+    closeQaInputRow();
+    output.innerHTML = liveOutputHTML !== null ? liveOutputHTML : "";
+    output.scrollIntoView({ block: "end" });
+    updateTierButtonHighlight();
+    updateComposerMode();
+  }
+
+  function openQuickActionsPanel() {
+    if (!CONFIG.ENDPOINT) {
+      addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+      return;
+    }
+    closeHistoryPanel();
+    closeRemindersPanel();
+
+    activeOverlay = "quick-actions";
+    quickActionsBtn.classList.add("active");
+    updateTierButtonHighlight();
+    quickActionsPanel.hidden = false;
+    updateComposerMode();
+    liveOutputHTML = output.innerHTML;
+    output.innerHTML = "";
+    qaResult.innerHTML = "";
+    quickActionsStatus.textContent = "";
+  }
+
+  quickActionsBtn.addEventListener("click", () => {
+    closeAppMenu();
+    if (activeOverlay === "quick-actions") {
+      closeQuickActionsPanel();
+    } else {
+      openQuickActionsPanel();
+    }
+  });
+
+  function closeQaInputRow() {
+    qaInputRow.hidden = true;
+    qaInputField.value = "";
+    qaPendingInputAction = null;
+    if (qaActiveInputBtn) {
+      qaActiveInputBtn.classList.remove("active");
+      qaActiveInputBtn = null;
+    }
+  }
+
+  const QA_INPUT_PLACEHOLDERS = {
+    open_app: "App name (e.g. Firefox, VLC)",
+    open_folder: "Folder path (e.g. ~/Documents)",
+  };
+
+  function openQaInputRow(action, btn) {
+    if (qaActiveInputBtn && qaActiveInputBtn !== btn) {
+      qaActiveInputBtn.classList.remove("active");
+    }
+    qaPendingInputAction = action;
+    qaActiveInputBtn = btn;
+    btn.classList.add("active");
+    qaInputField.placeholder = QA_INPUT_PLACEHOLDERS[action] || "";
+    qaInputRow.hidden = false;
+    qaInputField.value = "";
+    qaInputField.focus();
+  }
+
+  qaInputCancel.addEventListener("click", closeQaInputRow);
+  qaInputField.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") qaInputGo.click();
+    if (e.key === "Escape") closeQaInputRow();
+  });
+  qaInputGo.addEventListener("click", () => {
+    const target = qaInputField.value.trim();
+    const action = qaPendingInputAction;
+    if (!target || !action) return;
+    closeQaInputRow();
+    runQuickAction(action, target);
+  });
+
+  function renderQaText(text, isError) {
+    qaResult.innerHTML = "";
+    const p = document.createElement("div");
+    p.className = "qa-result-text" + (isError ? " error" : "");
+    p.textContent = text;
+    qaResult.appendChild(p);
+  }
+
+  async function renderQaImage(imageUrl) {
+    qaResult.innerHTML = "";
+    const wrap = document.createElement("div");
+    wrap.className = "qa-result-image-wrap";
+    wrap.innerHTML = '<span class="entry-image-loading">Loading screenshot…</span>';
+    qaResult.appendChild(wrap);
+    try {
+      const url = imageUrl.startsWith("http") ? imageUrl : CONFIG.ENDPOINT + imageUrl;
+      const res = await fetch(url, { headers: { Authorization: "Bearer " + authToken } });
+      if (!res.ok) throw new Error("image fetch failed");
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      wrap.innerHTML = "";
+      const img = document.createElement("img");
+      img.className = "qa-result-image";
+      img.src = objectUrl;
+      img.alt = "Screenshot";
+      img.addEventListener("click", () => openLightbox(objectUrl));
+      wrap.appendChild(img);
+    } catch (e) {
+      wrap.innerHTML = '<span class="entry-image-error">Couldn\'t load the screenshot.</span>';
+    }
+  }
+
+  function renderQaReminders(reminders) {
+    qaResult.innerHTML = "";
+    const pending = (reminders && reminders.pending) || [];
+    if (pending.length === 0) {
+      renderQaText("No pending reminders.", false);
+      return;
+    }
+    const list = buildReminderList(pending, "pending",
+      (r) => r.overdue ? `Due ${formatReminderTime(r.due)}, waiting to fire` : `Due ${formatReminderTime(r.due)}`
+    );
+    qaResult.appendChild(list);
+  }
+
+  async function runQuickAction(action, target) {
+    if (!CONFIG.ENDPOINT) {
+      addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+      return;
+    }
+    quickActionsStatus.textContent = "Working…";
+    qaResult.innerHTML = "";
+    try {
+      const body = { action };
+      if (target) body.target = target;
+      const res = await fetch(CONFIG.ENDPOINT + CONFIG.QUICK_ACTION_PATH, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + authToken,
+        },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 401) {
+        relockSession();
+        return;
+      }
+      const data = await res.json();
+      quickActionsStatus.textContent = "";
+
+      if (data.image !== undefined && data.image) {
+        await renderQaImage(data.image);
+        return;
+      }
+      if (data.reminders !== undefined) {
+        renderQaReminders(data.reminders);
+        return;
+      }
+      if (data.ok) {
+        renderQaText(data.message || "Done.", false);
+      } else {
+        renderQaText(data.error || "That action failed.", true);
+      }
+    } catch (e) {
+      quickActionsStatus.textContent = "";
+      renderQaText("Couldn't reach Perla. Check the connection.", true);
+    }
+  }
+
+  quickActionsPanel.addEventListener("click", (e) => {
+    const btn = e.target.closest(".qa-btn");
+    if (!btn) return;
+    const action = btn.dataset.qa;
+
+    if (action === "open_app" || action === "open_folder") {
+      if (qaPendingInputAction === action) {
+        closeQaInputRow();
+      } else {
+        openQaInputRow(action, btn);
+      }
+      return;
+    }
+    closeQaInputRow();
+
+    const confirmMsg = btn.dataset.confirm;
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+
+    runQuickAction(action);
   });
 
   function formatReminderTime(iso) {
@@ -4146,6 +4536,8 @@
       closeHistoryPanel();
     } else if (activeOverlay === "reminders") {
       closeRemindersPanel();
+    } else if (activeOverlay === "quick-actions") {
+      closeQuickActionsPanel();
     }
     if (!output.querySelector(".entry")) return;
     if (!window.confirm("Clear this conversation?")) return;
