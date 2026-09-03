@@ -696,7 +696,7 @@ def execute_system_action(action, target=None):
             path = (target or "").strip()
             if not path:
                 return False, "open_folder needs a folder path."
-            path = os.path.expanduser(path)
+            path = os.path.expanduser(os.path.expandvars(path))
             if not os.path.isdir(path):
                 return False, f"'{path}' doesn't exist or isn't a folder."
             unit = "perla-folder-" + re.sub(r"[^a-z0-9]+", "-", path.lower()).strip("-")[:50]
