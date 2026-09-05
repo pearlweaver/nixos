@@ -11,11 +11,32 @@ in {
     piper-tts
     fuzzel
     wyoming-openwakeword
-    python3
+    # perla-companion is invoked via its #!/usr/bin/env python3 shebang,
+    # so the `python3` that resolves on PATH at runtime is what actually
+    # matters — a bare `python3` package here would leave perla-textify's
+    # imports (pdf2image, docx, pptx, openpyxl) unresolvable even though
+    # they're declared as project dependencies elsewhere. withPackages
+    # bakes them into this environment's python3 directly.
+    (python3.withPackages (ps: with ps; [
+      pdf2image
+      python-docx
+      python-pptx
+      openpyxl
+    ]))
     curl
     nodejs
     libnotify
     grim
+    # Runtime deps for perla-textify.py's document conversion:
+    #   poppler_utils — pdftoppm/pdftocairo, used by pdf2image to
+    #     rasterize PDF pages (and, transitively, PPTX once LibreOffice
+    #     has turned it into a PDF).
+    #   libreoffice   — headless PPTX -> PDF conversion (python-pptx has
+    #     no rendering engine of its own, only XML access). Pulls in a
+    #     large closure; swap for libreoffice-still or a slimmed variant
+    #     if that's a concern on this machine.
+    poppler-utils
+    libreoffice
   ];
 
   # === Wrapper script ===
@@ -405,6 +426,36 @@ in {
     force = true;
     source = ./perla/perla-companion.py;
     executable = true;
+  };
+
+  # === Document converter (sibling module) ===
+  # perla-companion.py loads this by path next to itself at runtime (see
+  # the perla_textify import shim near the top of perla-companion.py) —
+  # it's deployed as a plain .py file (not executable, not on PATH)
+  # because it's a library, not an entrypoint: PDF/PPTX get rasterized
+  # into page-image PNGs and merged into the same attach path as a user-
+  # uploaded image; DOCX/XLSX/ODT/IPYNB get extracted as text and inlined
+  # into the prompt the same way a .py/.md upload already is. Missing
+  # this file (or a missing runtime dependency it needs) degrades
+  # gracefully — perla-companion.py catches the import failure and just
+  # disables document-format uploads rather than failing to start.
+  #
+  # Runtime dependencies this module needs, NOT yet declared anywhere in
+  # this config — add them wherever this machine's Python environment for
+  # perla-companion is assembled:
+  #   Python packages: pypdf2image (pdf2image), python-docx, python-pptx,
+  #     openpyxl
+  #   System packages: poppler_utils (pdftoppm/pdftocairo, used by
+  #     pdf2image for PDF rendering), libreoffice (headless PPTX->PDF
+  #     conversion — pulls in a large closure; consider libreoffice-fresh
+  #     vs libreoffice-still, or a slimmed derivation, if closure size
+  #     matters on this machine)
+  # Without these, .pdf/.pptx/.docx/.xlsx/.ipynb/.odt uploads report a
+  # clear "converter isn't available" error but every other upload type
+  # (plain text/code, images) keeps working.
+  home.file.".local/bin/perla-textify.py" = {
+    force = true;
+    source = ./perla/perla-textify.py;
   };
 
   home.file.".config/perla/perla-companion.html" = {

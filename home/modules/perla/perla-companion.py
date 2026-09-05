@@ -22,6 +22,7 @@ Tailscale) go through the gate-password -> session-token flow as before.
 import base64
 import fcntl
 import getpass
+import importlib.util
 import json
 import os
 import random
@@ -29,6 +30,7 @@ import re
 import shlex
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -38,6 +40,34 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import threading
+
+# ---------------------------------------------------------------------------
+# perla-textify — the standalone document-conversion module (PDF/PPTX page
+# rasterization, DOCX/XLSX/etc text extraction). Deployed as a SIBLING file
+# next to this script (~/.local/bin/perla-textify.py), not as a normal
+# installed package — this daemon itself is deployed as an extensionless
+# file (~/.local/bin/perla-companion) with no package structure around it,
+# so `import perla_textify` wouldn't find it via sys.path, and the on-disk
+# filename has a hyphen anyway (not a legal Python identifier to import
+# directly). Loading it explicitly by path, right next to __file__, is
+# what makes this work regardless of the current working directory the
+# systemd service happens to start from.
+#
+# This import is treated as OPTIONAL: if perla-textify.py isn't deployed
+# yet (e.g. mid-rollout of a home-manager generation) or fails to import
+# for any reason, document-format uploads (.pdf/.docx/.pptx/.xlsx/etc)
+# just report "not available" instead of the whole daemon failing to
+# start — every other feature (images, plain-text uploads, reminders,
+# system actions) has nothing to do with this module.
+_TEXTIFY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "perla-textify.py")
+perla_textify = None
+try:
+    _textify_spec = importlib.util.spec_from_file_location("perla_textify", _TEXTIFY_PATH)
+    if _textify_spec and _textify_spec.loader:
+        perla_textify = importlib.util.module_from_spec(_textify_spec)
+        _textify_spec.loader.exec_module(perla_textify)
+except Exception as e:
+    print(f"WARNING: perla-textify.py failed to load ({e}) — document format uploads (PDF/DOCX/PPTX/XLSX/etc) will be unavailable.", flush=True)
 
 # ---------------------------------------------------------------------------
 # Config from environment (set by systemd unit / perla.env)
@@ -789,6 +819,373 @@ def decode_upload_images(data_urls):
     return paths, None
 
 
+# ---------------------------------------------------------------------------
+# Text/code file uploads — mimo-v2.5-free (like most models) has no document
+# ingestion channel, only vision (images). For plain-text files (markdown,
+# source code, config, etc.) there's nothing to "attach" at the model level:
+# instead the daemon reads the file itself and inlines its content into the
+# text part of the message, fenced and labeled with its filename, so the
+# model just sees it as part of the prompt it's already reading. This is
+# NOT sent through OpenCode's file-part mechanism at all — no image_path,
+# no data: URL to the model; it's pasted as text before call_opencode ever
+# builds its message parts.
+#
+# Unlike decode_upload_images (all-or-nothing batch), this is per-file:
+# one bad/oversized/binary file in a batch is dropped with its own error
+# message, and every other valid file + the user's typed text still goes
+# through. That matches the requested UX — a bad attachment shouldn't
+# block the rest of the message.
+MAX_TEXT_UPLOAD_BYTES = 512 * 1024  # per file — plenty for source/config
+# files, small enough that a handful together won't blow the context
+# window the way a handful of full-res images could.
+MAX_TEXT_FILES_PER_MESSAGE = 8
+MAX_TEXT_TOTAL_BYTES = 1.5 * 1024 * 1024  # across the whole batch
+
+# Extensions treated as safe-to-inline plain text. Deliberately an
+# allowlist, not "anything that decodes as UTF-8" — a stray binary file
+# can sometimes decode as UTF-8 by accident (mojibake) and dumping that
+# into the prompt wastes tokens on garbage. Filtered client-side too (see
+# the attach menu's file picker `accept` list) so most rejects never
+# reach here, but the server re-validates since the client's `accept`
+# attribute is only ever a UI hint, never a security/correctness boundary.
+TEXT_UPLOAD_EXTENSIONS = {
+    # docs
+    ".md", ".markdown", ".txt", ".rst", ".adoc",
+    # config / data
+    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".env",
+    ".xml", ".csv", ".tsv",
+    # code
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".nix", ".sh", ".bash", ".zsh",
+    ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".rs", ".go", ".java",
+    ".kt", ".rb", ".php", ".lua", ".pl", ".sql", ".gd", ".swift", ".cs",
+    ".html", ".css", ".scss", ".vue", ".svelte",
+    # misc plaintext-ish
+    ".log", ".diff", ".patch", ".gitignore", ".dockerfile",
+}
+_TEXT_UPLOAD_MIME_REJECT_PREFIXES = (
+    "image/", "audio/", "video/", "font/",
+)
+_TEXT_UPLOAD_MIME_REJECT_EXACT = {
+    "application/pdf", "application/zip", "application/x-7z-compressed",
+    "application/x-rar-compressed", "application/x-tar", "application/gzip",
+    "application/x-msdownload", "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+
+
+def _text_upload_extension_ok(filename):
+    if not filename:
+        return False
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in TEXT_UPLOAD_EXTENSIONS
+
+
+# ---------------------------------------------------------------------------
+# Document format uploads (PDF, DOCX, PPTX, XLSX, etc.) — routed through
+# perla_textify.convert() rather than decoded as plain text. Two possible
+# outcomes per file, same "images vs text" split perla_textify itself
+# uses: PDF/PPTX come back as page-image PNGs and are merged into the
+# same attach_paths list as any other user-uploaded image (mimo-v2.5 sees
+# them exactly like a photo the user attached); DOCX/XLSX/etc come back
+# as text and are merged into the same text_attachments list as a plain
+# .py/.md upload, using the same format_text_attachments() fencing.
+#
+# This is a SEPARATE allowlist from TEXT_UPLOAD_EXTENSIONS on purpose —
+# these files are NOT valid UTF-8 source text (they're zipped XML,
+# binary-packed, etc), so letting them fall through to
+# decode_upload_text_file's raw-UTF-8-decode path would always fail with
+# a confusing "isn't valid UTF-8 text" error. Extension decides which
+# pipeline a file enters before any content is even looked at.
+DOCUMENT_UPLOAD_MAX_BYTES = 25 * 1024 * 1024  # generous for a real-world
+# slide deck or report PDF — separate from MAX_TEXT_UPLOAD_BYTES (512KB)
+# since these formats are legitimately much larger for the same amount
+# of actual content (embedded fonts, images, XML overhead).
+
+# Static, independent of whether perla_textify actually loaded — this is
+# what decode_upload_text_files uses to decide WHICH PIPELINE a file
+# enters. Keeping it static (rather than deriving from
+# perla_textify.SUPPORTED_EXTENSIONS, which is empty if the module failed
+# to import) means a .pdf/.docx/etc upload still routes to
+# decode_upload_document_file even when the converter is unavailable, so
+# the user gets the accurate "document converter isn't available on this
+# machine" message instead of a misleading "unsupported file type" one
+# that implies .pdf itself is the problem.
+_DOCUMENT_UPLOAD_KNOWN_EXTENSIONS = frozenset({
+    ".pdf", ".pptx", ".docx", ".xlsx", ".ipynb", ".odt",
+})
+# DOCUMENT_UPLOAD_EXTENSIONS is what's ACTUALLY usable right now (empty if
+# perla_textify failed to load) — used for surfacing accurate capability
+# elsewhere (e.g. an /api/capabilities-style endpoint, if one is added
+# later) and for _document_upload_extension_ok's file-type gate inside
+# decode_upload_document_file itself.
+DOCUMENT_UPLOAD_EXTENSIONS = frozenset(
+    getattr(perla_textify, "SUPPORTED_EXTENSIONS", ())
+)
+
+
+def _document_upload_extension_ok(filename):
+    if not filename or perla_textify is None:
+        return False
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in DOCUMENT_UPLOAD_EXTENSIONS
+
+
+def decode_upload_document_file(data_url, filename):
+    """Decode + convert a single client-supplied document (PDF/DOCX/PPTX/
+    XLSX/etc) upload. Returns (kind, payload, filename, error):
+      - kind == "text":   payload is a str
+      - kind == "images": payload is a list of raw PNG bytes
+      - kind is None on any failure, payload is None, error is set.
+
+    Mirrors decode_upload_text_file's contract (content/None + error)
+    but tags the result type since document formats split into the two
+    different downstream pipelines described above.
+    """
+    filename = (filename or "upload").strip() or "upload"
+    filename = os.path.basename(filename)
+
+    if perla_textify is None:
+        return None, None, filename, (
+            f"'{filename}' can't be processed — the document converter "
+            "isn't available on this machine"
+        )
+
+    if not _document_upload_extension_ok(filename):
+        ext = os.path.splitext(filename)[1] or "(no extension)"
+        return None, None, filename, f"'{filename}' has an unsupported file type ({ext})"
+
+    if not isinstance(data_url, str) or not data_url.startswith("data:"):
+        return None, None, filename, f"'{filename}' must be a base64 data: URL"
+    m = re.match(r"^data:([^;,]*);base64,(.*)$", data_url, re.S)
+    if not m:
+        return None, None, filename, f"'{filename}' must be base64-encoded"
+    b64 = m.group(2).strip()
+
+    try:
+        raw = base64.b64decode(b64, validate=True)
+    except (ValueError, TypeError):
+        return None, None, filename, f"'{filename}' is not valid base64"
+
+    if len(raw) > DOCUMENT_UPLOAD_MAX_BYTES:
+        return None, None, filename, (
+            f"'{filename}' is too large "
+            f"(max {DOCUMENT_UPLOAD_MAX_BYTES // (1024 * 1024)}MB per file)"
+        )
+
+    try:
+        kind, payload, error = perla_textify.convert(raw, filename)
+    except Exception as e:
+        # Last-resort guard — perla_textify's own convert() already
+        # catches per-format exceptions internally, this only covers
+        # something genuinely unanticipated so one bad upload can never
+        # take down the request handler.
+        return None, None, filename, f"'{filename}' failed to convert ({e})"
+
+    if error:
+        return None, None, filename, error
+
+    return kind, payload, filename, None
+
+
+def decode_upload_text_file(data_url, filename):
+    """Decode a single client-supplied text/code file data URL into a
+    plain string. Returns (content, filename, error) — content is None
+    on error. Never touches disk: unlike images, text content is inlined
+    straight into the prompt string and no file needs to outlive this
+    call."""
+    filename = (filename or "upload.txt").strip() or "upload.txt"
+    # Defend against path separators in a client-supplied filename —
+    # this is never used as a filesystem path, only as a label, but keep
+    # it a bare name regardless so nothing downstream (logs, UI) can be
+    # confused into treating it as a path.
+    filename = os.path.basename(filename)
+
+    if not _text_upload_extension_ok(filename):
+        ext = os.path.splitext(filename)[1] or "(no extension)"
+        return None, filename, f"'{filename}' has an unsupported file type ({ext})"
+
+    if not isinstance(data_url, str) or not data_url.startswith("data:"):
+        return None, filename, f"'{filename}' must be a base64 data: URL"
+    m = re.match(r"^data:([^;,]*);base64,(.*)$", data_url, re.S)
+    if not m:
+        return None, filename, f"'{filename}' must be base64-encoded"
+    mime, b64 = m.group(1), m.group(2).strip()
+    # The EXTENSION allowlist above is the real gate — browsers guess
+    # wildly different mime strings for the same file depending on OS/
+    # browser/version (text/x-lua, text/x-csrc, text/x-rustsrc, or no
+    # mime at all for anything they don't recognize), and hardcoding a
+    # per-language allowlist here means legitimate files keep getting
+    # rejected as new extensions are added above. Instead only reject a
+    # mime that actively contradicts "this is text" — an image/audio/
+    # video/font/archive/office-doc content-type on a file claiming a
+    # .py or .md extension is the real red flag (e.g. a renamed image).
+    # Anything else (including empty, text/*, or an unrecognized guess)
+    # is allowed through to the UTF-8 decode check below, which is the
+    # actual backstop against non-text content.
+    if mime:
+        mime_lower = mime.lower()
+        if mime_lower in _TEXT_UPLOAD_MIME_REJECT_EXACT or any(
+            mime_lower.startswith(p) for p in _TEXT_UPLOAD_MIME_REJECT_PREFIXES
+        ):
+            return None, filename, f"'{filename}' doesn't look like a text file ({mime})"
+
+    try:
+        raw = base64.b64decode(b64, validate=True)
+    except (ValueError, TypeError):
+        return None, filename, f"'{filename}' is not valid base64"
+
+    if len(raw) > MAX_TEXT_UPLOAD_BYTES:
+        return None, filename, (
+            f"'{filename}' is too large "
+            f"(max {MAX_TEXT_UPLOAD_BYTES // 1024}KB per file)"
+        )
+
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None, filename, f"'{filename}' isn't valid UTF-8 text"
+
+    # A NUL byte (or other odd control chars) surviving UTF-8 decoding
+    # still means "probably not really a text file" — bail rather than
+    # inline binary-ish content into the prompt.
+    if "\x00" in content:
+        return None, filename, f"'{filename}' looks like a binary file, not text"
+
+    return content, filename, None
+
+
+def decode_upload_text_files(files):
+    """Plural, PER-FILE-TOLERANT dispatcher across BOTH upload pipelines:
+    plain text/code (decode_upload_text_file) and converter-backed
+    document formats (decode_upload_document_file). Which pipeline a file
+    enters is decided purely by its extension — TEXT_UPLOAD_EXTENSIONS vs
+    DOCUMENT_UPLOAD_EXTENSIONS are disjoint sets, so there's no ambiguity.
+
+    `files` is a list of {"data": <data URL>, "filename": <name>} dicts.
+    Returns (accepted_text, accepted_images, errors):
+      - accepted_text: list of (filename, content) tuples — plain text
+        AND converted document text (DOCX/XLSX/etc), merged, since both
+        get inlined into the prompt the same way.
+      - accepted_images: list of (filename, [png_bytes, ...]) tuples —
+        one entry per PDF/PPTX upload, each holding that document's
+        rendered pages, kept grouped by source file for logging/warnings
+        (the caller flattens all pages across all entries when actually
+        attaching to the message).
+      - errors: short human-readable strings for files that were
+        dropped, same as before.
+
+    Never fails the whole batch — a bad file (wrong type, too large,
+    conversion failure, etc) is dropped with its own error message so
+    the rest of the message (other valid files, and any typed text)
+    still goes through. Caller decides what to do if everything ends up
+    empty (e.g. no message text was typed either).
+    """
+    accepted_text = []
+    accepted_images = []
+    errors = []
+
+    if not isinstance(files, list):
+        return accepted_text, accepted_images, ["invalid file upload payload"]
+
+    truncated = False
+    if len(files) > MAX_TEXT_FILES_PER_MESSAGE:
+        truncated = True
+        files = files[:MAX_TEXT_FILES_PER_MESSAGE]
+
+    total_text_bytes = 0
+    total_image_count = 0
+
+    for item in files:
+        if not isinstance(item, dict):
+            errors.append("skipped a malformed file entry")
+            continue
+        data_url = item.get("data")
+        filename = item.get("filename")
+        ext = os.path.splitext((filename or ""))[1].lower()
+
+        if ext in _DOCUMENT_UPLOAD_KNOWN_EXTENSIONS:
+            kind, payload, safe_name, error = decode_upload_document_file(data_url, filename)
+            if error:
+                errors.append(error)
+                continue
+            if kind == "text":
+                content_bytes = len(payload.encode("utf-8"))
+                if total_text_bytes + content_bytes > MAX_TEXT_TOTAL_BYTES:
+                    errors.append(
+                        f"'{safe_name}' skipped — attaching it would exceed the "
+                        f"{int(MAX_TEXT_TOTAL_BYTES // 1024)}KB total text limit for this message"
+                    )
+                    continue
+                total_text_bytes += content_bytes
+                accepted_text.append((safe_name, payload))
+            else:  # kind == "images"
+                if total_image_count + len(payload) > MAX_IMAGES_PER_MESSAGE:
+                    errors.append(
+                        f"'{safe_name}' skipped — its {len(payload)} page(s) would "
+                        f"exceed the {MAX_IMAGES_PER_MESSAGE}-image limit for this message"
+                    )
+                    continue
+                total_image_count += len(payload)
+                accepted_images.append((safe_name, payload))
+            continue
+
+        # Not a document-converter extension — fall through to the plain
+        # text/code path, same behavior as before this function grew a
+        # second pipeline.
+        content, safe_name, error = decode_upload_text_file(data_url, filename)
+        if error:
+            errors.append(error)
+            continue
+        content_bytes = len(content.encode("utf-8"))
+        if total_text_bytes + content_bytes > MAX_TEXT_TOTAL_BYTES:
+            errors.append(
+                f"'{safe_name}' skipped — attaching it would exceed the "
+                f"{int(MAX_TEXT_TOTAL_BYTES // 1024)}KB total limit for this message"
+            )
+            continue
+        total_text_bytes += content_bytes
+        accepted_text.append((safe_name, content))
+
+    if truncated:
+        errors.append(
+            f"only the first {MAX_TEXT_FILES_PER_MESSAGE} files were "
+            "considered (max per message)"
+        )
+
+    return accepted_text, accepted_images, errors
+
+
+_CODE_FENCE_LANG_BY_EXT = {
+    ".py": "python", ".js": "javascript", ".jsx": "jsx", ".ts": "typescript",
+    ".tsx": "tsx", ".nix": "nix", ".sh": "bash", ".bash": "bash",
+    ".zsh": "bash", ".c": "c", ".h": "c", ".cpp": "cpp", ".hpp": "cpp",
+    ".cc": "cpp", ".cxx": "cpp", ".rs": "rust", ".go": "go", ".java": "java",
+    ".kt": "kotlin", ".rb": "ruby", ".php": "php", ".lua": "lua",
+    ".pl": "perl", ".sql": "sql", ".gd": "gdscript", ".swift": "swift",
+    ".cs": "csharp", ".html": "html", ".css": "css", ".scss": "scss",
+    ".vue": "vue", ".svelte": "svelte", ".json": "json", ".yaml": "yaml",
+    ".yml": "yaml", ".toml": "toml", ".xml": "xml", ".diff": "diff",
+    ".patch": "diff", ".md": "markdown", ".markdown": "markdown",
+}
+
+
+def format_text_attachments(files):
+    """Render accepted (filename, content) pairs as fenced, labeled blocks
+    to append after the user's own message text. Kept as its own function
+    (rather than inlined in process_message) so the exact prompt format is
+    defined in one place and easy to tune later."""
+    if not files:
+        return ""
+    blocks = []
+    for filename, content in files:
+        ext = os.path.splitext(filename)[1].lower()
+        lang = _CODE_FENCE_LANG_BY_EXT.get(ext, "")
+        blocks.append(f"--- file: {filename} ---\n```{lang}\n{content}\n```")
+    return "\n\n".join(blocks)
+
+
 def call_opencode(sid, port, text, tier, image_path=None):
     """Send a message to OpenCode. If image_path is given, attaches it as
     one or more file parts alongside the text part — mimo-v2.5-free (the
@@ -1362,7 +1759,8 @@ def is_screen_vision_request(text):
     return any(p in lower for p in vision_phrases)
 
 
-def process_message(message, tier, source, confirm=False, user_image_paths=None):
+def process_message(message, tier, source, confirm=False, user_image_paths=None,
+                     text_attachments=None):
     """The single entrypoint every surface funnels through: OpenCode, then
     logging. Returns (response_text, tool_used, confirm_required,
     confirm_action, image_path). image_path is None except for two cases —
@@ -1374,7 +1772,22 @@ def process_message(message, tier, source, confirm=False, user_image_paths=None)
     instead, and the temp files are removed afterwards. System actions are
     not matched by keywords in the text — the model triggers them
     explicitly via the system_action MCP tool, so there is no accidental
-    keyword self-triggering."""
+    keyword self-triggering.
+
+    `text_attachments` is a list of (filename, content) tuples from
+    decode_upload_text_files — unlike images, these were never sent as
+    file parts to OpenCode; the model has no document-ingestion channel,
+    only vision. Instead their content is rendered (format_text_attachments)
+    and appended to the message TEXT itself before it's sent, so the model
+    just reads them as part of the prompt. This happens here rather than
+    in the caller so logging (log_request/is_memory_worthy) sees the full
+    text that was actually sent, same as it does for a purely typed message.
+    """
+
+    if text_attachments:
+        rendered = format_text_attachments(text_attachments)
+        if rendered:
+            message = (message + "\n\n" + rendered) if message else rendered
 
     vision_image_path = None
     if user_image_paths:
@@ -1757,8 +2170,36 @@ class CompanionHandler(BaseHTTPRequestHandler):
         images_field = body.get("images")
         if images_field is None and body.get("image"):
             images_field = [body.get("image")]
-        if not message and not images_field:
-            self.send_json(400, {"error": "empty message"})
+
+        # `text_files`: list of {"data": <data URL>, "filename": <name>}
+        # for text/code AND document-format attachments (markdown, .py,
+        # .nix, but also .pdf, .docx, .pptx, .xlsx, etc). This is a
+        # SEPARATE field from `images` since the two start out handled
+        # completely differently — plain text/code and converted document
+        # TEXT (docx/xlsx/etc) get inlined into the message text; PDF/PPTX
+        # get converted into page-image PNGs by decode_upload_text_files
+        # and from that point on are merged into the exact same
+        # user_image_paths list as a normal image upload (see below), so
+        # the model sees them exactly like a photo the user attached.
+        text_files_field = body.get("text_files")
+
+        text_attachments = []
+        document_image_pages = []  # list of (filename, [png_bytes, ...])
+        text_file_warnings = []
+        if text_files_field:
+            text_attachments, document_image_pages, text_file_warnings = decode_upload_text_files(text_files_field)
+
+        if not message and not images_field and not text_attachments and not document_image_pages:
+            # Nothing usable at all — either truly empty, or every
+            # attached file was rejected and there was no image/typed
+            # text to fall back on. Surface the per-file reasons if there
+            # were any, so the user knows WHY nothing was sent.
+            if text_file_warnings:
+                self.send_json(400, {
+                    "error": "; ".join(text_file_warnings),
+                })
+            else:
+                self.send_json(400, {"error": "empty message"})
             return
 
         user_image_paths = None
@@ -1767,12 +2208,59 @@ class CompanionHandler(BaseHTTPRequestHandler):
             if upload_error:
                 self.send_json(400, {"error": upload_error, "message": message})
                 return
-            if not message:
-                # Image-only send: give the model something to do with it.
-                message = (
-                    "Analyze this image." if len(user_image_paths) == 1
-                    else f"Analyze these {len(user_image_paths)} images."
-                )
+
+        # Write converted PDF/PPTX page images to disk (same directory
+        # user-uploaded images already use) and fold them into
+        # user_image_paths, so process_message/call_opencode don't need
+        # to know these came from a document conversion rather than a
+        # direct image upload — from here on they're indistinguishable.
+        if document_image_pages:
+            if user_image_paths is None:
+                user_image_paths = []
+            # decode_upload_text_files already capped each individual
+            # document's page count against MAX_IMAGES_PER_MESSAGE, but
+            # that check couldn't see a SEPARATE `images` upload in the
+            # same request — re-check the combined total here and trim
+            # from the end (later documents lose pages first) rather
+            # than silently exceeding the per-message image budget.
+            budget = MAX_IMAGES_PER_MESSAGE - len(user_image_paths)
+            for doc_filename, pages in document_image_pages:
+                if budget <= 0:
+                    text_file_warnings.append(
+                        f"'{doc_filename}' skipped — the {MAX_IMAGES_PER_MESSAGE}-image "
+                        "limit for this message was already reached"
+                    )
+                    continue
+                if len(pages) > budget:
+                    text_file_warnings.append(
+                        f"'{doc_filename}' only its first {budget} page(s) were attached "
+                        f"(the {MAX_IMAGES_PER_MESSAGE}-image limit for this message)"
+                    )
+                    pages = pages[:budget]
+                budget -= len(pages)
+
+                base_name = os.path.splitext(doc_filename)[0]
+                base_name = re.sub(r"[^A-Za-z0-9_-]+", "-", base_name)[:60] or "document"
+                for page_num, png_bytes in enumerate(pages, start=1):
+                    os.makedirs(PERLA_SCREENSHOT_DIR, exist_ok=True)
+                    page_path = os.path.join(
+                        PERLA_SCREENSHOT_DIR,
+                        f"upload-{base_name}-p{page_num}-{uuid.uuid4().hex[:8]}.png",
+                    )
+                    try:
+                        with open(page_path, "wb") as f:
+                            f.write(png_bytes)
+                        user_image_paths.append(page_path)
+                    except OSError as e:
+                        text_file_warnings.append(
+                            f"'{doc_filename}' page {page_num} couldn't be saved ({e})"
+                        )
+
+        if not message and not text_attachments and user_image_paths:
+            # Image-only send (whether from a direct upload, a converted
+            # PDF/PPTX, or a mix) — give the model something to do.
+            n = len(user_image_paths)
+            message = "Analyze this image." if n == 1 else f"Analyze these {n} images."
 
         confirm = body.get("confirm", False)
         requested_tier = body.get("tier")  # local callers (perla.sh) may pass this
@@ -1789,7 +2277,8 @@ class CompanionHandler(BaseHTTPRequestHandler):
             return
 
         response_text, tool_used, confirm_required, action, image_path = process_message(
-            message, tier, source, confirm=confirm, user_image_paths=user_image_paths
+            message, tier, source, confirm=confirm, user_image_paths=user_image_paths,
+            text_attachments=text_attachments,
         )
 
         if confirm_required:
@@ -1797,6 +2286,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
                 "text": response_text,
                 "confirm_required": True,
                 "action": action,
+                "file_warnings": text_file_warnings or None,
             })
             return
 
@@ -1813,6 +2303,12 @@ class CompanionHandler(BaseHTTPRequestHandler):
 
         self.send_json(200, {
             "text": response_text, "audio": audio_url, "tier": tier, "image": image_url,
+            # Non-fatal per-file rejections (unsupported type, too large,
+            # not UTF-8, conversion failure, etc.) — surfaced alongside a
+            # normal 200 response so the UI can show a small warning
+            # without treating the whole request as failed, since the
+            # rest of the message (if any) still went through.
+            "file_warnings": text_file_warnings or None,
         })
 
     def handle_voice(self):

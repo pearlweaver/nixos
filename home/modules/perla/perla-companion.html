@@ -631,6 +631,83 @@
     padding: 0;
   }
 
+  /* Attached-file chip — a rounded-rectangle card with a generic file
+     icon (same icon regardless of file type — no per-extension SVG set)
+     and a filename. Used in BOTH the composer's attach preview (with a
+     remove button) and inside a sent message bubble (without one) — one
+     shared look so what you see before sending matches what lands in
+     the transcript. Replaces the old pill-with-extension-badge shape. */
+  .attach-file-chip {
+    position: relative;
+    width: auto;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    border-radius: 10px;
+    border: 1px solid var(--rule);
+    background: rgba(201,123,141,0.06);
+  }
+  .attach-file-chip.in-composer {
+    padding-right: 30px; /* room for the remove button */
+  }
+  .attach-file-icon {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--brass-bright);
+  }
+  .attach-file-icon svg { display: block; width: 100%; height: 100%; }
+  .attach-file-name {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .attach-file-chip .attach-thumb-remove {
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+  }
+
+  /* Row of file chips (and/or the image grid) — used both in the
+     composer's attach preview and standalone above a sent message (see
+     .entry-attachments below). */
+  .attach-file-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Attachments block for a SENT message — file chips and/or images,
+     rendered as their OWN element ABOVE the message bubble rather than
+     nested inside it (matches Claude's UI: the attachment sits outside
+     the chat bubble, the bubble only ever holds the typed text). */
+  .entry-attachments {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .entry-attachments:empty { display: none; margin-bottom: 0; }
+  /* .entry stretches its children to full width by default (flex-direction:
+     column), so without this the attachments row would span the whole
+     bubble column instead of hugging its own content — align it to the
+     same edge the bubble itself sits on (right for the user's own
+     messages) so a single small file chip doesn't look stranded at full
+     width. */
+  .entry-user .entry-attachments { align-items: flex-end; }
+  .entry-perla .entry-attachments,
+  .entry-system .entry-attachments { align-items: flex-start; }
+  .entry-attachments .attach-file-row { justify-content: flex-end; }
+  .entry-perla .entry-attachments .attach-file-row { justify-content: flex-start; }
+
   .composer-row {
     display: flex;
     align-items: center;
@@ -2112,6 +2189,7 @@
         </button>
         <input id="attachInput" type="file" accept="image/*" multiple hidden>
         <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+        <input id="textFileInput" type="file" accept=".md,.markdown,.txt,.rst,.adoc,.json,.yaml,.yml,.toml,.ini,.cfg,.conf,.env,.xml,.csv,.tsv,.py,.js,.jsx,.ts,.tsx,.nix,.sh,.bash,.zsh,.c,.h,.cpp,.hpp,.cc,.cxx,.rs,.go,.java,.kt,.rb,.php,.lua,.pl,.sql,.gd,.swift,.cs,.html,.css,.scss,.vue,.svelte,.log,.diff,.patch,.gitignore,.pdf,.docx,.pptx,.xlsx,.ipynb,.odt" multiple hidden>
         <div class="composer-row-spacer"></div>
         <button id="micBtn" class="mic-btn" aria-label="Record">
           <span class="mic-ring ring-1"></span>
@@ -2148,6 +2226,10 @@
       <button id="attachImageBtn" class="menu-item">
         <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><rect x="3" y="4" width="16" height="14" rx="2"/><circle cx="8" cy="9.5" r="1.6"/><path d="M3 15.5l4.5-4.5a1.5 1.5 0 0 1 2.1 0L15 16.5"/><path d="M12.5 14l1.8-1.8a1.5 1.5 0 0 1 2.1 0L19 14.7"/></svg></span>
         <span class="menu-item-label">Image</span>
+      </button>
+      <button id="attachTextFileBtn" class="menu-item">
+        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><path d="M12.5 2H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7.5L12.5 2z"/><path d="M12.5 2v5.5H18"/><line x1="7.5" y1="12" x2="14.5" y2="12"/><line x1="7.5" y1="15.5" x2="12.5" y2="15.5"/></svg></span>
+        <span class="menu-item-label">Code / Text file</span>
       </button>
     </nav>
   </div>
@@ -2780,6 +2862,85 @@
     return entry;
   }
 
+  // Builds and delivers ONE user turn: an attachments block (file chips
+  // and/or an image grid) as its OWN element ABOVE the message bubble —
+  // not nested inside it — followed by the bubble holding just the typed
+  // text, matching how Claude's UI separates attachments from the
+  // message body. `textFiles` is [{filename, dataUrl}], `images` is
+  // [{filename, dataUrl}] (both from the composer queues); either/both
+  // may be empty as long as `message` or at least one attachment is
+  // present. Sent attachments never get a remove button (see
+  // buildFileChip) — only the composer's pending queue does.
+  function addUserMessageEntry(message, images, textFiles, forTier) {
+    const targetTier = forTier !== undefined ? forTier : activeTier;
+    const live = isViewingTierChat(targetTier);
+    if (live) {
+      output.querySelectorAll(".welcome").forEach((w) => w.remove());
+    }
+
+    const entry = document.createElement("div");
+    entry.className = "entry entry-user";
+    const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    // Attachments (file chips, images) render as their OWN element above
+    // the message bubble — not nested inside its background — same
+    // pattern as Claude's UI. Only created when there's actually
+    // something to attach; a text-only message skips this entirely.
+    if ((textFiles && textFiles.length) || (images && images.length)) {
+      const attachments = document.createElement("div");
+      attachments.className = "entry-attachments";
+
+      if (textFiles && textFiles.length) {
+        const row = document.createElement("div");
+        row.className = "attach-file-row";
+        textFiles.forEach((item) => {
+          row.appendChild(buildFileChip(item.filename));
+        });
+        attachments.appendChild(row);
+      }
+
+      if (images && images.length) {
+        const grid = document.createElement("div");
+        grid.className = "entry-image-grid";
+        images.forEach((item) => {
+          const preview = document.createElement("img");
+          preview.className = "entry-image";
+          preview.src = item.dataUrl;
+          preview.alt = item.filename || "Attached image";
+          preview.addEventListener("click", () => openLightbox(item.dataUrl));
+          grid.appendChild(preview);
+        });
+        attachments.appendChild(grid);
+      }
+
+      entry.appendChild(attachments);
+    }
+
+    // The bubble now holds ONLY the text — if there's no typed message
+    // (an attachment-only send), skip the bubble entirely so an empty
+    // pink box doesn't render under the attachment for nothing.
+    if (message) {
+      const bubble = document.createElement("div");
+      bubble.className = "entry-bubble";
+      const p = document.createElement("p");
+      p.textContent = message;
+      bubble.appendChild(p);
+      entry.appendChild(bubble);
+    }
+
+    const meta = document.createElement("div");
+    meta.className = "entry-meta";
+    meta.innerHTML = `<span class="entry-time">${time}</span>`;
+    entry.appendChild(meta);
+
+    const wentLive = deliverEntry(entry, targetTier);
+    if (wentLive) {
+      output.scrollIntoView({ block: "end" });
+      entry.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+    return entry;
+  }
+
   // Screenshot images require an authenticated fetch (same as audio) since
   // the endpoint is gated — a bare <img src> can't carry the bearer token.
   // Renders as its own bubble, with the caption text (if any) above it.
@@ -3227,7 +3388,9 @@
   // not just relying on `composer.hidden` keeping them out of tab order.
   function setComposerDisabled(disabled) {
     textInput.disabled = disabled;
-    sendText.disabled = disabled || !(textInput.value.trim() || attachQueue.length > 0);
+    sendText.disabled = disabled || !(
+      textInput.value.trim() || attachQueue.length > 0 || textFileQueue.length > 0
+    );
     micBtn.disabled = disabled;
     attachBtn.disabled = disabled;
   }
@@ -3397,41 +3560,6 @@
   // add more), so both paths feed the same queue and preview strip.
   let attachQueue = [];
 
-  function renderAttachPreview() {
-    attachPreview.innerHTML = "";
-    attachPreview.hidden = attachQueue.length === 0;
-    attachQueue.forEach((item, index) => {
-      const thumb = document.createElement("div");
-      thumb.className = "attach-thumb";
-      const img = document.createElement("img");
-      img.src = item.dataUrl;
-      img.alt = item.filename || "Attached image";
-      const editBtn = document.createElement("button");
-      editBtn.className = "attach-thumb-edit";
-      editBtn.setAttribute("aria-label", "Edit image");
-      editBtn.title = "Edit";
-      editBtn.innerHTML = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><path d="M13.5 3.5l5 5L7 20l-5.5 1.5L3 16z"/></svg>';
-      editBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        openImageEditor(index);
-      });
-      const removeBtn = document.createElement("button");
-      removeBtn.className = "attach-thumb-remove";
-      removeBtn.setAttribute("aria-label", "Remove image");
-      removeBtn.title = "Remove";
-      removeBtn.textContent = "✕";
-      removeBtn.addEventListener("click", () => {
-        attachQueue.splice(index, 1);
-        renderAttachPreview();
-        updateComposerState();
-      });
-      thumb.appendChild(img);
-      thumb.appendChild(editBtn);
-      thumb.appendChild(removeBtn);
-      attachPreview.appendChild(thumb);
-    });
-  }
-
   function addFilesToQueue(fileList) {
     const files = Array.from(fileList || []);
     if (files.length === 0) return;
@@ -3466,6 +3594,198 @@
     });
   }
 
+  // ---------- Text / code file attachments ----------
+  // Separate queue from attachQueue (images): these are never sent as
+  // file parts to the model, just read server-side and inlined into the
+  // prompt text (see decode_upload_text_files / format_text_attachments
+  // in perla-companion.py). Kept as its own list + preview UI since the
+  // two attachment kinds render differently (a thumbnail vs a filename
+  // chip) and have separate limits.
+  const textFileInput = document.getElementById("textFileInput");
+  const MAX_TEXT_FILES_PER_MESSAGE = 8; // keep in sync with perla-companion.py
+  const MAX_TEXT_FILE_BYTES = 512 * 1024; // keep in sync with MAX_TEXT_UPLOAD_BYTES
+  const MAX_DOCUMENT_FILE_BYTES = 25 * 1024 * 1024; // keep in sync with DOCUMENT_UPLOAD_MAX_BYTES
+
+  // Same extension allowlist as TEXT_UPLOAD_EXTENSIONS server-side. This
+  // is a UX convenience so obviously-wrong files never reach the queue —
+  // NOT a security boundary; the server re-validates independently and
+  // is what actually decides what gets inlined.
+  const TEXT_FILE_EXTENSIONS = new Set([
+    ".md", ".markdown", ".txt", ".rst", ".adoc",
+    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".env",
+    ".xml", ".csv", ".tsv",
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".nix", ".sh", ".bash", ".zsh",
+    ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".rs", ".go", ".java",
+    ".kt", ".rb", ".php", ".lua", ".pl", ".sql", ".gd", ".swift", ".cs",
+    ".html", ".css", ".scss", ".vue", ".svelte",
+    ".log", ".diff", ".patch", ".gitignore", ".dockerfile",
+  ]);
+
+  // Document formats routed through perla-textify.py server-side (PDF/
+  // PPTX become page images; DOCX/XLSX/etc become extracted text) —
+  // same UX-convenience-only allowlist as TEXT_FILE_EXTENSIONS above,
+  // kept as a separate set purely so the size check below can apply the
+  // right limit for the right kind of file (these are legitimately much
+  // larger than a source file for the same amount of real content).
+  const DOCUMENT_FILE_EXTENSIONS = new Set([
+    ".pdf", ".pptx", ".docx", ".xlsx", ".ipynb", ".odt",
+  ]);
+
+  function textFileExtension(filename) {
+    const idx = (filename || "").lastIndexOf(".");
+    return idx === -1 ? "" : filename.slice(idx).toLowerCase();
+  }
+
+  // Single generic file icon used for EVERY attached text/code/document
+  // file, regardless of extension — no per-type icon set. Shared by the
+  // composer preview chip and the sent-message chip so both look
+  // identical apart from the optional remove button.
+  const GENERIC_FILE_ICON_SVG =
+    '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M12.5 2H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7.5L12.5 2z"/>' +
+    '<path d="M12.5 2v5.5H18"/>' +
+    '<line x1="7.5" y1="12" x2="14.5" y2="12"/>' +
+    '<line x1="7.5" y1="15.5" x2="12.5" y2="15.5"/>' +
+    '</svg>';
+
+  // Builds one attached-file chip: rounded-rectangle card, generic file
+  // icon, filename. `onRemove` (optional) adds a remove button for the
+  // composer's queued-attachment case; omitting it renders the read-only
+  // form used inside a sent message bubble.
+  function buildFileChip(filename, onRemove) {
+    const chip = document.createElement("div");
+    chip.className = "attach-file-chip" + (onRemove ? " in-composer" : "");
+    const icon = document.createElement("span");
+    icon.className = "attach-file-icon";
+    icon.innerHTML = GENERIC_FILE_ICON_SVG;
+    const name = document.createElement("span");
+    name.className = "attach-file-name";
+    name.textContent = filename;
+    name.title = filename;
+    chip.appendChild(icon);
+    chip.appendChild(name);
+    if (onRemove) {
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "attach-thumb-remove";
+      removeBtn.setAttribute("aria-label", "Remove file");
+      removeBtn.title = "Remove";
+      removeBtn.textContent = "✕";
+      removeBtn.addEventListener("click", onRemove);
+      chip.appendChild(removeBtn);
+    }
+    return chip;
+  }
+
+  // Queue of pending text/code attachments: [{ dataUrl, filename }, ...].
+  let textFileQueue = [];
+
+  function renderAttachPreview() {
+    // Text-file chips share the same preview strip as image thumbnails
+    // (attachPreview), just with a different inner shape — one flat row
+    // instead of separate render targets, so the composer only ever has
+    // one place to look for "what's queued to send."
+    attachPreview.innerHTML = "";
+    attachPreview.hidden = attachQueue.length === 0 && textFileQueue.length === 0;
+
+    attachQueue.forEach((item, index) => {
+      const thumb = document.createElement("div");
+      thumb.className = "attach-thumb";
+      const img = document.createElement("img");
+      img.src = item.dataUrl;
+      img.alt = item.filename || "Attached image";
+      const editBtn = document.createElement("button");
+      editBtn.className = "attach-thumb-edit";
+      editBtn.setAttribute("aria-label", "Edit image");
+      editBtn.title = "Edit";
+      editBtn.innerHTML = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><path d="M13.5 3.5l5 5L7 20l-5.5 1.5L3 16z"/></svg>';
+      editBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openImageEditor(index);
+      });
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "attach-thumb-remove";
+      removeBtn.setAttribute("aria-label", "Remove image");
+      removeBtn.title = "Remove";
+      removeBtn.textContent = "✕";
+      removeBtn.addEventListener("click", () => {
+        attachQueue.splice(index, 1);
+        renderAttachPreview();
+        updateComposerState();
+      });
+      thumb.appendChild(img);
+      thumb.appendChild(editBtn);
+      thumb.appendChild(removeBtn);
+      attachPreview.appendChild(thumb);
+    });
+
+    textFileQueue.forEach((item, index) => {
+      const chip = buildFileChip(item.filename, () => {
+        textFileQueue.splice(index, 1);
+        renderAttachPreview();
+        updateComposerState();
+      });
+      attachPreview.appendChild(chip);
+    });
+  }
+
+  function addTextFilesToQueue(fileList) {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+
+    const remaining = MAX_TEXT_FILES_PER_MESSAGE - textFileQueue.length;
+    if (remaining <= 0) {
+      addEntry("system", "", `You can attach up to ${MAX_TEXT_FILES_PER_MESSAGE} text/code files per message.`);
+      return;
+    }
+    const accepted = files.slice(0, remaining);
+    if (files.length > accepted.length) {
+      addEntry("system", "", `Only added ${accepted.length} of ${files.length} files, max ${MAX_TEXT_FILES_PER_MESSAGE} per message.`);
+    }
+
+    accepted.forEach((file) => {
+      const ext = textFileExtension(file.name);
+      const isDocument = DOCUMENT_FILE_EXTENSIONS.has(ext);
+      const isPlainText = TEXT_FILE_EXTENSIONS.has(ext);
+      if (!isDocument && !isPlainText) {
+        // Discard silently-ish: one short system note, then move on —
+        // matches the requested behavior of not blocking the rest of
+        // the send over one bad file. The OS file picker's `accept`
+        // filter already keeps most of these out; this covers drag-drop
+        // or a picker that ignores `accept`.
+        addEntry("system", "", `${file.name || "That file"} isn't a supported file type, skipped.`);
+        return;
+      }
+      // Document formats (PDF/PPTX/DOCX/XLSX/etc) are legitimately much
+      // larger than a source file carrying the same amount of real
+      // content — embedded fonts, images, XML overhead — so they get
+      // their own, larger ceiling instead of the plain-text one.
+      const maxBytes = isDocument ? MAX_DOCUMENT_FILE_BYTES : MAX_TEXT_FILE_BYTES;
+      if (file.size > maxBytes) {
+        const limitLabel = isDocument
+          ? `${Math.round(maxBytes / (1024 * 1024))}MB`
+          : `${Math.round(maxBytes / 1024)}KB`;
+        addEntry("system", "", `${file.name || "That file"} is too large, max ${limitLabel}, skipped.`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        textFileQueue.push({ dataUrl: reader.result, filename: file.name });
+        renderAttachPreview();
+        updateComposerState();
+      };
+      reader.onerror = () => addEntry("system", "", `Couldn't read ${file.name || "that file"}, skipped.`);
+      // Read as a data URL (base64), same transport shape as images —
+      // the server decodes+decides text-vs-binary on its own; the client
+      // doesn't need to pre-decode UTF-8 itself.
+      reader.readAsDataURL(file);
+    });
+  }
+
+  textFileInput.addEventListener("change", () => {
+    addTextFilesToQueue(textFileInput.files);
+    textFileInput.value = "";
+  });
+
   attachInput.addEventListener("change", () => {
     addFilesToQueue(attachInput.files);
     attachInput.value = "";
@@ -3481,6 +3801,7 @@
   const attachMenu = document.getElementById("attachMenu");
   const attachCameraBtn = document.getElementById("attachCameraBtn");
   const attachImageBtn = document.getElementById("attachImageBtn");
+  const attachTextFileBtn = document.getElementById("attachTextFileBtn");
 
   function closeAttachMenu() {
     attachMenu.classList.remove("open");
@@ -3530,6 +3851,11 @@
   attachImageBtn.addEventListener("click", () => {
     closeAttachMenu();
     attachInput.click();
+  });
+
+  attachTextFileBtn.addEventListener("click", () => {
+    closeAttachMenu();
+    textFileInput.click();
   });
 
   document.addEventListener("click", (e) => {
@@ -4053,7 +4379,8 @@
   function updateComposerState() {
     const hasText = !!textInput.value.trim();
     const hasImages = attachQueue.length > 0;
-    sendText.disabled = !(hasText || hasImages);
+    const hasTextFiles = textFileQueue.length > 0;
+    sendText.disabled = !(hasText || hasImages || hasTextFiles);
     if (micBtn) {
       micBtn.classList.toggle("typing-hidden", hasText && !recording);
     }
@@ -4077,29 +4404,18 @@
   async function submitText() {
     const message = textInput.value.trim();
     const images = attachQueue;
-    if (!message && images.length === 0) return;
-    if (message) addEntry("user", "You", message);
-    if (images.length > 0) {
-      const userEntry = document.createElement("div");
-      userEntry.className = "entry entry-user";
-      const grid = document.createElement("div");
-      grid.className = "entry-image-grid";
-      images.forEach((item) => {
-        const preview = document.createElement("img");
-        preview.className = "entry-image";
-        preview.src = item.dataUrl;
-        preview.alt = item.filename || "Attached image";
-        preview.addEventListener("click", () => openLightbox(item.dataUrl));
-        grid.appendChild(preview);
-      });
-      userEntry.appendChild(grid);
-      output.appendChild(userEntry);
-      output.scrollIntoView({ block: "end" });
-      userEntry.scrollIntoView({ behavior: "smooth", block: "end" });
-    }
+    const textFiles = textFileQueue;
+    if (!message && images.length === 0 && textFiles.length === 0) return;
+
+    // One combined bubble: file chips, then images, then the typed text —
+    // attachments above the message content, not as separate bubbles
+    // below it.
+    addUserMessageEntry(message, images, textFiles);
+
     textInput.value = "";
     textInput.style.height = "auto";
     attachQueue = [];
+    textFileQueue = [];
     renderAttachPreview();
     updateComposerState();
 
@@ -4116,6 +4432,12 @@
       if (images.length > 0) {
         body.images = images.map((item) => item.dataUrl);
       }
+      if (textFiles.length > 0) {
+        body.text_files = textFiles.map((item) => ({
+          data: item.dataUrl,
+          filename: item.filename,
+        }));
+      }
       const res = await fetch(CONFIG.ENDPOINT + CONFIG.TEXT_PATH, {
         method: "POST",
         headers: {
@@ -4130,12 +4452,24 @@
           relockSession();
           return;
         }
-        if (res.status === 403 && data.error) {
+        if (res.status === 400 && data.error) {
+          // Every attached file was rejected and there was nothing else
+          // to send (handle_text only 400s here if message/images/text
+          // attachments all ended up empty) — surface why, same tone as
+          // any other inline system note.
+          addEntry("system", "", data.error, requestTier);
+        } else if (res.status === 403 && data.error) {
           addEntry("system", "", data.error, requestTier);
         } else {
           throw new Error("request failed");
         }
         return;
+      }
+      if (data.file_warnings && data.file_warnings.length > 0) {
+        // Non-fatal: some attached files were dropped, but the rest of
+        // the message (other files, and/or typed text) still went
+        // through — surface the reason without blocking the actual reply.
+        addEntry("system", "", data.file_warnings.join(" · "), requestTier);
       }
       if (data.image) {
         await addImageEntry("Perla", data.image, data.text || "", requestTier);
