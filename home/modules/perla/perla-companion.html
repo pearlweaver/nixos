@@ -343,22 +343,23 @@
   /* Markdown container — used for Perla's bubbles (live chat + history
      replay). Everything is HTML-escaped before this renders, so these
      rules only ever see tags the renderer itself emits. */
-  .entry .md {
+  .md {
     font-size: 17px;
     line-height: 1.55;
     color: var(--ink);
   }
-  .entry .md p { margin: 0 0 10px; font-size: inherit; line-height: inherit; }
-  .entry .md p:last-child { margin-bottom: 0; }
-  .entry .md h1, .entry .md h2, .entry .md h3, .entry .md h4 {
+  .md p { margin: 0 0 10px; font-size: inherit; line-height: inherit; }
+  .md p:last-child { margin-bottom: 0; }
+  .md h1, .md h2, .md h3, .md h4 {
     margin: 12px 0 6px;
     line-height: 1.3;
     font-weight: 600;
   }
-  .entry .md h1 { font-size: 1.3em; }
-  .entry .md h2 { font-size: 1.2em; }
-  .entry .md h3, .entry .md h4 { font-size: 1.1em; }
-  .entry .md pre {
+  .md h1 { font-size: 1.3em; }
+  .md h2 { font-size: 1.2em; }
+  .md h3, .md h4 { font-size: 1.1em; }
+  .md pre {
+    position: relative;
     margin: 8px 0;
     padding: 10px 12px;
     background: rgba(0,0,0,0.35);
@@ -370,7 +371,7 @@
     font-size: 13.5px;
     line-height: 1.5;
   }
-  .entry .md code {
+  .md code {
     font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 0.9em;
     background: rgba(0,0,0,0.3);
@@ -378,26 +379,26 @@
     border-radius: 4px;
     padding: 1px 5px;
   }
-  .entry .md pre code {
+  .md pre code {
     background: none;
     border: none;
     padding: 0;
     font-size: inherit;
   }
-  .entry .md ul, .entry .md ol { margin: 6px 0; padding-left: 22px; }
-  .entry .md li { margin: 2px 0; }
-  .entry .md a {
+  .md ul, .md ol { margin: 6px 0; padding-left: 22px; }
+  .md li { margin: 2px 0; }
+  .md a {
     color: var(--brass-bright);
     text-decoration: underline;
     text-underline-offset: 2px;
   }
-  .entry .md blockquote {
+  .md blockquote {
     margin: 8px 0;
     padding: 2px 0 2px 12px;
     border-left: 3px solid var(--brass-dim);
     color: var(--ink-dim);
   }
-  .entry .md hr {
+  .md hr {
     border: none;
     border-top: 1px solid var(--rule-faint);
     margin: 10px 0;
@@ -504,6 +505,46 @@
   .replay-btn:hover,
   .copy-btn:hover { color: var(--brass-bright); }
   .copy-btn.copied { color: #7fae6a; }
+
+  /* Per-code-block copy button (attachCodeBlockCopyButtons) — floats in
+     the corner of any rendered fenced code block, chat bubble or file
+     viewer alike. `position: relative` on the .md pre rule (and the file
+     viewer's own pre, see below) is what anchors it. Hidden until the
+     block is hovered/focused/tapped, same reveal pattern as the message
+     meta row's copy button, so a wall of code isn't cluttered with
+     buttons at rest. */
+  pre.code-block-wrap { padding-right: 34px; }
+  .code-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: 1px solid var(--rule-faint);
+    background: rgba(23,19,26,0.75);
+    color: var(--ink-faint);
+    cursor: pointer;
+    padding: 0;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+  }
+  pre.code-block-wrap:hover .code-copy-btn,
+  pre.code-block-wrap:focus-within .code-copy-btn,
+  .code-copy-btn.copied {
+    opacity: 1;
+  }
+  .code-copy-btn:hover { color: var(--brass-bright); background: rgba(201,123,141,0.14); }
+  .code-copy-btn.copied { color: #7fae6a; }
+  /* Touch devices have no :hover — always show the button there so it's
+     actually reachable, matching how the message meta row already
+     handles touch via .meta-visible elsewhere in this file. */
+  @media (hover: none) {
+    .code-copy-btn { opacity: 1; }
+  }
 
   /* ---------- Composer ---------- */
   .composer {
@@ -635,27 +676,32 @@
      icon (same icon regardless of file type — no per-extension SVG set)
      and a filename. Used in BOTH the composer's attach preview (with a
      remove button) and inside a sent message bubble (without one) — one
-     shared look so what you see before sending matches what lands in
-     the transcript. Replaces the old pill-with-extension-badge shape. */
+  /* Square attached-file pill — same footprint as an image thumbnail
+     (.attach-thumb, 64x64) so files and images sit at a consistent size
+     whether queued in the composer or shown above a sent message. Full
+     content only opens in the file viewer on click/tap; the pill itself
+     just needs to be recognizable at a glance (icon + truncated name). */
   .attach-file-chip {
     position: relative;
-    width: auto;
-    height: 40px;
+    width: 64px;
+    height: 64px;
+    flex-shrink: 0;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 8px;
-    padding: 0 12px;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 4px;
     border-radius: 10px;
     border: 1px solid var(--rule);
     background: rgba(201,123,141,0.06);
+    cursor: pointer;
   }
-  .attach-file-chip.in-composer {
-    padding-right: 30px; /* room for the remove button */
-  }
+  .attach-file-chip:hover { border-color: var(--brass-dim); }
   .attach-file-icon {
     flex-shrink: 0;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -663,22 +709,21 @@
   }
   .attach-file-icon svg { display: block; width: 100%; height: 100%; }
   .attach-file-name {
-    max-width: 160px;
+    width: 100%;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 13px;
-    color: var(--ink);
-  }
-  .attach-file-chip .attach-thumb-remove {
-    top: 50%;
-    right: 6px;
-    transform: translateY(-50%);
+    font-size: 10px;
+    line-height: 1.2;
+    color: var(--ink-dim);
+    text-align: center;
   }
 
-  /* Row of file chips (and/or the image grid) — used both in the
+  /* Row of file chips AND image thumbnails together — used both in the
      composer's attach preview and standalone above a sent message (see
-     .entry-attachments below). */
+     .entry-attachments below). Both kinds are the same 64x64 footprint
+     so they line up in one flowing row regardless of mix. */
   .attach-file-row {
     display: flex;
     flex-wrap: wrap;
@@ -688,7 +733,11 @@
   /* Attachments block for a SENT message — file chips and/or images,
      rendered as their OWN element ABOVE the message bubble rather than
      nested inside it (matches Claude's UI: the attachment sits outside
-     the chat bubble, the bubble only ever holds the typed text). */
+     the chat bubble, the bubble only ever holds the typed text). Sent
+     images are ALSO square pills here (see .entry-attachments
+     .entry-image below) rather than full-size — tap opens the lightbox
+     for the full view, same interaction as the file pill opening the
+     file viewer. */
   .entry-attachments {
     display: flex;
     flex-direction: column;
@@ -707,6 +756,18 @@
   .entry-system .entry-attachments { align-items: flex-start; }
   .entry-attachments .attach-file-row { justify-content: flex-end; }
   .entry-perla .entry-attachments .attach-file-row { justify-content: flex-start; }
+
+  /* Sent-message image pills: same 64x64 square as a file chip, cropped
+     to fill (object-fit: cover) rather than the old up-to-360px full
+     preview. Grid is no longer needed for sizing since every pill is a
+     fixed size — .attach-file-row's flex-wrap handles layout instead. */
+  .entry-attachments .entry-image {
+    width: 64px;
+    height: 64px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    object-fit: cover;
+  }
 
   .composer-row {
     display: flex;
@@ -940,6 +1001,97 @@
   }
   .lightbox img:active { cursor: grabbing; }
   @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+  /* ---------- File viewer (reopen an attached text/code/document file) ---------- */
+  .file-viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: rgba(12,10,14,0.85);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    animation: fade-in 0.18s ease;
+  }
+  .file-viewer[hidden] { display: none; }
+
+  .file-viewer-panel {
+    width: 100%;
+    max-width: 720px;
+    height: 100%;
+    max-height: 640px;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+    overflow: hidden;
+  }
+
+  .file-viewer-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--rule-faint);
+    flex-shrink: 0;
+  }
+  .file-viewer-icon {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--brass-bright);
+  }
+  .file-viewer-icon svg { display: block; width: 100%; height: 100%; }
+  .file-viewer-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    color: var(--ink);
+  }
+  .file-viewer-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .file-viewer-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 16px;
+  }
+  .file-viewer-body pre {
+    margin: 0;
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .file-viewer-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--ink-faint);
+    font-style: italic;
+    font-size: 14px;
+    text-align: center;
+    padding: 20px;
+  }
 
   /* ---------- Image editor (crop + pen) ---------- */
   .img-editor {
@@ -2354,6 +2506,31 @@
     </div>
   </div>
 
+  <div id="fileViewer" class="file-viewer" hidden>
+    <div class="file-viewer-panel">
+      <div class="file-viewer-header">
+        <span class="file-viewer-icon"></span>
+        <span class="file-viewer-name" id="fileViewerName"></span>
+        <div class="file-viewer-header-actions">
+          <button class="editor-icon-btn" id="fileViewerMdToggle" aria-label="Toggle rendered markdown" title="Toggle rendered markdown" hidden>
+            <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M3 5h16v12H3z"/><path d="M6 9l2.5 2.5L6 14"/><path d="M11 14h5"/></svg>
+          </button>
+          <button class="editor-icon-btn" id="fileViewerCopy" aria-label="Copy file contents" title="Copy contents">
+            <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/></svg>
+          </button>
+          <button class="editor-icon-btn" id="fileViewerDownload" aria-label="Download file" title="Download">
+            <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M11 3v12"/><polyline points="6 10 11 15 16 10"/><path d="M4 18h14"/></svg>
+          </button>
+          <div class="editor-divider"></div>
+          <button class="editor-icon-btn" id="fileViewerClose" aria-label="Close file" title="Close">
+            <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><line x1="4" y1="4" x2="18" y2="18"/><line x1="18" y1="4" x2="4" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="file-viewer-body" id="fileViewerBody"></div>
+    </div>
+  </div>
+
 <script>
 
   const CONFIG = {
@@ -2851,8 +3028,13 @@
     entry.innerHTML =
       `<div class="entry-bubble">` + (useMd ? `<div class="md"></div>` : `<p></p>`) + `</div>` +
       (kind !== "system" ? `<div class="entry-meta"><span class="entry-time">${time}</span></div>` : "");
-    if (useMd) entry.querySelector(".md").innerHTML = renderMarkdown(text);
-    else entry.querySelector("p").textContent = text;
+    if (useMd) {
+      const mdEl = entry.querySelector(".md");
+      mdEl.innerHTML = renderMarkdown(text);
+      attachCodeBlockCopyButtons(mdEl);
+    } else {
+      entry.querySelector("p").textContent = text;
+    }
     if (kind === "perla") addCopyButton(entry, text);
     const wentLive = deliverEntry(entry, targetTier);
     if (wentLive) {
@@ -2894,23 +3076,38 @@
         const row = document.createElement("div");
         row.className = "attach-file-row";
         textFiles.forEach((item) => {
-          row.appendChild(buildFileChip(item.filename));
+          // Only plain text/code files can be decoded back to real
+          // content client-side (their dataUrl IS the original text,
+          // base64-wrapped). Document formats (PDF/DOCX/etc) are binary
+          // at this layer — their extracted text only exists
+          // server-side and isn't returned in the API response, so the
+          // viewer will show its "content wasn't saved" fallback for
+          // those until that's separately plumbed through.
+          const ext = textFileExtension(item.filename);
+          const content = TEXT_FILE_EXTENSIONS.has(ext)
+            ? decodeDataUrlAsText(item.dataUrl)
+            : null;
+          row.appendChild(buildFileChip(item.filename, null, content));
         });
         attachments.appendChild(row);
       }
 
       if (images && images.length) {
-        const grid = document.createElement("div");
-        grid.className = "entry-image-grid";
+        // Same flowing row as the file chips (not the old 2-column
+        // .entry-image-grid) — both file pills and image pills are now
+        // fixed 64x64 squares, so they line up in one row together
+        // rather than images getting their own separate grid layout.
+        const row = document.createElement("div");
+        row.className = "attach-file-row";
         images.forEach((item) => {
           const preview = document.createElement("img");
           preview.className = "entry-image";
           preview.src = item.dataUrl;
           preview.alt = item.filename || "Attached image";
           preview.addEventListener("click", () => openLightbox(item.dataUrl));
-          grid.appendChild(preview);
+          row.appendChild(preview);
         });
-        attachments.appendChild(grid);
+        attachments.appendChild(row);
       }
 
       entry.appendChild(attachments);
@@ -3203,15 +3400,117 @@
   lightbox.addEventListener("click", (e) => {
     if (e.target === lightbox) closeLightbox();
   });
+
+  // ---------- File viewer (reopen an attached text/code/document file) ----------
+  const fileViewer = document.getElementById("fileViewer");
+  const fileViewerName = document.getElementById("fileViewerName");
+  const fileViewerBody = document.getElementById("fileViewerBody");
+  const fileViewerClose = document.getElementById("fileViewerClose");
+  const fileViewerCopy = document.getElementById("fileViewerCopy");
+  const fileViewerDownload = document.getElementById("fileViewerDownload");
+  const fileViewerMdToggle = document.getElementById("fileViewerMdToggle");
+  // { filename, content, isMarkdown, renderedAsMarkdown } — renderedAsMarkdown
+  // is the toggle's current state, only meaningful when isMarkdown is true.
+  let fileViewerCurrent = null;
+
+  function isMarkdownFilename(filename) {
+    const ext = textFileExtension(filename);
+    return ext === ".md" || ext === ".markdown";
+  }
+
+  function renderFileViewerBody() {
+    fileViewerBody.innerHTML = "";
+    const state = fileViewerCurrent;
+    if (!state || state.content == null) {
+      // Attachments made before this viewer existed (or restored from an
+      // old sessionStorage entry saved before content was captured) have
+      // no stored text — say so rather than showing a blank panel.
+      const empty = document.createElement("div");
+      empty.className = "file-viewer-empty";
+      empty.textContent = "This file's content wasn't saved with the message, so it can't be reopened.";
+      fileViewerBody.appendChild(empty);
+      return;
+    }
+    if (state.isMarkdown && state.renderedAsMarkdown) {
+      const mdEl = document.createElement("div");
+      mdEl.className = "md";
+      mdEl.innerHTML = renderMarkdown(state.content);
+      fileViewerBody.appendChild(mdEl);
+      attachCodeBlockCopyButtons(mdEl);
+    } else {
+      const pre = document.createElement("pre");
+      pre.textContent = state.content;
+      fileViewerBody.appendChild(pre);
+    }
+  }
+
+  function openFileViewer(filename, content) {
+    const isMd = isMarkdownFilename(filename);
+    fileViewerCurrent = {
+      filename, content, isMarkdown: isMd,
+      // Default to the rendered view for markdown — raw source is one
+      // toggle away via fileViewerMdToggle.
+      renderedAsMarkdown: isMd,
+    };
+    fileViewerName.textContent = filename;
+    fileViewerName.title = filename;
+    const icon = document.querySelector("#fileViewer .file-viewer-icon");
+    if (icon) icon.innerHTML = GENERIC_FILE_ICON_SVG;
+    fileViewerMdToggle.hidden = !isMd || content == null;
+    fileViewerMdToggle.classList.toggle("active", isMd && fileViewerCurrent.renderedAsMarkdown);
+    renderFileViewerBody();
+    fileViewer.hidden = false;
+  }
+
+  function closeFileViewer() {
+    fileViewer.hidden = true;
+    fileViewerCurrent = null;
+  }
+
+  fileViewerClose.addEventListener("click", closeFileViewer);
+  fileViewer.addEventListener("click", (e) => {
+    if (e.target === fileViewer) closeFileViewer();
+  });
+
+  fileViewerMdToggle.addEventListener("click", () => {
+    if (!fileViewerCurrent || !fileViewerCurrent.isMarkdown) return;
+    fileViewerCurrent.renderedAsMarkdown = !fileViewerCurrent.renderedAsMarkdown;
+    fileViewerMdToggle.classList.toggle("active", fileViewerCurrent.renderedAsMarkdown);
+    fileViewerMdToggle.title = fileViewerCurrent.renderedAsMarkdown
+      ? "Showing rendered markdown — click for raw source"
+      : "Showing raw source — click for rendered markdown";
+    renderFileViewerBody();
+  });
+
+  fileViewerCopy.addEventListener("click", () => {
+    if (!fileViewerCurrent || fileViewerCurrent.content == null) return;
+    copyTextToClipboard(fileViewerCurrent.content, fileViewerCopy, COPY_ICON_SVG, CHECK_ICON_SVG);
+  });
+
+  fileViewerDownload.addEventListener("click", () => {
+    if (!fileViewerCurrent || fileViewerCurrent.content == null) return;
+    const blob = new Blob([fileViewerCurrent.content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileViewerCurrent.filename || "file.txt";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    // Image editor sits above the lightbox (z-index 110 vs 100) — if both
-    // were somehow open, Escape should back out of the topmost one first.
+    // Image editor sits above the lightbox/file viewer (z-index 110 vs
+    // 100) — if more than one were somehow open, Escape backs out of the
+    // topmost one first.
     if (!imgEditor.hidden) {
       closeImageEditor();
       return;
     }
-    if (!lightbox.hidden) closeLightbox();
+    if (!lightbox.hidden) { closeLightbox(); return; }
+    if (!fileViewer.hidden) { closeFileViewer(); return; }
   });
 
   // ---------- Welcome empty state ----------
@@ -3470,6 +3769,43 @@
   tier1Btn.addEventListener("click", () => { closeAppMenu(); switchTier(1); });
   tier2Btn.addEventListener("click", () => { closeAppMenu(); switchTier(2); });
 
+  // Shared copy-to-clipboard logic (Clipboard API with a hidden-textarea
+  // fallback for non-secure contexts) — used by the per-message copy
+  // button (addCopyButton) and per-code-block copy buttons
+  // (attachCodeBlockCopyButtons) alike, so the fallback path only needs
+  // to be gotten right in one place. `btn` briefly swaps to a checkmark
+  // on success; callers own their own icon markup via getIcons().
+  async function copyTextToClipboard(text, btn, copyIcon, checkIcon) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      // Clipboard API can fail without a secure context/permission —
+      // fall back to a hidden textarea + execCommand so copy still
+      // works rather than silently doing nothing.
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch (e2) {
+        return;
+      }
+    }
+    btn.innerHTML = checkIcon;
+    btn.classList.add("copied");
+    setTimeout(() => {
+      btn.innerHTML = copyIcon;
+      btn.classList.remove("copied");
+    }, 1500);
+  }
+
+  const COPY_ICON_SVG = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/></svg>';
+  const CHECK_ICON_SVG = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><polyline points="4 12 9 17 18 6"/></svg>';
+
   function addCopyButton(entry, text) {
     const meta = entry.querySelector(".entry-meta");
     if (!meta) return;
@@ -3477,37 +3813,39 @@
     btn.className = "copy-btn";
     btn.setAttribute("aria-label", "Copy message");
     btn.title = "Copy";
-    const copyIcon = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/></svg>';
-    const checkIcon = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><polyline points="4 12 9 17 18 6"/></svg>';
-    btn.innerHTML = copyIcon;
-    btn.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch (e) {
-        // Clipboard API can fail without a secure context/permission —
-        // fall back to a hidden textarea + execCommand so copy still
-        // works rather than silently doing nothing.
-        try {
-          const ta = document.createElement("textarea");
-          ta.value = text;
-          ta.style.position = "fixed";
-          ta.style.opacity = "0";
-          document.body.appendChild(ta);
-          ta.select();
-          document.execCommand("copy");
-          document.body.removeChild(ta);
-        } catch (e2) {
-          return;
-        }
-      }
-      btn.innerHTML = checkIcon;
-      btn.classList.add("copied");
-      setTimeout(() => {
-        btn.innerHTML = copyIcon;
-        btn.classList.remove("copied");
-      }, 1500);
+    btn.innerHTML = COPY_ICON_SVG;
+    btn.addEventListener("click", () => {
+      copyTextToClipboard(text, btn, COPY_ICON_SVG, CHECK_ICON_SVG);
     });
     meta.appendChild(btn);
+  }
+
+  // Scans a rendered-markdown container for fenced code blocks
+  // (<pre><code>, as emitted by renderMarkdown) and adds a small copy
+  // button to each one — used wherever markdown gets rendered (chat
+  // bubbles, the file viewer's markdown mode) so code blocks are
+  // copyable without hand-selecting text around the button UI. Safe to
+  // call multiple times on the same container; it skips blocks that
+  // already have one (data-copy-wired), so re-rendering (e.g. toggling
+  // the file viewer's raw/rendered mode back and forth) never double-adds.
+  function attachCodeBlockCopyButtons(container) {
+    container.querySelectorAll("pre").forEach((pre) => {
+      if (pre.dataset.copyWired) return;
+      pre.dataset.copyWired = "1";
+      const code = pre.querySelector("code");
+      const text = (code || pre).textContent;
+      pre.classList.add("code-block-wrap");
+      const btn = document.createElement("button");
+      btn.className = "code-copy-btn";
+      btn.setAttribute("aria-label", "Copy code");
+      btn.title = "Copy code";
+      btn.innerHTML = COPY_ICON_SVG;
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        copyTextToClipboard(text, btn, COPY_ICON_SVG, CHECK_ICON_SVG);
+      });
+      pre.appendChild(btn);
+    });
   }
 
   function addReplayButton(entry, audioValue) {
@@ -3631,6 +3969,28 @@
     ".pdf", ".pptx", ".docx", ".xlsx", ".ipynb", ".odt",
   ]);
 
+  function decodeDataUrlAsText(dataUrl) {
+    // Plain text/code attachments are sent as base64 data URLs (same
+    // transport as images), but unlike images their content IS just the
+    // original text — decode it back for the file viewer rather than
+    // waiting on a round trip, since the server never echoes extracted
+    // text back in its response. Document formats (PDF/DOCX/etc) are
+    // NOT decodable this way — their raw bytes are binary, and the
+    // actual extracted text only exists server-side — so this is only
+    // meaningful for the plain-text branch (see addUserMessageEntry's
+    // caller, which only calls this for TEXT_FILE_EXTENSIONS).
+    try {
+      const m = /^data:[^;,]*;base64,(.*)$/s.exec(dataUrl);
+      if (!m) return null;
+      const binary = atob(m[1]);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    } catch (e) {
+      return null;
+    }
+  }
+
   function textFileExtension(filename) {
     const idx = (filename || "").lastIndexOf(".");
     return idx === -1 ? "" : filename.slice(idx).toLowerCase();
@@ -3648,13 +4008,36 @@
     '<line x1="7.5" y1="15.5" x2="12.5" y2="15.5"/>' +
     '</svg>';
 
-  // Builds one attached-file chip: rounded-rectangle card, generic file
-  // icon, filename. `onRemove` (optional) adds a remove button for the
-  // composer's queued-attachment case; omitting it renders the read-only
-  // form used inside a sent message bubble.
-  function buildFileChip(filename, onRemove) {
+  // Builds one attached-file square pill: icon on top, truncated
+  // filename below, same 64x64 footprint as an image thumbnail.
+  // `onRemove` (optional) adds a remove button for the composer's
+  // queued-attachment case; omitting it renders the read-only form used
+  // above a sent message. `content` (optional) is the file's actual text
+  // — when present, clicking the pill (composer preview OR sent message
+  // alike) opens it in the file viewer; stored as a data-attribute
+  // (HTML-escaped via the DOM's own attribute serialization, never
+  // interpolated as markup) so it round-trips through the sessionStorage
+  // innerHTML persistence the same way the rest of a message does, and
+  // survives a reload without needing separate storage plumbing.
+  // Cap on how much of a file's content is kept for later reopening via
+  // buildFileChip's data-file-content attribute. Chat history (including
+  // every attachment's full text) is persisted to sessionStorage as one
+  // big innerHTML string per tier — an unbounded cap here means a
+  // handful of large attachments in one session could exhaust that
+  // origin's storage quota and silently break ALL chat persistence, not
+  // just this feature. 100KB per file keeps a realistic source file or
+  // markdown doc fully viewable while bounding the worst case.
+  const FILE_VIEWER_CONTENT_CAP = 100 * 1024;
+
+  function buildFileChip(filename, onRemove, content) {
     const chip = document.createElement("div");
-    chip.className = "attach-file-chip" + (onRemove ? " in-composer" : "");
+    chip.className = "attach-file-chip";
+    if (content != null) {
+      chip.dataset.fileContent = content.length > FILE_VIEWER_CONTENT_CAP
+        ? content.slice(0, FILE_VIEWER_CONTENT_CAP) +
+          "\n\n[... truncated for storage — reopen the original file to see the rest ...]"
+        : content;
+    }
     const icon = document.createElement("span");
     icon.className = "attach-file-icon";
     icon.innerHTML = GENERIC_FILE_ICON_SVG;
@@ -3664,13 +4047,24 @@
     name.title = filename;
     chip.appendChild(icon);
     chip.appendChild(name);
+    // Clicking the pill always opens the viewer — both a queued
+    // composer attachment (so you can double-check a file before
+    // sending) and a delivered sent-message pill. The remove button
+    // (composer only) stops propagation below so removing an item
+    // doesn't also pop the viewer open on the way out.
+    chip.addEventListener("click", () => {
+      openFileViewer(filename, chip.dataset.fileContent ?? null);
+    });
     if (onRemove) {
       const removeBtn = document.createElement("button");
       removeBtn.className = "attach-thumb-remove";
       removeBtn.setAttribute("aria-label", "Remove file");
       removeBtn.title = "Remove";
       removeBtn.textContent = "✕";
-      removeBtn.addEventListener("click", onRemove);
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onRemove();
+      });
       chip.appendChild(removeBtn);
     }
     return chip;
@@ -3719,11 +4113,20 @@
     });
 
     textFileQueue.forEach((item, index) => {
+      // Same decode-for-viewing as the sent-message path (see
+      // addUserMessageEntry) — only plain text/code files can be
+      // decoded back to real content client-side; document formats
+      // (PDF/DOCX/etc) are binary at this layer and show the viewer's
+      // "content wasn't saved" fallback instead.
+      const ext = textFileExtension(item.filename);
+      const content = TEXT_FILE_EXTENSIONS.has(ext)
+        ? decodeDataUrlAsText(item.dataUrl)
+        : null;
       const chip = buildFileChip(item.filename, () => {
         textFileQueue.splice(index, 1);
         renderAttachPreview();
         updateComposerState();
-      });
+      }, content);
       attachPreview.appendChild(chip);
     });
   }
@@ -4749,8 +5152,13 @@
     entry.innerHTML =
       `<div class="entry-bubble">` + (useMd ? `<div class="md"></div>` : `<p></p>`) + `</div>` +
       `<div class="entry-meta"><span class="entry-time">${timeStr || ""}</span></div>`;
-    if (useMd) entry.querySelector(".md").innerHTML = renderMarkdown(text);
-    else entry.querySelector("p").textContent = text;
+    if (useMd) {
+      const mdEl = entry.querySelector(".md");
+      mdEl.innerHTML = renderMarkdown(text);
+      attachCodeBlockCopyButtons(mdEl);
+    } else {
+      entry.querySelector("p").textContent = text;
+    }
     output.appendChild(entry);
     return entry;
   }
