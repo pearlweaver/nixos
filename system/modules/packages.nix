@@ -30,7 +30,8 @@
     lazymc
     helium
     wireshark
-
+    dig
+    
     inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default
   ];
 

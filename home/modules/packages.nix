@@ -73,6 +73,7 @@
     xdg-desktop-portal-gnome
     mpvpaper
     vulkan-tools
+    qpdf
   ];
 
   xdg.dataFile."vulkan/implicit_layer.d/VkLayer_LS_frame_generation.json".source =

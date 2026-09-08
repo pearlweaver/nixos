@@ -128,6 +128,14 @@ in {
             PERLA_COMPANION_PORT = "8443";
           };
         };
+        file = {
+          type = "local";
+          command = [ "${config.home.homeDirectory}/.local/bin/perla-file-mcp" ];
+          env = {
+            PERLA_COMPANION_PORT = "8443";
+            PERLA_TIER = "1";
+          };
+        };
         reminders = {
           type = "local";
           command = [ "${config.home.homeDirectory}/.local/bin/perla-reminders-mcp" ];
@@ -197,6 +205,13 @@ in {
   # Reload companion daemon when secrets change (SIGHUP re-reads token files)
   home.activation.reload-perla = lib.mkAfter ''
     pkill -HUP -f perla-companion || true
+  '';
+
+  # Ensure the default files directory exists so send_file/list_files and
+  # anything Tier 2 creates have somewhere to land immediately after a
+  # rebuild, without waiting on the companion daemon's own startup mkdir.
+  home.activation.ensure-perla-files-dir = lib.mkAfter ''
+    mkdir -p "${cfg.files_dir}"
   '';
 
   # === Perla environment file (sourced by wrapper script) ===
@@ -282,6 +297,38 @@ in {
       fi
       export PERLA_COMPANION_PORT="''${PERLA_COMPANION_PORT:-8443}"
       exec "$VENV_DIR/bin/python3" "$HOME/.local/bin/perla-view-screen-mcp-impl.py"
+    '';
+  };
+
+  # === file MCP server (send_file / list_files — lets Perla find and
+  # hand back existing files, and lets Tier 2 deliver files it creates,
+  # without needing shell/write access in Tier 1). All resolution/
+  # staging logic lives in perla-companion.py; this script only proxies,
+  # same thin shape as view-screen. ===
+  home.file.".local/bin/perla-file-mcp-impl.py" = {
+    force = true;
+    source = ./perla/perla-file-mcp.py;
+  };
+
+  home.file.".local/bin/perla-file-mcp" = {
+    force = true;
+    executable = true;
+    text = ''
+      #!/usr/bin/env bash
+      set -euo pipefail
+      # Same self-contained venv pattern / mcp<2 pin as the other MCP
+      # wrappers — see the view-screen wrapper comment above for why it
+      # can't use a system `mcp`.
+      VENV_DIR="''${XDG_STATE_HOME:-$HOME/.local/state}/perla/file-mcp-venv"
+      MARKER="$VENV_DIR/.mcp-1x-installed"
+      if [ ! -f "$MARKER" ]; then
+        rm -rf "$VENV_DIR"
+        python3 -m venv "$VENV_DIR"
+        "$VENV_DIR/bin/pip" install --quiet "mcp<2"
+        touch "$MARKER"
+      fi
+      export PERLA_COMPANION_PORT="''${PERLA_COMPANION_PORT:-8443}"
+      exec "$VENV_DIR/bin/python3" "$HOME/.local/bin/perla-file-mcp-impl.py"
     '';
   };
 
@@ -601,6 +648,8 @@ in {
         "PERLA_AUDIO_DIR=%h/.local/share/perla-audio"
         "PERLA_COMPANION_PORT=8443"
         "PERLA_GATE_PASSWORD=${cfg.gate_password}"
+        "PERLA_FILES_DIR=${cfg.files_dir}"
+        "PERLA_EXTRA_SEARCH_DIRS=${lib.concatStringsSep ":" cfg.extra_search_dirs}"
       ];
       ExecStart = "%h/.local/bin/perla-companion";
       Restart = "on-failure";

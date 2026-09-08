@@ -27,4 +27,12 @@
       "navidrome.local"
     ];
   };
+
+  # Enabling dns cache
+  services.nscd.config = ''
+    enable-cache            hosts           yes
+    positive-time-to-live   hosts           3600
+    negative-time-to-live   hosts           20
+    shared                  hosts           yes
+  '';
 }

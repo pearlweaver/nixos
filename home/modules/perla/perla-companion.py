@@ -24,6 +24,7 @@ import fcntl
 import getpass
 import importlib.util
 import json
+import mimetypes
 import os
 import random
 import re
@@ -85,6 +86,22 @@ PERLA_WHISPER_LANG = os.environ.get("PERLA_WHISPER_LANG", "en")
 PERLA_AUDIO_DIR = os.environ.get("PERLA_AUDIO_DIR", os.path.expanduser("~/.local/share/perla-audio"))
 PERLA_SCREENSHOT_DIR = os.environ.get("PERLA_SCREENSHOT_DIR", os.path.expanduser("~/.local/share/perla-screenshots"))
 PERLA_AUDIO_INPUT = os.environ.get("PERLA_AUDIO_INPUT", "")
+
+# --- File transfer (send_file / list_files MCP tools) ----------------------
+# PERLA_FILES_DIR is BOTH the default landing spot for files Perla creates
+# (Tier 2 instructions point here) AND always a search root for send_file,
+# regardless of PERLA_EXTRA_SEARCH_DIRS below.
+PERLA_FILES_DIR = os.environ.get("PERLA_FILES_DIR", os.path.expanduser("~/Perla"))
+PERLA_EXTRA_SEARCH_DIRS = [
+    os.path.expanduser(d) for d in os.environ.get(
+        "PERLA_EXTRA_SEARCH_DIRS", "~/Downloads:~/Documents:~/Pictures"
+    ).split(":") if d.strip()
+]
+PERLA_SENT_FILES_DIR = os.environ.get(
+    "PERLA_SENT_FILES_DIR", os.path.expanduser("~/.local/share/perla-sent-files")
+)
+MAX_SEND_FILE_BYTES = 50 * 1024 * 1024
+MAX_FUZZY_CANDIDATES = 8
 SERVER_PORT_T1 = int(os.environ.get("PERLA_SERVER_PORT_T1", "13101"))
 SERVER_PORT_T2 = int(os.environ.get("PERLA_SERVER_PORT_T2", "13102"))
 ELEVATION_DURATION = int(os.environ.get("PERLA_ELEVATION_DURATION", "300"))  # 5 minutes
@@ -660,6 +677,206 @@ def resolve_app_target(target):
     return (label, cmd, desktop_unit(label))
 
 
+# ---------------------------------------------------------------------------
+# File transfer — resolving, staging, and listing files for the send_file /
+# list_files MCP tools (perla-file-mcp.py). All real logic lives here, same
+# "daemon does the work, MCP server just proxies" split as view_screen and
+# system_action. NEVER touches paths outside the allowlisted roots below,
+# regardless of what a caller (model or user) provides as input.
+# ---------------------------------------------------------------------------
+def _send_file_search_roots():
+    """Allowlisted roots, existing directories only, de-duplicated by real
+    path. PERLA_FILES_DIR is always included (it's the default output dir
+    as well as a search root) alongside any configured extras."""
+    roots = [PERLA_FILES_DIR] + PERLA_EXTRA_SEARCH_DIRS
+    seen = set()
+    out = []
+    for r in roots:
+        rp = os.path.realpath(r)
+        if rp not in seen and os.path.isdir(rp):
+            seen.add(rp)
+            out.append(rp)
+    return out
+
+
+def _is_within_roots(path, roots):
+    rp = os.path.realpath(path)
+    for root in roots:
+        try:
+            if os.path.commonpath([rp, root]) == root:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def resolve_send_file(query):
+    """Resolve a filename/path query to exactly one file, a list of
+    candidates, or an error. See module docstring in perla-file-mcp.py
+    for the user-facing contract. Matching order: exact path under a
+    root -> exact filename (case-insensitive) anywhere under the roots
+    -> fuzzy substring match. Ambiguous results (0 or 2+ hits) are
+    returned as `candidates`, never guessed."""
+    query = (query or "").strip()
+    if not query:
+        return {"error": "no filename or path given"}
+    if ".." in query.replace("\\", "/").split("/"):
+        return {"error": "invalid path"}
+
+    roots = _send_file_search_roots()
+    if not roots:
+        return {"error": "no search directories are configured or exist"}
+
+    expanded = os.path.expanduser(query)
+    check_paths = []
+    if os.path.isabs(expanded):
+        check_paths.append(expanded)
+    else:
+        check_paths.extend(os.path.join(root, expanded) for root in roots)
+    for p in check_paths:
+        if os.path.isfile(p) and _is_within_roots(p, roots):
+            return {"match": os.path.realpath(p)}
+
+    query_lower = os.path.basename(query).lower()
+    exact_name_hits = []
+    substring_hits = []
+    for root in roots:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            for fname in filenames:
+                if fname.startswith("."):
+                    continue
+                fname_lower = fname.lower()
+                full = os.path.join(dirpath, fname)
+                if fname_lower == query_lower:
+                    exact_name_hits.append(full)
+                elif query_lower in fname_lower:
+                    substring_hits.append(full)
+
+    if len(exact_name_hits) == 1:
+        return {"match": os.path.realpath(exact_name_hits[0])}
+    if len(exact_name_hits) > 1:
+        names = [os.path.basename(p) for p in exact_name_hits[:MAX_FUZZY_CANDIDATES]]
+        return {
+            "candidates": names,
+            "note": f"{len(exact_name_hits)} files are named exactly '{os.path.basename(query)}' in different folders.",
+        }
+
+    if len(substring_hits) == 1:
+        return {"match": os.path.realpath(substring_hits[0])}
+    if len(substring_hits) == 0:
+        return {"candidates": [], "note": f"No file matching '{query}' was found."}
+
+    truncated = len(substring_hits) > MAX_FUZZY_CANDIDATES
+    shown = substring_hits[:MAX_FUZZY_CANDIDATES]
+    names = [os.path.basename(p) for p in shown]
+    note = f"No exact match for '{query}', but found {len(substring_hits)} similarly named file(s)."
+    if truncated:
+        note += f" Showing the first {MAX_FUZZY_CANDIDATES}."
+    return {"candidates": names, "note": note}
+
+
+def stage_file_for_sending(abs_path):
+    """Copy an already-resolved, already-validated absolute path into the
+    sent-files serve directory under a random id. Returns
+    (file_id, filename, error)."""
+    try:
+        size = os.path.getsize(abs_path)
+    except OSError as e:
+        return None, None, f"couldn't read '{abs_path}': {e}"
+    if size > MAX_SEND_FILE_BYTES:
+        return None, None, (
+            f"'{os.path.basename(abs_path)}' is too large to send "
+            f"(max {MAX_SEND_FILE_BYTES // (1024 * 1024)}MB)"
+        )
+
+    os.makedirs(PERLA_SENT_FILES_DIR, exist_ok=True)
+    file_id = uuid.uuid4().hex
+    filename = os.path.basename(abs_path)
+    dest_dir = os.path.join(PERLA_SENT_FILES_DIR, file_id)
+    os.makedirs(dest_dir, exist_ok=True)
+    dest_path = os.path.join(dest_dir, filename)
+    try:
+        with open(abs_path, "rb") as src, open(dest_path, "wb") as dst:
+            dst.write(src.read())
+    except OSError as e:
+        return None, None, f"couldn't stage '{filename}' for sending: {e}"
+    return file_id, filename, None
+
+
+# ---------------------------------------------------------------------------
+# Last-staged-file tracker — a fallback path for detecting a successful
+# send_file call that does NOT depend on parsing OpenCode's tool-result
+# JSON shape (which varies across server versions/fields and isn't
+# reliably documented; see call_opencode's primary extraction attempt).
+#
+# handle_internal_send_file runs IN-PROCESS in this same daemon, mid-
+# request, when the MCP server calls back into it — so recording "a file
+# was just staged for tier N" here and reading it back in call_opencode
+# right after the OpenCode round-trip completes is a schema-independent
+# way to notice the send happened, even if the tool-result parsing above
+# comes up empty. Keyed by tier (not by session/request id) since only
+# one turn is ever in flight per tier at a time in this daemon's model.
+# A short TTL guards against a stale entry from an earlier turn leaking
+# into a later one if a response is ever somehow not consumed.
+# ---------------------------------------------------------------------------
+_LAST_STAGED_LOCK = threading.Lock()
+_LAST_STAGED_BY_TIER = {}  # tier -> (file_id, filename, staged_at_epoch)
+_LAST_STAGED_TTL_SECONDS = 60
+
+
+def _record_staged_file(tier, file_id, filename):
+    with _LAST_STAGED_LOCK:
+        _LAST_STAGED_BY_TIER[tier] = (file_id, filename, time.time())
+
+
+def _pop_recently_staged_file(tier):
+    """Consume (and clear) the most recent staged-file record for this
+    tier, if any and if still fresh. Returns {"id", "filename"} or None."""
+    with _LAST_STAGED_LOCK:
+        entry = _LAST_STAGED_BY_TIER.pop(tier, None)
+    if entry is None:
+        return None
+    file_id, filename, staged_at = entry
+    if time.time() - staged_at > _LAST_STAGED_TTL_SECONDS:
+        return None
+    return {"id": file_id, "filename": filename}
+
+
+def list_files_in(subdir=None):
+    """Directory listing for list_files — restricted to the same
+    allowlisted roots as resolve_send_file. Omitted `subdir` lists
+    PERLA_FILES_DIR (the default directory) non-recursively. Returns
+    (entries, error); entries is [{"name", "is_dir"}, ...]."""
+    roots = _send_file_search_roots()
+    if not roots:
+        return None, "no search directories are configured or exist"
+
+    target = PERLA_FILES_DIR
+    if subdir:
+        if ".." in subdir.replace("\\", "/").split("/"):
+            return None, "invalid path"
+        expanded_sub = os.path.expanduser(subdir)
+        candidate = expanded_sub if os.path.isabs(expanded_sub) else os.path.join(PERLA_FILES_DIR, expanded_sub)
+        if not _is_within_roots(candidate, roots):
+            return None, f"'{subdir}' is outside the folders I'm allowed to look in"
+        target = candidate
+
+    if not os.path.isdir(target):
+        return None, f"'{target}' doesn't exist or isn't a folder"
+
+    try:
+        entries = []
+        for name in sorted(os.listdir(target)):
+            if name.startswith("."):
+                continue
+            full = os.path.join(target, name)
+            entries.append({"name": name, "is_dir": os.path.isdir(full)})
+        return entries, None
+    except OSError as e:
+        return None, f"couldn't list '{target}': {e}"
+
+
 def execute_system_action(action, target=None):
     """Execute one allowlisted system action. Returns (ok, message) — errors
     are phrased so the model can relay them to the user as-is. `target` is
@@ -1201,9 +1418,47 @@ def call_opencode(sid, port, text, tier, image_path=None):
     """
     if session_mgr.should_inject_persona(tier):
         persona = read_persona()
+        addendum = ""
+        if tier == 2:
+            # Tier 2 has no dedicated AGENTS.md (it runs OpenCode's default
+            # agent + superpowers with full write/edit/bash) — this is the
+            # natural one-time injection point for file-handling
+            # instructions specific to Full Mode, without polluting
+            # persona.md (shared identity content) or duplicating a whole
+            # second instructions file.
+            addendum = (
+                "\n\n---\n"
+                "## File handling (Full Mode)\n"
+                f"When asked to create a file (a document, script, export, "
+                f"whatever), save it under {PERLA_FILES_DIR} by default "
+                f"unless the user names a different location. After "
+                f"creating a file the user should receive, call the "
+                f"`send_file` tool with its filename so it actually reaches "
+                f"them in the chat — writing the file alone does not "
+                f"deliver it.\n\n"
+                f"When asked to send, share, or deliver a file that already "
+                f"exists (\"send me X\", \"can I get that file\", \"send "
+                f"/path/to/thing.png\"), you MUST call the `send_file` tool "
+                f"— do not just describe, comment on, or answer questions "
+                f"about the file instead of sending it, and do not treat "
+                f"the request as answered until the tool has actually run. "
+                f"`send_file` never opens or reads the file's contents "
+                f"(this applies to every file type, including PDFs and "
+                f"images) — it only copies the raw bytes for download, so "
+                f"there is no file type you can't send. Never comment on, "
+                f"describe, or guess at a file's contents from its name "
+                f"alone; you have not seen them. `send_file` also searches "
+                f"Downloads, Documents, and Pictures in addition to "
+                f"{PERLA_FILES_DIR}; if it comes back with multiple or no "
+                f"candidates, ask the user which one they meant rather "
+                f"than guessing, and if a specific path you tried comes "
+                f"back with no matches, say plainly that the path doesn't "
+                f"exist or the name doesn't match rather than inventing a "
+                f"different explanation.\n"
+            )
         text = (
             f"ATTENTION — Read and follow these rules for your identity and behavior:\n\n"
-            f"{persona}\n\n"
+            f"{persona}{addendum}\n\n"
             f"Now respond to the user:\n\n"
             f"{text}"
         )
@@ -1245,7 +1500,7 @@ def call_opencode(sid, port, text, tier, image_path=None):
             input=body, capture_output=True, text=True, timeout=310
         )
         if result.returncode != 0:
-            return "OpenCode server error — try again.", False, False, False
+            return "OpenCode server error — try again.", False, False, False, None
 
         data = json.loads(result.stdout)
         response_text = " ".join(
@@ -1282,13 +1537,107 @@ def call_opencode(sid, port, text, tier, image_path=None):
             name.lower().endswith("view_screen") for name in tool_names
         )
 
-        return response_text or "(no response)", tool_used, obsidian_write, view_screen_used
+        # send_file's result already contains everything the user needs
+        # (an id + filename staged by the daemon itself when the tool
+        # ran) — unlike view_screen, nothing needs to be re-captured
+        # here, just extracted from the tool call's own return value and
+        # threaded back to process_message so it can attach a download
+        # link to the response.
+        #
+        # OpenCode's exact field name for a completed tool call's return
+        # value isn't pinned down here the way "tool"/"toolName" is for
+        # the name (that pairing is documented/observed elsewhere in this
+        # file) — different server versions have been seen using
+        # "result", "output", or nesting it under "state"/"metadata".
+        # Rather than betting on one field silently, every plausible spot
+        # is checked, and if send_file demonstrably ran (by name) but no
+        # parseable {"ok": true, "id": ...} payload turns up anywhere, that
+        # mismatch is logged loudly — a silently-dropped file send is a
+        # confusing, hard-to-diagnose failure for the person on the other
+        # end, so this should never fail quietly.
+        def _extract_json_dict(value):
+            if isinstance(value, dict):
+                return value
+            if isinstance(value, str):
+                try:
+                    parsed = json.loads(value)
+                except (TypeError, ValueError):
+                    return None
+                return parsed if isinstance(parsed, dict) else None
+            return None
+
+        sent_file_ref = None
+        send_file_called = False
+        send_file_parsed_ok_false = False
+        for p in tool_parts:
+            name = (p.get("tool") or p.get("toolName") or "").lower()
+            if not name.endswith("send_file"):
+                continue
+            send_file_called = True
+
+            candidates = [
+                p.get("result"),
+                p.get("output"),
+                p.get("state", {}).get("output") if isinstance(p.get("state"), dict) else None,
+                p.get("state", {}).get("result") if isinstance(p.get("state"), dict) else None,
+                p.get("metadata", {}).get("output") if isinstance(p.get("metadata"), dict) else None,
+            ]
+
+            parsed_anything = False
+            for raw in candidates:
+                result_val = _extract_json_dict(raw)
+                if result_val is None:
+                    continue
+                parsed_anything = True
+                if result_val.get("ok") and result_val.get("id"):
+                    sent_file_ref = {"id": result_val["id"], "filename": result_val.get("filename", "file")}
+                    break
+                if result_val.get("ok") is False:
+                    # A legitimate "no match" / "ambiguous" / "error"
+                    # response from send_file — not a schema mismatch,
+                    # just nothing to attach.
+                    send_file_parsed_ok_false = True
+                    break
+
+            if not parsed_anything:
+                print(
+                    "WARNING: send_file tool ran but no parseable JSON result "
+                    "was found on its tool part (checked result/output/"
+                    f"state/metadata). Raw part keys: {list(p.keys())}. "
+                    "Falling back to the daemon's own staged-file record for "
+                    "this tier.",
+                    flush=True,
+                )
+
+        # Fallback: if send_file demonstrably ran but its result couldn't be
+        # parsed from OpenCode's response at all (schema mismatch, not a
+        # legitimate empty/ambiguous result), check whether a file was
+        # actually staged during this exact turn via the daemon's own
+        # in-process record (see _record_staged_file /
+        # _pop_recently_staged_file). This works regardless of how
+        # OpenCode shapes tool-result JSON, since it never depends on
+        # parsing that JSON at all.
+        if (
+            sent_file_ref is None
+            and send_file_called
+            and not send_file_parsed_ok_false
+        ):
+            fallback = _pop_recently_staged_file(tier)
+            if fallback:
+                sent_file_ref = fallback
+                print(
+                    f"INFO: recovered send_file result via staged-file "
+                    f"fallback for tier {tier}: {fallback['filename']}",
+                    flush=True,
+                )
+
+        return response_text or "(no response)", tool_used, obsidian_write, view_screen_used, sent_file_ref
 
     except subprocess.TimeoutExpired:
-        return "Request timed out — the AI took too long to respond.", False, False, False
+        return "Request timed out — the AI took too long to respond.", False, False, False, None
     except Exception as e:
         print(f"ERROR: call_opencode failed: {e}", flush=True)
-        return "Failed to reach Perla's brain.", False, False, False
+        return "Failed to reach Perla's brain.", False, False, False, None
 
 
 def generate_tts(text):
@@ -1369,9 +1718,12 @@ def transcribe_audio(audio_path):
         return ""
 
 
-def log_request(input_text, response, tier, tool_used, source="remote"):
+def log_request(input_text, response, tier, tool_used, source="remote", sent_file=None):
     """Log to Obsidian vault. `source` distinguishes local vs remote in the
-    log so you can tell which surface a conversation came from."""
+    log so you can tell which surface a conversation came from.
+    `sent_file` (optional {"id", "filename"}) records a file Perla sent
+    this turn, so History can surface a download entry alongside the
+    text exchange."""
     tier_label = f"Tier {tier} ({source})"
     if tool_used:
         log_dir = os.path.join(PERLA_VAULT, "Command Log")
@@ -1385,7 +1737,10 @@ def log_request(input_text, response, tier, tool_used, source="remote"):
         with open(log_file, "a") as f:
             f.write(f"## {datetime.now().strftime('%H:%M')} — {tier_label}\n")
             f.write(f"- **Input:** {input_text}\n")
-            f.write(f"- **Response:** {response}\n\n")
+            f.write(f"- **Response:** {response}\n")
+            if sent_file:
+                f.write(f"- **File:** {sent_file['filename']} (id:{sent_file['id']})\n")
+            f.write("\n")
     except Exception as e:
         print(f"ERROR: logging failed: {e}", flush=True)
 
@@ -1395,6 +1750,7 @@ HISTORY_HEADER_RE = re.compile(
 )
 HISTORY_INPUT_RE = re.compile(r"^-\s+\*\*Input:\*\*\s?(.*)$")
 HISTORY_RESPONSE_RE = re.compile(r"^-\s+\*\*Response:\*\*\s?(.*)$")
+HISTORY_FILE_RE = re.compile(r"^-\s+\*\*File:\*\*\s?(.*)\s\(id:([0-9a-f]{32})\)\s*$")
 
 
 def list_history_days():
@@ -1430,7 +1786,7 @@ def _parse_log_file(path):
     pending_blanks = 0    # blank lines inside the block (paragraph breaks)
 
     def flush():
-        if current is not None and (current["input"] or current["response"]):
+        if current is not None and (current["input"] or current["response"] or current.get("file")):
             entries.append(current)
 
     for line in lines:
@@ -1444,6 +1800,7 @@ def _parse_log_file(path):
                 "source": source.strip(),
                 "input": "",
                 "response": "",
+                "file": None,
             }
             pending_field = None
             pending_blanks = 0
@@ -1463,6 +1820,13 @@ def _parse_log_file(path):
         if response_m:
             current["response"] = response_m.group(1)
             pending_field = "response"
+            pending_blanks = 0
+            continue
+
+        file_m = HISTORY_FILE_RE.match(line)
+        if file_m:
+            current["file"] = {"filename": file_m.group(1), "id": file_m.group(2)}
+            pending_field = None
             pending_blanks = 0
             continue
 
@@ -1806,7 +2170,7 @@ def process_message(message, tier, source, confirm=False, user_image_paths=None,
             vision_image_path, capture_error = capture_screenshot()
             if capture_error:
                 log_request(message, capture_error, tier, False, source=source)
-                return capture_error, False, False, None, None
+                return capture_error, False, False, None, None, None
 
     attach_paths = user_image_paths if user_image_paths else ([vision_image_path] if vision_image_path else None)
 
@@ -1814,19 +2178,19 @@ def process_message(message, tier, source, confirm=False, user_image_paths=None,
         if tier == 2 and is_destructive(message) and not confirm:
             return (
                 "About to execute a potentially destructive action. Confirm?",
-                False, True, message, None
+                False, True, message, None, None
             )
 
         sid = session_mgr.get_session(tier)
         if not sid:
-            return "OpenCode server unavailable.", False, False, None, None
+            return "OpenCode server unavailable.", False, False, None, None, None
 
         port = SERVER_PORT_T1 if tier == 1 else SERVER_PORT_T2
-        response_text, tool_used, obsidian_write, view_screen_used = call_opencode(
+        response_text, tool_used, obsidian_write, view_screen_used, sent_file_ref = call_opencode(
             sid, port, message, tier, image_path=attach_paths
         )
 
-        log_request(message, response_text, tier, tool_used, source=source)
+        log_request(message, response_text, tier, tool_used, source=source, sent_file=sent_file_ref)
 
         if is_memory_worthy(message) and not obsidian_write:
             log_memory_mismatch(message, response_text, tier, source=source)
@@ -1848,7 +2212,7 @@ def process_message(message, tier, source, confirm=False, user_image_paths=None,
         # image_path returned to the caller is the CAPTURED screenshot (which
         # the web UI re-serves via /api/screenshot); user uploads are instead
         # echoed client-side from their data URLs, so nothing to re-serve.
-        return response_text, tool_used, False, None, display_image_path
+        return response_text, tool_used, False, None, display_image_path, sent_file_ref
     finally:
         if user_image_paths:
             for p in user_image_paths:
@@ -2030,6 +2394,22 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_file(screenshot_path, "image/png")
             return
 
+        if path.startswith("/api/files/"):
+            if not self.check_auth():
+                return
+            parts = [p for p in path[len("/api/files/"):].split("/") if p]
+            if len(parts) != 2 or not re.match(r'^[0-9a-f]{32}$', parts[0]):
+                self.send_error(400)
+                return
+            file_id, filename = parts
+            file_path = os.path.join(PERLA_SENT_FILES_DIR, file_id, os.path.basename(filename))
+            if not os.path.isfile(file_path):
+                self.send_error(404)
+                return
+            content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+            self.send_file(file_path, content_type)
+            return
+
         if path == "/api/history/days":
             if not self.check_auth():
                 return
@@ -2125,6 +2505,14 @@ class CompanionHandler(BaseHTTPRequestHandler):
 
         if path == "/api/internal/screenshot":
             self.handle_internal_screenshot()
+            return
+
+        if path == "/api/internal/send-file":
+            self.handle_internal_send_file()
+            return
+
+        if path == "/api/internal/list-files":
+            self.handle_internal_list_files()
             return
 
         if path == "/api/internal/system-action":
@@ -2276,7 +2664,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(403, {"error": tier_error})
             return
 
-        response_text, tool_used, confirm_required, action, image_path = process_message(
+        response_text, tool_used, confirm_required, action, image_path, sent_file = process_message(
             message, tier, source, confirm=confirm, user_image_paths=user_image_paths,
             text_attachments=text_attachments,
         )
@@ -2300,9 +2688,14 @@ class CompanionHandler(BaseHTTPRequestHandler):
             audio_url = f"/api/audio/{os.path.basename(audio_path)}" if audio_path else None
 
         image_url = f"/api/screenshot/{os.path.basename(image_path)}" if image_path else None
+        file_payload = (
+            {"url": f"/api/files/{sent_file['id']}/{sent_file['filename']}", "filename": sent_file["filename"]}
+            if sent_file else None
+        )
 
         self.send_json(200, {
             "text": response_text, "audio": audio_url, "tier": tier, "image": image_url,
+            "file": file_payload,
             # Non-fatal per-file rejections (unsupported type, too large,
             # not UTF-8, conversion failure, etc.) — surfaced alongside a
             # normal 200 response so the UI can show a small warning
@@ -2366,7 +2759,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(403, {"error": tier_error, "transcript": transcript})
             return
 
-        response_text, tool_used, confirm_required, action, image_path = process_message(
+        response_text, tool_used, confirm_required, action, image_path, sent_file = process_message(
             transcript, tier, source, confirm=False
         )
 
@@ -2376,6 +2769,10 @@ class CompanionHandler(BaseHTTPRequestHandler):
             audio_url = f"/api/audio/{os.path.basename(audio_path)}" if audio_path else None
 
         image_url = f"/api/screenshot/{os.path.basename(image_path)}" if image_path else None
+        file_payload = (
+            {"url": f"/api/files/{sent_file['id']}/{sent_file['filename']}", "filename": sent_file["filename"]}
+            if sent_file else None
+        )
 
         self.send_json(200, {
             "transcript": transcript,
@@ -2385,6 +2782,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
             "action": action,
             "tier": tier,
             "image": image_url,
+            "file": file_payload,
         })
 
     def handle_speak_local(self):
@@ -2444,6 +2842,69 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": "Captured the screen but couldn't read it back."})
             return
         self.send_json(200, {"image_base64": encoded, "mime": "image/png"})
+
+    def handle_internal_send_file(self):
+        """Local-only: resolve a filename/path query to a file and stage
+        it for download, backing the send_file MCP tool. All resolution
+        and validation logic lives in resolve_send_file/
+        stage_file_for_sending — this just proxies the HTTP shape, same
+        thin pattern as handle_internal_screenshot.
+
+        Also records the staged file against the calling tier (see
+        _record_staged_file) as a schema-independent fallback: if
+        call_opencode can't find a parseable result on OpenCode's own
+        tool-call JSON, it can still pick up the file that was
+        DEMONSTRABLY staged during this same turn via this side channel.
+        `tier` is supplied by the MCP server from its own PERLA_TIER env
+        var (set per-tier in the Nix config), not inferred here.
+        """
+        if self.get_source() != "local":
+            self.send_json(403, {"error": "local only"})
+            return
+        try:
+            body = json.loads(self.read_body())
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(400, {"error": "invalid JSON"})
+            return
+        resolved = resolve_send_file(body.get("query", ""))
+        if "error" in resolved:
+            self.send_json(200, {"ok": False, "error": resolved["error"]})
+            return
+        if "candidates" in resolved:
+            self.send_json(200, {
+                "ok": False,
+                "candidates": resolved["candidates"],
+                "note": resolved["note"],
+            })
+            return
+        file_id, filename, error = stage_file_for_sending(resolved["match"])
+        if error:
+            self.send_json(200, {"ok": False, "error": error})
+            return
+        try:
+            tier = int(body.get("tier", 0))
+        except (TypeError, ValueError):
+            tier = 0
+        if tier in (1, 2):
+            _record_staged_file(tier, file_id, filename)
+        self.send_json(200, {"ok": True, "id": file_id, "filename": filename})
+
+    def handle_internal_list_files(self):
+        """Local-only: list files under the default files directory (or an
+        allowlisted subfolder), backing the list_files MCP tool."""
+        if self.get_source() != "local":
+            self.send_json(403, {"error": "local only"})
+            return
+        try:
+            body = json.loads(self.read_body())
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(400, {"error": "invalid JSON"})
+            return
+        entries, error = list_files_in(body.get("dir"))
+        if error:
+            self.send_json(200, {"ok": False, "error": error})
+            return
+        self.send_json(200, {"ok": True, "entries": entries})
 
     def handle_internal_system_action(self):
         """Local-only: run one allowlisted system action, backing the
@@ -2653,6 +3114,12 @@ def cleanup_old_files(directory, max_age_seconds, check_interval=300):
 def main():
     os.makedirs(PERLA_AUDIO_DIR, exist_ok=True)
     os.makedirs(PERLA_SCREENSHOT_DIR, exist_ok=True)
+    os.makedirs(PERLA_FILES_DIR, exist_ok=True)
+    # PERLA_SENT_FILES_DIR is deliberately NOT swept by cleanup_old_files
+    # the way screenshots/audio are — a file Perla sent should stay
+    # downloadable for as long as it appears in History (days/weeks), not
+    # vanish after 15 minutes like a screenshot.
+    os.makedirs(PERLA_SENT_FILES_DIR, exist_ok=True)
 
     if not GATE_PASSWORD:
         print("FATAL: PERLA_GATE_PASSWORD not set. Exiting.", flush=True)

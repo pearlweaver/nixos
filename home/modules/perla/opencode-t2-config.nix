@@ -54,6 +54,14 @@ builtins.toJSON {
         PERLA_COMPANION_PORT = "8443";
       };
     };
+    file = {
+      type = "local";
+      command = [ "${homeDirectory}/.local/bin/perla-file-mcp" ];
+      env = {
+        PERLA_COMPANION_PORT = "8443";
+        PERLA_TIER = "2";
+      };
+    };
     reminders = {
       type = "local";
       command = [ "${homeDirectory}/.local/bin/perla-reminders-mcp" ];

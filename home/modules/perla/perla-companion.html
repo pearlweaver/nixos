@@ -3221,6 +3221,78 @@
     return entry;
   }
 
+  // Sent-file entries: a downloadable file chip (reusing the same
+  // buildFileChip used for uploads), with the caption text (if any)
+  // above it. Unlike addImageEntry, there's nothing to fetch/preview
+  // here up front — the download itself happens on click via an
+  // authenticated fetch + blob URL, same auth pattern as screenshot/
+  // audio, since the endpoint requires a bearer token a bare <a href>
+  // can't carry.
+  function addSentFileEntry(fileInfo, captionText, forTier) {
+    const targetTier = forTier !== undefined ? forTier : activeTier;
+    const entry = document.createElement("div");
+    entry.className = "entry entry-perla";
+    const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    if (captionText) {
+      const bubble = document.createElement("div");
+      bubble.className = "entry-bubble";
+      const p = document.createElement("p");
+      p.textContent = captionText;
+      bubble.appendChild(p);
+      entry.appendChild(bubble);
+    }
+
+    const attachments = document.createElement("div");
+    attachments.className = "entry-attachments";
+    const row = document.createElement("div");
+    row.className = "attach-file-row";
+    // buildFileChip wires its own click handler (open the text viewer)
+    // before returning the node — clone it to strip that listener so
+    // only our download handler fires, since a sent file should
+    // download on click, not open the (empty, for a sent file) text
+    // viewer.
+    const chip = buildFileChip(fileInfo.filename, null, null);
+    const freshChip = chip.cloneNode(true);
+    freshChip.addEventListener("click", () => downloadSentFile(fileInfo));
+    row.appendChild(freshChip);
+    attachments.appendChild(row);
+    entry.appendChild(attachments);
+
+    const meta = document.createElement("div");
+    meta.className = "entry-meta";
+    meta.innerHTML = `<span class="entry-time">${time}</span>`;
+    entry.appendChild(meta);
+    if (captionText) addCopyButton(entry, captionText);
+
+    const wentLive = deliverEntry(entry, targetTier);
+    if (wentLive) {
+      output.scrollIntoView({ block: "end" });
+      entry.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+    return entry;
+  }
+
+  async function downloadSentFile(fileInfo) {
+    if (!fileInfo || !fileInfo.url) return;
+    try {
+      const url = fileInfo.url.startsWith("http") ? fileInfo.url : CONFIG.ENDPOINT + fileInfo.url;
+      const res = await fetch(url, { headers: { Authorization: "Bearer " + authToken } });
+      if (!res.ok) throw new Error("file fetch failed");
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = fileInfo.filename || "file";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+    } catch (e) {
+      addEntry("system", "", `Couldn't download ${fileInfo.filename || "that file"}.`);
+    }
+  }
+
   // ---------- Image lightbox (pan + zoom + download) ----------
   const lightbox = document.getElementById("lightbox");
   const lightboxWrap = document.getElementById("lightboxWrap");
@@ -4876,6 +4948,8 @@
       }
       if (data.image) {
         await addImageEntry("Perla", data.image, data.text || "", requestTier);
+      } else if (data.file) {
+        addSentFileEntry(data.file, data.text || "", requestTier);
       } else {
         const entry = addEntry("perla", "Perla", data.text || "(no response)", requestTier);
         if (data.audio && isViewingTierChat(requestTier)) {
@@ -4992,6 +5066,8 @@
       if (data.transcript) addEntry("user", "You", data.transcript, requestTier);
       if (data.image) {
         await addImageEntry("Perla", data.image, data.text || "", requestTier);
+      } else if (data.file) {
+        addSentFileEntry(data.file, data.text || "", requestTier);
       } else {
         const entry = addEntry("perla", "Perla", data.text || "(no response)", requestTier);
         if (data.audio && isViewingTierChat(requestTier)) {
@@ -5142,6 +5218,17 @@
       const kind = isTier0 ? "perla entry-tier0" : "perla";
       addHistoryEntry(kind, "Perla", e.response, e.time);
     }
+    if (e.file) {
+      // History's file info only carries {filename, id} (from the log
+      // line), not a ready-to-fetch URL — build the same URL shape the
+      // live response would have carried so downloadSentFile works
+      // identically for a replayed entry.
+      const fileInfo = {
+        filename: e.file.filename,
+        url: `/api/files/${e.file.id}/${e.file.filename}`,
+      };
+      addHistoryFileEntry(fileInfo, e.time);
+    }
   }
 
   function addHistoryEntry(kind, label, text, timeStr) {
@@ -5159,6 +5246,24 @@
     } else {
       entry.querySelector("p").textContent = text;
     }
+    output.appendChild(entry);
+    return entry;
+  }
+
+  function addHistoryFileEntry(fileInfo, timeStr) {
+    const entry = document.createElement("div");
+    entry.className = "entry entry-perla";
+    entry.innerHTML = `<div class="entry-meta"><span class="entry-time">${timeStr || ""}</span></div>`;
+    const attachments = document.createElement("div");
+    attachments.className = "entry-attachments";
+    const row = document.createElement("div");
+    row.className = "attach-file-row";
+    const chip = buildFileChip(fileInfo.filename, null, null);
+    const freshChip = chip.cloneNode(true);
+    freshChip.addEventListener("click", () => downloadSentFile(fileInfo));
+    row.appendChild(freshChip);
+    attachments.appendChild(row);
+    entry.insertBefore(attachments, entry.firstChild);
     output.appendChild(entry);
     return entry;
   }
