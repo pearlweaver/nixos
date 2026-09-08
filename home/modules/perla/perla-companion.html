@@ -1664,6 +1664,218 @@
     padding: 4px 0 18px;
   }
 
+  /* ---------- Drive (Google-Drive-like file browser) ---------- */
+  .drive-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
+    padding: 10px 18px calc(24px + var(--safe-bottom));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .drive-panel[hidden] { display: none; }
+
+  .drive-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding-bottom: 10px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--rule-faint);
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 2;
+  }
+
+  .drive-breadcrumbs {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px;
+    min-width: 0;
+    font-size: 14px;
+    color: var(--ink-dim);
+  }
+  .drive-crumb {
+    background: transparent;
+    border: none;
+    color: var(--ink-dim);
+    font-family: var(--font-serif);
+    font-size: 14px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .drive-crumb:hover { color: var(--brass-bright); background: rgba(201,123,141,0.08); }
+  .drive-crumb.current { color: var(--ink); font-weight: 600; cursor: default; }
+  .drive-crumb.current:hover { background: transparent; }
+  .drive-crumb-sep { color: var(--ink-faint); font-size: 12px; padding: 0 1px; }
+
+  .drive-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  .drive-new-folder-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-panel-2) 100%);
+    border: 1px solid var(--brass-dim);
+    border-radius: 12px;
+    animation: qa-feedback-in 0.18s ease;
+  }
+  .drive-new-folder-row[hidden] { display: none; }
+  .drive-new-folder-row input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    color: var(--ink);
+    padding: 9px 12px;
+    font-size: 0.9rem;
+    font-family: var(--font-serif);
+    outline: none;
+  }
+  .drive-new-folder-row input:focus { border-color: var(--brass); }
+
+  .drive-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px;
+  }
+
+  .drive-item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 14px 8px 10px;
+    border-radius: 12px;
+    border: 1px solid var(--rule);
+    background: linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-panel-2) 100%);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+  }
+  .drive-item:hover {
+    border-color: var(--brass-dim);
+    transform: translateY(-2px);
+  }
+  .drive-item:active { transform: translateY(0) scale(0.98); }
+
+  .drive-item-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: rgba(201,123,141,0.08);
+    color: var(--brass-bright);
+  }
+  .drive-item.is-folder .drive-item-icon { color: #e4c26a; }
+
+  .drive-item-name {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+    text-align: center;
+    color: var(--ink);
+  }
+  .drive-item-meta {
+    font-size: 10.5px;
+    color: var(--ink-faint);
+  }
+
+  .drive-item-menu-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(23,19,26,0.55);
+    color: var(--ink-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+  }
+  .drive-item:hover .drive-item-menu-btn,
+  .drive-item-menu-btn.open { opacity: 1; }
+  .drive-item-menu-btn:hover { color: var(--brass-bright); background: rgba(201,123,141,0.2); }
+  @media (hover: none) {
+    .drive-item-menu-btn { opacity: 1; }
+  }
+
+  .drive-item-menu {
+    position: fixed;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    padding: 6px;
+    min-width: 170px;
+    background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.45);
+  }
+  .drive-item-menu[hidden] { display: none; }
+  .drive-item-menu button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 13.5px;
+    text-align: left;
+    padding: 9px 10px;
+    cursor: pointer;
+  }
+  .drive-item-menu button:hover { background: rgba(201,123,141,0.1); }
+  .drive-item-menu button.danger { color: var(--wax-bright); }
+  .drive-item-menu button.danger:hover { background: rgba(184,69,47,0.12); }
+  .drive-item-menu-icon { width: 15px; height: 15px; flex-shrink: 0; display: flex; }
+
+  .drive-empty {
+    grid-column: 1 / -1;
+    color: var(--ink-faint);
+    font-style: italic;
+    font-size: 14px;
+    text-align: center;
+    padding: 30px 0;
+  }
+
+  .drive-dropzone-active {
+    outline: 2px dashed var(--brass);
+    outline-offset: -4px;
+    background: rgba(201,123,141,0.05);
+    border-radius: 12px;
+  }
+
   .reminder-collapsible summary {
     cursor: pointer;
     list-style: none;
@@ -2189,6 +2401,10 @@
         <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>
         <span class="menu-item-label">Reminders</span>
       </button>
+      <button id="driveBtn" class="menu-item">
+        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><path d="M9 3H4a1 1 0 0 0-1 1v3.5h6.5L9 3z"/><path d="M3 8.5V18a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1H10L9 6H3.5"/></svg></span>
+        <span class="menu-item-label">Drive</span>
+      </button>
       <button id="historyBtn" class="menu-item">
         <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="19" height="19"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
         <span class="menu-item-label">History</span>
@@ -2220,6 +2436,28 @@
 
     <div id="remindersBar" class="dropdown-panel" hidden>
       <span id="remindersStatus" class="panel-status"></span>
+    </div>
+
+    <div id="drivePanel" class="drive-panel" hidden>
+      <div class="drive-toolbar">
+        <div id="driveBreadcrumbs" class="drive-breadcrumbs"></div>
+        <div class="drive-toolbar-actions">
+          <button id="driveNewFolderBtn" class="icon-btn" aria-label="New folder" title="New folder">
+            <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M2.5 6a2 2 0 0 1 2-2h4.5l1.6 2H17.5a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><line x1="11" y1="10.5" x2="11" y2="14.5"/><line x1="9" y1="12.5" x2="13" y2="12.5"/></svg>
+          </button>
+          <button id="driveUploadBtn" class="icon-btn" aria-label="Upload files" title="Upload">
+            <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M11 14V4"/><polyline points="6.5 8.5 11 4 15.5 8.5"/><path d="M4 14v3a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 18 17v-3"/></svg>
+          </button>
+        </div>
+      </div>
+      <input id="driveUploadInput" type="file" multiple hidden>
+      <div id="driveNewFolderRow" class="drive-new-folder-row" hidden>
+        <input id="driveNewFolderInput" type="text" placeholder="Folder name" autocomplete="off" />
+        <button id="driveNewFolderGo" class="qa-input-go">Create</button>
+        <button id="driveNewFolderCancel" class="qa-input-cancel" aria-label="Cancel">✕</button>
+      </div>
+      <div id="driveStatus" class="panel-status"></div>
+      <div id="driveGrid" class="drive-grid"></div>
     </div>
 
     <div id="quickActionsPanel" class="dropdown-panel" hidden>
@@ -2544,6 +2782,12 @@
     REMINDERS_PATH: "/api/reminders",
     QUICK_ACTION_PATH: "/api/quick-action",
     AVATAR_PATH: "/api/avatar",
+    DRIVE_LIST_PATH: "/api/drive/list",
+    DRIVE_MKDIR_PATH: "/api/drive/mkdir",
+    DRIVE_DELETE_PATH: "/api/drive/delete",
+    DRIVE_UPLOAD_PATH: "/api/drive/upload",
+    DRIVE_DOWNLOAD_PATH: "/api/drive/download",
+    DRIVE_ADD_TO_CHAT_PATH: "/api/drive/add-to-chat",
   };
 
   const GATE_PASSWORD = "goharumer"; // UX gate only — short, human-typeable
@@ -3811,6 +4055,7 @@
     if (activeOverlay === "history") closeHistoryPanel();
     else if (activeOverlay === "reminders") closeRemindersPanel();
     else if (activeOverlay === "quick-actions") closeQuickActionsPanel();
+    else if (activeOverlay === "drive") closeDrivePanel();
 
     if (wasSameTier && !hadOverlay) return; // nothing actually changed
 
@@ -5130,6 +5375,7 @@
     }
     closeRemindersPanel();
     closeQuickActionsPanel();
+    closeDrivePanel();
 
     activeOverlay = "history";
     historyBtn.classList.add("active");
@@ -5292,6 +5538,7 @@
     }
     closeHistoryPanel();
     closeQuickActionsPanel();
+    closeDrivePanel();
 
     activeOverlay = "reminders";
     remindersBtn.classList.add("active");
@@ -5325,6 +5572,437 @@
       openRemindersPanel();
     }
   });
+
+  // ---------- Drive (full filesystem browser rooted at $HOME) ----------
+  // Unlike History/Reminders/Quick Actions (which repurpose `output` as
+  // their content area), Drive needs its own grid+toolbar layout, so it
+  // lives in a dedicated sibling panel (#drivePanel) that swaps places
+  // with .content-wrap entirely while open — same "one overlay at a time"
+  // rule as the others (closes History/Reminders/Quick Actions first),
+  // and still counts as activeOverlay="drive" so tier switching and the
+  // composer-mode logic treat it exactly like any other overlay. The
+  // server-side denylist (sensitive dotfiles, key/credential stores —
+  // see _drive_exclude_roots in perla-companion.py) is enforced entirely
+  // on the backend; the client has no knowledge of what's hidden and
+  // doesn't need any — an excluded path just never appears in a listing.
+  const driveBtn = document.getElementById("driveBtn");
+  const drivePanel = document.getElementById("drivePanel");
+  const contentWrap = document.querySelector(".content-wrap");
+  const driveBreadcrumbs = document.getElementById("driveBreadcrumbs");
+  const driveGrid = document.getElementById("driveGrid");
+  const driveStatus = document.getElementById("driveStatus");
+  const driveNewFolderBtn = document.getElementById("driveNewFolderBtn");
+  const driveNewFolderRow = document.getElementById("driveNewFolderRow");
+  const driveNewFolderInput = document.getElementById("driveNewFolderInput");
+  const driveNewFolderGo = document.getElementById("driveNewFolderGo");
+  const driveNewFolderCancel = document.getElementById("driveNewFolderCancel");
+  const driveUploadBtn = document.getElementById("driveUploadBtn");
+  const driveUploadInput = document.getElementById("driveUploadInput");
+
+  let driveCurrentPath = "";     // "" = root, else "Folder/Sub"
+  let driveOpenMenuEl = null;    // currently-open per-item context menu, if any
+
+  // Extensions the composer can actually do something useful with once
+  // added to chat — mirrors the server's DRIVE_ADD_TO_CHAT_EXTENSIONS
+  // (TEXT_UPLOAD_EXTENSIONS ∪ DOCUMENT_UPLOAD_EXTENSIONS ∪ images). Kept
+  // here purely so the "Add to chat" menu item can be hidden for files
+  // that would just 400 — the server re-validates independently either way.
+  const DRIVE_CHAT_EXTENSIONS = new Set([
+    ...TEXT_FILE_EXTENSIONS,
+    ...DOCUMENT_FILE_EXTENSIONS,
+    ".png", ".jpg", ".jpeg",
+  ]);
+
+  function driveFileIcon(ext) {
+    if (ext === ".png" || ext === ".jpg" || ext === ".jpeg" || ext === ".gif" || ext === ".webp") {
+      return '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><rect x="3" y="4" width="16" height="14" rx="2"/><circle cx="8" cy="9.5" r="1.6"/><path d="M3 15.5l4.5-4.5a1.5 1.5 0 0 1 2.1 0L15 16.5"/></svg>';
+    }
+    return GENERIC_FILE_ICON_SVG;
+  }
+
+  function driveFolderIcon() {
+    return '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><path d="M2.5 6a2 2 0 0 1 2-2h4.5l1.6 2H17.5a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>';
+  }
+
+  function driveFormatSize(bytes) {
+    if (bytes == null) return "";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  function drivePathSegments(path) {
+    return path ? path.split("/").filter(Boolean) : [];
+  }
+
+  function renderDriveBreadcrumbs(path) {
+    driveBreadcrumbs.innerHTML = "";
+    const rootBtn = document.createElement("button");
+    rootBtn.className = "drive-crumb" + (path === "" ? " current" : "");
+    rootBtn.textContent = "Drive";
+    rootBtn.disabled = path === "";
+    rootBtn.addEventListener("click", () => loadDrivePath(""));
+    driveBreadcrumbs.appendChild(rootBtn);
+
+    const segments = drivePathSegments(path);
+    segments.forEach((seg, i) => {
+      const sep = document.createElement("span");
+      sep.className = "drive-crumb-sep";
+      sep.textContent = "›";
+      driveBreadcrumbs.appendChild(sep);
+
+      const isLast = i === segments.length - 1;
+      const crumb = document.createElement("button");
+      crumb.className = "drive-crumb" + (isLast ? " current" : "");
+      crumb.textContent = seg;
+      crumb.disabled = isLast;
+      const targetPath = segments.slice(0, i + 1).join("/");
+      crumb.addEventListener("click", () => loadDrivePath(targetPath));
+      driveBreadcrumbs.appendChild(crumb);
+    });
+  }
+
+  function closeDriveItemMenu() {
+    if (driveOpenMenuEl) {
+      driveOpenMenuEl.remove();
+      driveOpenMenuEl = null;
+    }
+  }
+
+  function openDriveItemMenu(anchorBtn, entry, entryPath) {
+    closeDriveItemMenu();
+    const menu = document.createElement("div");
+    menu.className = "drive-item-menu";
+
+    const ext = textFileExtension(entry.name);
+    const canAddToChat = !entry.is_dir && DRIVE_CHAT_EXTENSIONS.has(ext);
+
+    if (!entry.is_dir) {
+      const dl = document.createElement("button");
+      dl.innerHTML = '<span class="drive-item-menu-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3v12"/><polyline points="6 10 11 15 16 10"/><path d="M4 18h14"/></svg></span><span>Download</span>';
+      dl.addEventListener("click", () => { closeDriveItemMenu(); driveDownload(entryPath, entry.name); });
+      menu.appendChild(dl);
+    }
+
+    if (canAddToChat) {
+      const add = document.createElement("button");
+      add.innerHTML = '<span class="drive-item-menu-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4v14"/><path d="M4 11h14"/></svg></span><span>Add to chat</span>';
+      add.addEventListener("click", () => { closeDriveItemMenu(); driveAddToChat(entryPath, entry.name); });
+      menu.appendChild(add);
+    }
+
+    const del = document.createElement("button");
+    del.className = "danger";
+    del.innerHTML = '<span class="drive-item-menu-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 19 6"/><path d="M8 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V6h10z"/></svg></span><span>Delete</span>';
+    del.addEventListener("click", () => { closeDriveItemMenu(); driveDeleteEntry(entryPath, entry.name); });
+    menu.appendChild(del);
+
+    document.body.appendChild(menu);
+    const rect = anchorBtn.getBoundingClientRect();
+    const menuWidth = menu.offsetWidth || 170;
+    let left = Math.min(rect.left, window.innerWidth - menuWidth - 12);
+    left = Math.max(left, 12);
+    menu.style.left = left + "px";
+    menu.style.top = (rect.bottom + 4) + "px";
+
+    anchorBtn.classList.add("open");
+    driveOpenMenuEl = menu;
+  }
+
+  document.addEventListener("click", (e) => {
+    if (!driveOpenMenuEl) return;
+    if (driveOpenMenuEl.contains(e.target) || e.target.closest(".drive-item-menu-btn")) return;
+    document.querySelectorAll(".drive-item-menu-btn.open").forEach((b) => b.classList.remove("open"));
+    closeDriveItemMenu();
+  });
+
+  function buildDriveItemCard(entry) {
+    const entryPath = driveCurrentPath ? driveCurrentPath + "/" + entry.name : entry.name;
+    const card = document.createElement("div");
+    card.className = "drive-item" + (entry.is_dir ? " is-folder" : "");
+
+    const icon = document.createElement("div");
+    icon.className = "drive-item-icon";
+    icon.innerHTML = entry.is_dir ? driveFolderIcon() : driveFileIcon(textFileExtension(entry.name));
+    card.appendChild(icon);
+
+    const name = document.createElement("div");
+    name.className = "drive-item-name";
+    name.textContent = entry.name;
+    name.title = entry.name;
+    card.appendChild(name);
+
+    if (!entry.is_dir) {
+      const meta = document.createElement("div");
+      meta.className = "drive-item-meta";
+      meta.textContent = driveFormatSize(entry.size);
+      card.appendChild(meta);
+    }
+
+    const menuBtn = document.createElement("button");
+    menuBtn.className = "drive-item-menu-btn";
+    menuBtn.setAttribute("aria-label", "More actions");
+    menuBtn.innerHTML = '<svg viewBox="0 0 22 22" fill="currentColor" width="13" height="13"><circle cx="11" cy="5" r="1.6"/><circle cx="11" cy="11" r="1.6"/><circle cx="11" cy="17" r="1.6"/></svg>';
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (driveOpenMenuEl && menuBtn.classList.contains("open")) {
+        menuBtn.classList.remove("open");
+        closeDriveItemMenu();
+        return;
+      }
+      document.querySelectorAll(".drive-item-menu-btn.open").forEach((b) => b.classList.remove("open"));
+      openDriveItemMenu(menuBtn, entry, entryPath);
+    });
+    card.appendChild(menuBtn);
+
+    card.addEventListener("click", (e) => {
+      if (e.target.closest(".drive-item-menu-btn")) return;
+      if (entry.is_dir) {
+        loadDrivePath(entryPath);
+      } else {
+        openDriveItemMenu(menuBtn, entry, entryPath);
+      }
+    });
+
+    return card;
+  }
+
+  async function loadDrivePath(path) {
+    closeDriveItemMenu();
+    driveCurrentPath = path || "";
+    renderDriveBreadcrumbs(driveCurrentPath);
+    driveNewFolderRow.hidden = true;
+    driveGrid.innerHTML = "";
+    driveStatus.textContent = "Loading…";
+    try {
+      const res = await fetch(
+        CONFIG.ENDPOINT + CONFIG.DRIVE_LIST_PATH + "?path=" + encodeURIComponent(driveCurrentPath),
+        { headers: { Authorization: "Bearer " + authToken } }
+      );
+      if (res.status === 401) { relockSession(); return; }
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "failed");
+      driveStatus.textContent = "";
+      if (data.entries.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "drive-empty";
+        empty.textContent = "This folder is empty.";
+        driveGrid.appendChild(empty);
+        return;
+      }
+      data.entries.forEach((entry) => driveGrid.appendChild(buildDriveItemCard(entry)));
+    } catch (e) {
+      driveStatus.textContent = "Couldn't load this folder: " + (e.message || "unknown error");
+    }
+  }
+
+  function closeDrivePanel() {
+    if (activeOverlay !== "drive") return;
+    activeOverlay = null;
+    closeDriveItemMenu();
+    driveBtn.classList.remove("active");
+    drivePanel.hidden = true;
+    contentWrap.hidden = false;
+    updateTierButtonHighlight();
+    updateComposerMode();
+  }
+
+  function openDrivePanel() {
+    if (!CONFIG.ENDPOINT) {
+      addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+      return;
+    }
+    closeHistoryPanel();
+    closeRemindersPanel();
+    closeQuickActionsPanel();
+
+    activeOverlay = "drive";
+    driveBtn.classList.add("active");
+    updateTierButtonHighlight();
+    contentWrap.hidden = true;
+    drivePanel.hidden = false;
+    updateComposerMode();
+    loadDrivePath("");
+  }
+
+  driveBtn.addEventListener("click", () => {
+    closeAppMenu();
+    if (activeOverlay === "drive") {
+      closeDrivePanel();
+    } else {
+      openDrivePanel();
+    }
+  });
+
+  driveNewFolderBtn.addEventListener("click", () => {
+    driveNewFolderRow.hidden = !driveNewFolderRow.hidden;
+    if (!driveNewFolderRow.hidden) {
+      driveNewFolderInput.value = "";
+      driveNewFolderInput.focus();
+    }
+  });
+  driveNewFolderCancel.addEventListener("click", () => { driveNewFolderRow.hidden = true; });
+  driveNewFolderInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") driveNewFolderGo.click();
+    if (e.key === "Escape") driveNewFolderRow.hidden = true;
+  });
+  driveNewFolderGo.addEventListener("click", async () => {
+    const name = driveNewFolderInput.value.trim();
+    if (!name) return;
+    driveStatus.textContent = "Creating folder…";
+    try {
+      const res = await fetch(CONFIG.ENDPOINT + CONFIG.DRIVE_MKDIR_PATH, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
+        body: JSON.stringify({ path: driveCurrentPath, name }),
+      });
+      if (res.status === 401) { relockSession(); return; }
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "failed");
+      driveNewFolderRow.hidden = true;
+      await loadDrivePath(driveCurrentPath);
+    } catch (e) {
+      driveStatus.textContent = "Couldn't create folder: " + (e.message || "unknown error");
+    }
+  });
+
+  driveUploadBtn.addEventListener("click", () => driveUploadInput.click());
+  driveUploadInput.addEventListener("change", () => {
+    driveUploadFiles(driveUploadInput.files);
+    driveUploadInput.value = "";
+  });
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("couldn't read " + (file.name || "file")));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function driveUploadFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+    driveStatus.textContent = `Uploading ${files.length} file${files.length === 1 ? "" : "s"}…`;
+    try {
+      const payload = [];
+      for (const file of files) {
+        const dataUrl = await readFileAsDataUrl(file);
+        payload.push({ data: dataUrl, filename: file.name });
+      }
+      const res = await fetch(CONFIG.ENDPOINT + CONFIG.DRIVE_UPLOAD_PATH, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
+        body: JSON.stringify({ path: driveCurrentPath, files: payload }),
+      });
+      if (res.status === 401) { relockSession(); return; }
+      const data = await res.json();
+      if (!data.ok && (!data.saved || data.saved.length === 0)) {
+        throw new Error((data.errors && data.errors.join("; ")) || "upload failed");
+      }
+      driveStatus.textContent = data.errors ? "Some files were skipped: " + data.errors.join("; ") : "";
+      await loadDrivePath(driveCurrentPath);
+    } catch (e) {
+      driveStatus.textContent = "Upload failed: " + (e.message || "unknown error");
+    }
+  }
+
+  // Drag-and-drop upload onto the grid — a very Drive-like affordance,
+  // additive to the explicit upload button (which remains the only path
+  // on touch devices with no drag source).
+  ["dragenter", "dragover"].forEach((evt) => {
+    driveGrid.addEventListener(evt, (e) => {
+      e.preventDefault();
+      driveGrid.classList.add("drive-dropzone-active");
+    });
+  });
+  ["dragleave", "drop"].forEach((evt) => {
+    driveGrid.addEventListener(evt, (e) => {
+      e.preventDefault();
+      driveGrid.classList.remove("drive-dropzone-active");
+    });
+  });
+  driveGrid.addEventListener("drop", (e) => {
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+      driveUploadFiles(e.dataTransfer.files);
+    }
+  });
+
+  async function driveDownload(entryPath, filename) {
+    try {
+      const url = CONFIG.ENDPOINT + CONFIG.DRIVE_DOWNLOAD_PATH + "?path=" + encodeURIComponent(entryPath);
+      const res = await fetch(url, { headers: { Authorization: "Bearer " + authToken } });
+      if (res.status === 401) { relockSession(); return; }
+      if (!res.ok) throw new Error("download failed");
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = filename || "file";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+    } catch (e) {
+      driveStatus.textContent = "Couldn't download " + (filename || "that file") + ".";
+    }
+  }
+
+  async function driveDeleteEntry(entryPath, name) {
+    if (!window.confirm(`Delete "${name}"? This can't be undone.`)) return;
+    driveStatus.textContent = "Deleting…";
+    try {
+      const res = await fetch(CONFIG.ENDPOINT + CONFIG.DRIVE_DELETE_PATH, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
+        body: JSON.stringify({ path: entryPath }),
+      });
+      if (res.status === 401) { relockSession(); return; }
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "failed");
+      await loadDrivePath(driveCurrentPath);
+    } catch (e) {
+      driveStatus.textContent = "Couldn't delete: " + (e.message || "unknown error");
+    }
+  }
+
+  // "Add to chat" hands the file to whichever tier's chat is currently
+  // active (same tier-targeting pattern submitText/handleRecordingComplete
+  // use) — the server reads the file straight off disk and feeds it
+  // through the exact same image/text-attachment pipelines a normal
+  // upload uses, so the reply lands in that tier's transcript exactly
+  // like any other message with an attachment would.
+  async function driveAddToChat(entryPath, filename) {
+    const requestTier = activeTier;
+    driveStatus.textContent = `Adding "${filename}" to Tier ${requestTier} chat…`;
+    try {
+      const res = await fetch(CONFIG.ENDPOINT + CONFIG.DRIVE_ADD_TO_CHAT_PATH, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
+        body: JSON.stringify({ path: entryPath, tier: requestTier }),
+      });
+      if (res.status === 401) { relockSession(); return; }
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "failed");
+
+      addEntry("user", "You", `[Added from Drive: ${filename}]`, requestTier);
+      if (data.image) {
+        await addImageEntry("Perla", data.image, data.text || "", requestTier);
+      } else if (data.file) {
+        addSentFileEntry(data.file, data.text || "", requestTier);
+      } else {
+        const entry = addEntry("perla", "Perla", data.text || "(no response)", requestTier);
+        if (data.audio && isViewingTierChat(requestTier)) {
+          playAudio(data.audio);
+          addReplayButton(entry, data.audio);
+        }
+      }
+      driveStatus.textContent = `Added to Tier ${requestTier} chat.`;
+    } catch (e) {
+      driveStatus.textContent = "Couldn't add to chat: " + (e.message || "unknown error");
+    }
+  }
 
   // ---------- Quick Actions (deterministic, no-LLM commands) ----------
   // Each button here calls /api/quick-action directly — never through
@@ -5427,6 +6105,7 @@
     }
     closeHistoryPanel();
     closeRemindersPanel();
+    closeDrivePanel();
 
     activeOverlay = "quick-actions";
     quickActionsBtn.classList.add("active");
@@ -5899,6 +6578,8 @@
       closeRemindersPanel();
     } else if (activeOverlay === "quick-actions") {
       closeQuickActionsPanel();
+    } else if (activeOverlay === "drive") {
+      closeDrivePanel();
     }
     if (!output.querySelector(".entry")) return;
     if (!window.confirm("Clear this conversation?")) return;

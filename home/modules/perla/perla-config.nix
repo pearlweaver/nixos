@@ -49,5 +49,10 @@
       ".envrc"
       "Documents/Obsidian/PerlaNew/Memory/Long-Term"
     ];
+    # NOTE: consumed by perla-companion.py's Drive feature (a full $HOME
+    # filesystem browser) via PERLA_FS_READ_EXCLUDE, colon-joined at the
+    # env-var layer same as extra_search_dirs above — every path here is
+    # hidden from Drive listings and blocked from direct navigation,
+    # upload-into, and delete, regardless of a leading dot.
   };
 }

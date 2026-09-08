@@ -650,6 +650,7 @@ in {
         "PERLA_GATE_PASSWORD=${cfg.gate_password}"
         "PERLA_FILES_DIR=${cfg.files_dir}"
         "PERLA_EXTRA_SEARCH_DIRS=${lib.concatStringsSep ":" cfg.extra_search_dirs}"
+        "PERLA_FS_READ_EXCLUDE=${lib.concatStringsSep ":" cfg.fs_read_exclude_paths}"
       ];
       ExecStart = "%h/.local/bin/perla-companion";
       Restart = "on-failure";

@@ -1,3 +1,3 @@
-# Version 26.9.8.1
+# Version 26.9.8.2
 
-- Trying to set up an mcp tool that allows Perla to send any file from system (WIP)
+- Adding a system file view in Perla web interface. I can view my home directory and download any file
