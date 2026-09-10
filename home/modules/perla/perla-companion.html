@@ -2182,7 +2182,8 @@
       margin: 0 0 10px;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
+      font-weight: 600;
     }
 
     .reminder-section-title.missed {
@@ -2193,43 +2194,63 @@
       color: var(--brass-bright);
     }
 
-    .reminder-row {
+    .reminder-list {
       display: flex;
-      align-items: flex-start;
+      flex-direction: column;
       gap: 10px;
-      padding: 10px 0;
-      border-bottom: 1px solid var(--rule-faint);
     }
 
-    .reminder-row:last-child {
-      border-bottom: none;
+    .reminder-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(32, 26, 35, 0.96), rgba(41, 33, 44, 0.96));
+      border: 1px solid var(--rule);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.2);
+      animation: qa-feedback-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .reminder-card.pending {
+      border-color: rgba(201, 123, 141, 0.34);
+    }
+
+    .reminder-card.overdue,
+    .reminder-card.missed {
+      border-color: rgba(184, 69, 47, 0.42);
+    }
+
+    .reminder-card.delivered {
+      border-color: rgba(127, 174, 106, 0.34);
     }
 
     .reminder-glyph {
       flex-shrink: 0;
-      width: 20px;
-      height: 20px;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
-      margin-top: 1px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--ink);
     }
 
     .reminder-glyph.pending {
       color: var(--brass-bright);
+      background: rgba(201, 123, 141, 0.14);
     }
 
-    .reminder-glyph.overdue {
-      color: var(--wax-bright);
-    }
-
+    .reminder-glyph.overdue,
     .reminder-glyph.missed {
       color: var(--wax-bright);
+      background: rgba(184, 69, 47, 0.18);
     }
 
     .reminder-glyph.delivered {
       color: #7fae6a;
+      background: rgba(127, 174, 106, 0.18);
     }
 
     .reminder-body {
@@ -2238,7 +2259,7 @@
     }
 
     .reminder-text {
-      font-size: 15px;
+      font-size: 14px;
       line-height: 1.4;
       color: var(--ink);
     }
@@ -2264,11 +2285,152 @@
       flex-shrink: 0;
     }
 
+    .reminder-dismiss {
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: var(--ink-faint);
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .reminder-dismiss:hover {
+      background: rgba(184, 69, 47, 0.18);
+      color: var(--wax-bright);
+    }
+
     .reminder-empty {
       color: var(--ink-faint);
       font-style: italic;
       font-size: 14px;
       padding: 4px 0 18px;
+    }
+
+    /* ------ Reminder composer (pinned above the list) ------ */
+    .reminder-composer {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 4px 2px 6px;
+      position: relative;
+    }
+
+    .reminder-composer-top {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    /* When collapsed the composer occupies no vertical space and the +
+       floats at the top-right beside the list's first section. */
+    .reminder-composer:has(.reminder-composer-menu[hidden]) {
+      padding: 0;
+    }
+
+    .reminder-composer:has(.reminder-composer-menu[hidden]) .reminder-composer-top {
+      position: absolute;
+      top: 8px;
+      right: 0;
+      z-index: 5;
+    }
+
+    .reminder-add-toggle {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 1px solid var(--brass-dim);
+      background: linear-gradient(180deg, rgba(201, 123, 141, 0.18), rgba(201, 123, 141, 0.06));
+      color: var(--brass-bright);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 0.18s ease, background 0.15s ease;
+    }
+
+    .reminder-add-toggle:hover {
+      background: linear-gradient(180deg, rgba(201, 123, 141, 0.28), rgba(201, 123, 141, 0.1));
+    }
+
+    .reminder-add-toggle.open {
+      transform: rotate(45deg);
+    }
+
+    .reminder-add-toggle svg {
+      display: block;
+    }
+
+    .reminder-composer-menu {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      animation: panel-drop 0.18s ease;
+    }
+
+    .reminder-composer-menu[hidden] {
+      display: none;
+    }
+
+    .reminder-composer input[type="text"] {
+      flex: 2 1 200px;
+      min-width: 0;
+      background: var(--bg-panel);
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      color: var(--ink);
+      padding: 9px 12px;
+      font-size: 0.9rem;
+      font-family: var(--font-serif);
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+
+    .reminder-composer input[type="datetime-local"],
+    .reminder-composer select {
+      flex: 0 1 auto;
+      background: var(--bg-panel);
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      color: var(--ink);
+      padding: 8px 10px;
+      font-size: 0.85rem;
+      font-family: var(--font-serif);
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+
+    .reminder-composer input[type="datetime-local"] {
+      color-scheme: dark;
+    }
+
+    .reminder-composer input:focus,
+    .reminder-composer select:focus {
+      border-color: var(--brass);
+    }
+
+    #reminderAddBtn {
+      flex-shrink: 0;
+      border-radius: 8px;
+      border: 1px solid var(--brass-dim);
+      background: linear-gradient(180deg, rgba(201, 123, 141, 0.18), rgba(201, 123, 141, 0.06));
+      color: var(--brass-bright);
+      font-family: var(--font-serif);
+      font-size: 0.85rem;
+      padding: 8px 14px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    #reminderAddBtn:disabled {
+      opacity: 0.5;
+      cursor: default;
     }
 
     /* ---------- System / File browser ---------- */
@@ -3677,6 +3839,31 @@
     </div>
 
     <div id="remindersBar" class="dropdown-panel" hidden>
+      <div class="reminder-composer">
+        <div class="reminder-composer-top">
+          <button id="reminderAddToggle" class="reminder-add-toggle" aria-label="New reminder"
+            aria-expanded="false" aria-controls="reminderComposerMenu" title="New reminder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round" width="16" height="16">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+        </div>
+        <div id="reminderComposerMenu" class="reminder-composer-menu" hidden>
+          <input id="reminderTextInput" type="text" placeholder="Remind me to…" autocomplete="off" />
+          <input id="reminderDueInput" type="datetime-local" aria-label="When" />
+          <select id="reminderRepeatInput" aria-label="Repeat">
+            <option value="">Once</option>
+            <option value="hourly">Hourly</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+          <button id="reminderAddBtn">Add</button>
+        </div>
+      </div>
       <span id="remindersStatus" class="panel-status"></span>
     </div>
 
@@ -3891,14 +4078,6 @@
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                 </svg></span>
               <span class="qa-label">Open Folder</span>
-            </button>
-            <button class="qa-btn" data-qa="list_reminders">
-              <span class="qa-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-                  stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
-                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                </svg></span>
-              <span class="qa-label">Reminders</span>
             </button>
           </div>
         </div>
@@ -7292,6 +7471,27 @@
       updateComposerMode();
     }
 
+    async function loadReminders() {
+      remindersStatus.textContent = "Loading…";
+      try {
+        const res = await fetch(CONFIG.ENDPOINT + CONFIG.REMINDERS_PATH, {
+          headers: { Authorization: "Bearer " + authToken },
+        });
+        if (res.status === 401) {
+          relockSession();
+          return;
+        }
+        if (!res.ok) throw new Error("failed");
+        const data = await res.json();
+        renderReminders(data);
+        remindersStatus.textContent = "";
+      } catch (e) {
+        output.innerHTML = "";
+        notify("error", "Couldn't load reminders.");
+        remindersStatus.textContent = "";
+      }
+    }
+
     async function openRemindersPanel() {
       if (!CONFIG.ENDPOINT) {
         notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
@@ -7309,21 +7509,7 @@
       updateComposerMode();
       liveOutputHTML = output.innerHTML;
       output.innerHTML = "";
-      remindersStatus.textContent = "Loading…";
-
-      try {
-        const res = await fetch(CONFIG.ENDPOINT + CONFIG.REMINDERS_PATH, {
-          headers: { Authorization: "Bearer " + authToken },
-        });
-        if (!res.ok) throw new Error("failed");
-        const data = await res.json();
-        renderReminders(data);
-        remindersStatus.textContent = "";
-      } catch (e) {
-        output.innerHTML = "";
-        notify("error", "Couldn't load reminders.");
-        remindersStatus.textContent = "";
-      }
+      await loadReminders();
     }
 
     remindersBtn.addEventListener("click", () => {
@@ -7334,6 +7520,106 @@
         openRemindersPanel();
       }
     });
+
+    // ---------- Reminders composer (manual add / cancel) ----------
+    const reminderTextInput = document.getElementById("reminderTextInput");
+    const reminderDueInput = document.getElementById("reminderDueInput");
+    const reminderRepeatInput = document.getElementById("reminderRepeatInput");
+    const reminderAddBtn = document.getElementById("reminderAddBtn");
+    const reminderAddToggle = document.getElementById("reminderAddToggle");
+    const reminderComposerMenu = document.getElementById("reminderComposerMenu");
+
+    function toggleReminderComposer(forceOpen) {
+      const willOpen = forceOpen !== undefined ? forceOpen : reminderComposerMenu.hidden;
+      reminderComposerMenu.hidden = !willOpen;
+      reminderAddToggle.classList.toggle("open", willOpen);
+      reminderAddToggle.setAttribute("aria-expanded", String(willOpen));
+      if (willOpen) reminderTextInput.focus();
+    }
+
+    reminderAddToggle.addEventListener("click", () => toggleReminderComposer());
+
+    async function addReminder() {
+      const text = reminderTextInput.value.trim();
+      const due = reminderDueInput.value;
+      if (!text) {
+        notify("error", "Write what to remind you about.");
+        return;
+      }
+      if (!due) {
+        notify("error", "Pick a date and time for the reminder.");
+        return;
+      }
+      reminderAddBtn.disabled = true;
+      try {
+        const res = await fetch(CONFIG.ENDPOINT + CONFIG.REMINDERS_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
+          body: JSON.stringify({
+            action: "create",
+            text: text,
+            due: due,
+            repeat: reminderRepeatInput.value || null,
+          }),
+        });
+        if (res.status === 401) {
+          relockSession();
+          return;
+        }
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          reminderTextInput.value = "";
+          reminderDueInput.value = "";
+          reminderRepeatInput.value = "";
+          notify("success", "Reminder set");
+          await loadReminders();
+          toggleReminderComposer(false);
+        } else {
+          notify("error", data.error || "Couldn't set that reminder.");
+        }
+      } catch (e) {
+        notify("error", "Couldn't set that reminder.");
+      } finally {
+        reminderAddBtn.disabled = false;
+      }
+    }
+
+    reminderAddBtn.addEventListener("click", addReminder);
+    reminderTextInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addReminder();
+      }
+    });
+    reminderDueInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addReminder();
+      }
+    });
+
+    async function cancelReminder(id) {
+      try {
+        const res = await fetch(CONFIG.ENDPOINT + CONFIG.REMINDERS_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
+          body: JSON.stringify({ action: "cancel", id: id }),
+        });
+        if (res.status === 401) {
+          relockSession();
+          return;
+        }
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          notify("success", "Reminder removed.");
+          await loadReminders();
+        } else {
+          notify("error", data.error || "Couldn't remove that reminder.");
+        }
+      } catch (e) {
+        notify("error", "Couldn't remove that reminder.");
+      }
+    }
 
     // ---------- Drive (full filesystem browser rooted at $HOME) ----------
     // Unlike History/Reminders/Quick Actions (which repurpose `output` as
@@ -8433,20 +8719,6 @@
       }
     }
 
-    function renderQaReminders(reminders) {
-      qaResult.innerHTML = "";
-      const pending = (reminders && reminders.pending) || [];
-      if (pending.length === 0) {
-        notify("success", "No pending reminders", "Your schedule is clear");
-        return;
-      }
-      const list = buildReminderList(pending, "pending",
-        (r) => r.overdue ? `Due ${formatReminderTime(r.due)}, waiting to fire` : `Due ${formatReminderTime(r.due)}`
-      );
-      qaResult.appendChild(list);
-      notify("success", `${pending.length} reminder${pending.length === 1 ? "" : "s"} found`, "Showing pending items below");
-    }
-
     async function runQuickAction(action, target) {
       if (!CONFIG.ENDPOINT) {
         notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
@@ -8492,17 +8764,6 @@
             setTimeout(() => btn.classList.remove("is-success"), 1200);
           }
           await renderQaImage(data.image);
-          dismissNotification(qaLoadingCard);
-          if (quickActionsPanel) quickActionsPanel.scrollTop = 0;
-          return;
-        }
-
-        if (data.reminders !== undefined) {
-          if (btn) {
-            btn.classList.add("is-success");
-            setTimeout(() => btn.classList.remove("is-success"), 1200);
-          }
-          renderQaReminders(data.reminders);
           dismissNotification(qaLoadingCard);
           if (quickActionsPanel) quickActionsPanel.scrollTop = 0;
           return;
@@ -8654,6 +8915,7 @@
 
     function buildReminderList(items, statusClass, metaFn) {
       const list = document.createElement("div");
+      list.className = "reminder-list";
       const glyphSVGs = {
         pending: '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
         missed: '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
@@ -8661,12 +8923,13 @@
       };
 
       items.forEach((r) => {
-        const row = document.createElement("div");
-        row.className = "reminder-row";
+        const isOverdue = statusClass === "pending" && r.overdue;
+        const accentClass = isOverdue ? "overdue" : statusClass;
+        const card = document.createElement("div");
+        card.className = "reminder-card " + accentClass;
 
-        const glyphClass = statusClass === "pending" && r.overdue ? "overdue" : statusClass;
         const glyph = document.createElement("div");
-        glyph.className = "reminder-glyph " + glyphClass;
+        glyph.className = "reminder-glyph " + accentClass;
         glyph.innerHTML = glyphSVGs[statusClass] || "";
 
         const body = document.createElement("div");
@@ -8674,6 +8937,8 @@
         const text = document.createElement("div");
         text.className = "reminder-text";
         text.textContent = r.text;
+        body.appendChild(text);
+
         const cadenceLabel = repeatLabel(r.repeat);
         if (cadenceLabel) {
           const cadence = document.createElement("div");
@@ -8687,12 +8952,22 @@
         const meta = document.createElement("div");
         meta.className = "reminder-meta";
         meta.textContent = metaFn(r);
-        body.appendChild(text);
         body.appendChild(meta);
 
-        row.appendChild(glyph);
-        row.appendChild(body);
-        list.appendChild(row);
+        card.appendChild(glyph);
+        card.appendChild(body);
+
+        if (statusClass === "pending") {
+          const dismiss = document.createElement("button");
+          dismiss.className = "reminder-dismiss";
+          dismiss.setAttribute("aria-label", "Remove reminder");
+          dismiss.title = "Remove reminder";
+          dismiss.textContent = "✕";
+          dismiss.addEventListener("click", () => cancelReminder(r.id));
+          card.appendChild(dismiss);
+        }
+
+        list.appendChild(card);
       });
 
       return list;
