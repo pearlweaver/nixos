@@ -880,17 +880,24 @@ def list_files_in(subdir=None):
 # ---------------------------------------------------------------------------
 # Drive — a full filesystem browser rooted at $HOME (view/download/upload/
 # create folders/delete + hand a file to the chat), NOT scoped to
-# PERLA_FILES_DIR. This is a deliberate widening from the original
-# "files Perla creates/fetches" folder to "everything under the user's
-# home directory" — so it additionally enforces a denylist of sensitive
-# subpaths (keys, secrets, credential stores, browser profiles) that the
-# rest of this config already treats as off-limits elsewhere (see
-# fs_read_exclude_paths in perla-config.nix, previously only consumed as
-# a comment/aspiration — this is where it's actually enforced). The
-# denylist comes from PERLA_FS_READ_EXCLUDE (colon-separated, relative to
-# $HOME) so it stays in sync with that one Nix-side list instead of two
-# copies drifting apart; a hardcoded fallback covers the case where the
-# env var isn't set, so this is never silently unprotected.
+# PERLA_FILES_DIR. It enforces a denylist of sensitive subpaths (keys,
+# secrets, credential stores, browser profiles) that the rest of this
+# config already treats as off-limits elsewhere (see fs_read_exclude_paths
+# in perla-config.nix). The denylist comes from PERLA_FS_READ_EXCLUDE
+# (colon-separated, relative to $HOME) so it stays in sync with that one
+# Nix-side list instead of two copies drifting apart; a hardcoded fallback
+# covers the case where the env var isn't set, so this is never silently
+# unprotected.
+#
+# Hidden files (dotfiles) are excluded from listings BY DEFAULT, same
+# convention as send_file/list_files elsewhere in this daemon, but this is
+# now a per-request toggle (`hidden=1`) rather than unconditional — the
+# person can choose to see dotfiles in the UI. The exclusion denylist
+# above is separate and always enforced regardless of the hidden-files
+# toggle: a dotfile the person chooses to reveal is still just a normal
+# file, but a path on the denylist is never listed or reachable no matter
+# what, since that list exists for a different reason (secrets/keys, not
+# just visual clutter).
 # ---------------------------------------------------------------------------
 DRIVE_ROOT = os.path.expanduser("~")
 MAX_DRIVE_UPLOAD_BYTES = 100 * 1024 * 1024
@@ -900,6 +907,15 @@ _DRIVE_EXCLUDE_DEFAULT = (
     ".local/share/keyrings:.mozilla:.env:.envrc:"
     "Documents/Obsidian/PerlaNew/Memory/Long-Term"
 )
+
+
+def _drive_add_to_chat_extensions():
+    # Computed lazily (not a module-level constant) because
+    # TEXT_UPLOAD_EXTENSIONS/DOCUMENT_UPLOAD_EXTENSIONS are defined later
+    # in this file — calling this after module load avoids a NameError at
+    # import time while still only ever needing the up-to-date sets,
+    # which are themselves static after import.
+    return TEXT_UPLOAD_EXTENSIONS | DOCUMENT_UPLOAD_EXTENSIONS | {".png", ".jpg", ".jpeg"}
 
 
 def _drive_exclude_roots():
@@ -929,15 +945,6 @@ def _drive_is_excluded(real_path):
     return False
 
 
-def _drive_add_to_chat_extensions():
-    # Computed lazily (not a module-level constant) because this block is
-    # defined before TEXT_UPLOAD_EXTENSIONS/DOCUMENT_UPLOAD_EXTENSIONS
-    # appear later in the file — calling this after module load avoids a
-    # NameError at import time while still only ever needing the up-to-
-    # date sets, which are themselves static after import.
-    return TEXT_UPLOAD_EXTENSIONS | DOCUMENT_UPLOAD_EXTENSIONS | {".png", ".jpg", ".jpeg"}
-
-
 def _drive_root_real():
     os.makedirs(DRIVE_ROOT, exist_ok=True)
     return os.path.realpath(DRIVE_ROOT)
@@ -953,7 +960,11 @@ def _drive_resolve(rel_path, must_exist=True, allow_root=True):
     Also rejects anything inside an excluded path (see
     _drive_exclude_roots) — this is the single choke point every Drive
     operation (list/mkdir/delete/upload/download) resolves through, so
-    the exclusion only needs to be enforced here, once."""
+    the exclusion only needs to be enforced here, once. Deliberately does
+    NOT reject a path merely for having a dotfile component — the hidden-
+    files toggle is a listing-time display choice (see drive_list), not a
+    path-validity rule, so a person who knows the exact path to a visible
+    dotfile they've chosen to reveal can still act on it directly."""
     root = _drive_root_real()
     rel_path = (rel_path or "").strip().strip("/")
     if rel_path in ("", "."):
@@ -983,14 +994,14 @@ def _drive_rel(abs_path):
     return "" if rel == "." else rel.replace(os.sep, "/")
 
 
-def drive_list(rel_path=""):
+def drive_list(rel_path="", show_hidden=False):
     """List one directory's immediate children. Returns (result, error);
     result is {"path": rel, "entries": [{"name","is_dir","size","modified"}]}
     sorted folders-first then alphabetically (case-insensitive). Dotfiles
-    are hidden (same convention as send_file/list_files elsewhere in this
-    daemon), and any entry that resolves into an excluded path (see
-    _drive_exclude_roots) is dropped even if it isn't a dotfile — e.g.
-    Memory/Long-Term is excluded by name, not by a leading dot."""
+    are hidden unless show_hidden is true (a per-request UI toggle) — but
+    the exclusion denylist (_drive_exclude_roots) always applies
+    regardless of show_hidden, since that list exists to keep secrets/
+    keys unreachable, not just visually declutter the listing."""
     abs_path, error = _drive_resolve(rel_path, must_exist=True)
     if error:
         return None, error
@@ -1000,7 +1011,7 @@ def drive_list(rel_path=""):
     try:
         with os.scandir(abs_path) as it:
             for de in it:
-                if de.name.startswith("."):
+                if de.name.startswith(".") and not show_hidden:
                     continue
                 full_real = os.path.realpath(os.path.join(abs_path, de.name))
                 if _drive_is_excluded(full_real):
@@ -1009,10 +1020,12 @@ def drive_list(rel_path=""):
                     stat = de.stat(follow_symlinks=True)
                 except OSError:
                     continue
+                is_dir = de.is_dir(follow_symlinks=True)
                 entries.append({
                     "name": de.name,
-                    "is_dir": de.is_dir(follow_symlinks=True),
-                    "size": None if de.is_dir(follow_symlinks=True) else stat.st_size,
+                    "is_dir": is_dir,
+                    "is_hidden": de.name.startswith("."),
+                    "size": None if is_dir else stat.st_size,
                     "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
                 })
     except OSError as e:
@@ -1098,16 +1111,122 @@ def drive_save_upload(parent_rel, filename, raw_bytes):
     return _drive_rel(dest), None
 
 
+def _drive_unique_dest(parent_abs, filename):
+    """Same collision-dedupe drive_save_upload already used inline
+    ("photo.png" -> "photo (1).png"), factored out so copy/move share it
+    instead of duplicating the loop a third time. Works for directories
+    too (no extension to preserve, the "(n)" suffix just goes on the
+    whole name)."""
+    safe_name = os.path.basename((filename or "item").strip()) or "item"
+    if safe_name in (".", ".."):
+        safe_name = "item"
+    base, ext = os.path.splitext(safe_name)
+    candidate = safe_name
+    n = 1
+    while os.path.exists(os.path.join(parent_abs, candidate)):
+        candidate = f"{base} ({n}){ext}"
+        n += 1
+    return os.path.join(parent_abs, candidate)
+
+
+def drive_copy(src_rel, dest_parent_rel):
+    """Copy a file or folder (recursively) into dest_parent_rel, deduping
+    a colliding name the same way an upload would. Returns (new_rel_path,
+    error). Both source and destination parent are resolved through
+    _drive_resolve, so the exclusion denylist and traversal protection
+    apply to each end independently — copying FROM or INTO an excluded
+    path is rejected either way."""
+    src_abs, error = _drive_resolve(src_rel, must_exist=True, allow_root=False)
+    if error:
+        return None, error
+    dest_parent_abs, error = _drive_resolve(dest_parent_rel, must_exist=True)
+    if error:
+        return None, error
+    if not os.path.isdir(dest_parent_abs):
+        return None, "destination is not a folder"
+
+    real_src = os.path.realpath(src_abs)
+    if os.path.commonpath([real_src, dest_parent_abs]) == real_src:
+        return None, "can't copy a folder into itself"
+
+    dest = _drive_unique_dest(dest_parent_abs, os.path.basename(src_abs))
+    try:
+        if os.path.isdir(src_abs) and not os.path.islink(src_abs):
+            import shutil as _shutil
+            _shutil.copytree(src_abs, dest)
+        else:
+            import shutil as _shutil
+            _shutil.copy2(src_abs, dest)
+    except OSError as e:
+        return None, f"couldn't copy: {e}"
+    return _drive_rel(dest), None
+
+
+def drive_move(src_rel, dest_parent_rel):
+    """Move (rename, if dest_parent_rel is the same folder) a file or
+    folder into dest_parent_rel, deduping a colliding name. Returns
+    (new_rel_path, error). Same dual-resolve safety as drive_copy."""
+    src_abs, error = _drive_resolve(src_rel, must_exist=True, allow_root=False)
+    if error:
+        return None, error
+    if os.path.realpath(src_abs) == _drive_root_real():
+        return None, "can't move the root folder"
+    dest_parent_abs, error = _drive_resolve(dest_parent_rel, must_exist=True)
+    if error:
+        return None, error
+    if not os.path.isdir(dest_parent_abs):
+        return None, "destination is not a folder"
+
+    real_src = os.path.realpath(src_abs)
+    if real_src == dest_parent_abs or os.path.commonpath([real_src, dest_parent_abs]) == real_src:
+        return None, "can't move a folder into itself"
+
+    dest = _drive_unique_dest(dest_parent_abs, os.path.basename(src_abs))
+    try:
+        import shutil as _shutil
+        _shutil.move(src_abs, dest)
+    except OSError as e:
+        return None, f"couldn't move: {e}"
+    return _drive_rel(dest), None
+
+
 def drive_read_for_download(rel_path):
     """Resolve + validate a path for download, returning (abs_path,
     filename, error). Only ever serves a file that already exists inside
-    DRIVE_ROOT, never a folder."""
+    DRIVE_ROOT, never a folder. A dotfile is downloadable directly by
+    exact path even with the hidden-files toggle off — the toggle only
+    affects what drive_list surfaces, not what a known path can reach."""
     abs_path, error = _drive_resolve(rel_path, must_exist=True, allow_root=False)
     if error:
         return None, None, error
     if os.path.isdir(abs_path):
         return None, None, "can't download a folder directly"
     return abs_path, os.path.basename(abs_path), None
+
+
+def drive_read_for_view(rel_path, max_bytes=2 * 1024 * 1024):
+    """Resolve + read a text-viewable file's content for the in-browser
+    file viewer (View action in the item menu), separate from download
+    (which streams raw bytes with a Content-Disposition). Returns
+    (text, filename, error). Caps at max_bytes so a huge log file doesn't
+    get pulled entirely into a JSON response; the viewer notes the
+    truncation same as the chat upload path already does elsewhere."""
+    abs_path, filename, error = drive_read_for_download(rel_path)
+    if error:
+        return None, None, error
+    try:
+        size = os.path.getsize(abs_path)
+        with open(abs_path, "rb") as f:
+            raw = f.read(max_bytes + 1)
+    except OSError as e:
+        return None, filename, f"couldn't read file: {e}"
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None, filename, "this file isn't viewable as text"
+    if size > max_bytes:
+        text = text[:max_bytes] + "\n\n[... truncated for preview — download the file to see the rest ...]"
+    return text, filename, None
 
 
 def execute_system_action(action, target=None):
@@ -2627,33 +2746,6 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_file(screenshot_path, "image/png")
             return
 
-        if path == "/api/drive/download":
-            if not self.check_auth():
-                return
-            qs = parse_qs(parsed.query)
-            rel_path = (qs.get("path") or [""])[0]
-            abs_path, filename, error = drive_read_for_download(rel_path)
-            if error:
-                self.send_json(404, {"error": error})
-                return
-            content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-            try:
-                with open(abs_path, "rb") as f:
-                    data = f.read()
-            except OSError:
-                self.send_json(404, {"error": "couldn't read file"})
-                return
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header(
-                "Content-Disposition",
-                "attachment; filename=" + json.dumps(filename),
-            )
-            self.end_headers()
-            self.wfile.write(data)
-            return
-
         if path.startswith("/api/files/"):
             if not self.check_auth():
                 return
@@ -2710,18 +2802,6 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(200, {"ok": True})
             return
 
-        if path == "/api/drive/list":
-            if not self.check_auth():
-                return
-            qs = parse_qs(parsed.query)
-            rel_path = (qs.get("path") or [""])[0]
-            result, error = drive_list(rel_path)
-            if error:
-                self.send_json(404, {"ok": False, "error": error})
-                return
-            self.send_json(200, {"ok": True, **result})
-            return
-
         if path == "/api/reminders":
             if not self.check_auth():
                 return
@@ -2732,6 +2812,58 @@ class CompanionHandler(BaseHTTPRequestHandler):
                 self.send_json(500, {"error": "failed to read reminders"})
                 return
             self.send_json(200, reminders)
+            return
+
+        if path == "/api/drive/list":
+            if not self.check_auth():
+                return
+            qs = parse_qs(parsed.query)
+            rel_path = (qs.get("path") or [""])[0]
+            show_hidden = (qs.get("hidden") or ["0"])[0] in ("1", "true", "yes")
+            result, error = drive_list(rel_path, show_hidden=show_hidden)
+            if error:
+                self.send_json(404, {"ok": False, "error": error})
+                return
+            self.send_json(200, {"ok": True, **result})
+            return
+
+        if path == "/api/drive/download":
+            if not self.check_auth():
+                return
+            qs = parse_qs(parsed.query)
+            rel_path = (qs.get("path") or [""])[0]
+            abs_path, filename, error = drive_read_for_download(rel_path)
+            if error:
+                self.send_json(404, {"error": error})
+                return
+            content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+            try:
+                with open(abs_path, "rb") as f:
+                    data = f.read()
+            except OSError:
+                self.send_json(404, {"error": "couldn't read file"})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header(
+                "Content-Disposition",
+                "attachment; filename=" + json.dumps(filename),
+            )
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
+        if path == "/api/drive/view":
+            if not self.check_auth():
+                return
+            qs = parse_qs(parsed.query)
+            rel_path = (qs.get("path") or [""])[0]
+            text, filename, error = drive_read_for_view(rel_path)
+            if error:
+                self.send_json(404, {"ok": False, "error": error})
+                return
+            self.send_json(200, {"ok": True, "filename": filename, "content": text})
             return
 
         if path == "/":
@@ -2793,6 +2925,14 @@ class CompanionHandler(BaseHTTPRequestHandler):
 
         if path == "/api/drive/delete":
             self.handle_drive_delete()
+            return
+
+        if path == "/api/drive/copy":
+            self.handle_drive_copy()
+            return
+
+        if path == "/api/drive/move":
+            self.handle_drive_move()
             return
 
         if path == "/api/drive/upload":
@@ -3195,9 +3335,9 @@ class CompanionHandler(BaseHTTPRequestHandler):
         self.send_json(200, {"ok": True, "entries": entries})
 
     # ---- Drive (full filesystem browser rooted at $HOME: list/mkdir/
-    # delete/upload/download/add-to-chat, with sensitive subpaths hidden
-    # per _drive_exclude_roots). Gated by normal check_auth() (any valid
-    # session, local or remote/phone) — same trust tier as
+    # delete/upload/download/view/add-to-chat, with sensitive subpaths
+    # hidden per _drive_exclude_roots). Gated by normal check_auth() (any
+    # valid session, local or remote/phone) — same trust tier as
     # /api/quick-action and /api/internal/restart, since this is meant to
     # be usable from the phone, not local-only. ----
 
@@ -3224,6 +3364,30 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(200, {"ok": False, "error": detail})
             return
         self.send_json(200, {"ok": True})
+
+    def handle_drive_copy(self):
+        try:
+            body = json.loads(self.read_body())
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(400, {"error": "invalid JSON"})
+            return
+        new_rel, error = drive_copy(body.get("path", ""), body.get("dest", ""))
+        if error:
+            self.send_json(200, {"ok": False, "error": error})
+            return
+        self.send_json(200, {"ok": True, "path": new_rel})
+
+    def handle_drive_move(self):
+        try:
+            body = json.loads(self.read_body())
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(400, {"error": "invalid JSON"})
+            return
+        new_rel, error = drive_move(body.get("path", ""), body.get("dest", ""))
+        if error:
+            self.send_json(200, {"ok": False, "error": error})
+            return
+        self.send_json(200, {"ok": True, "path": new_rel})
 
     def handle_drive_upload(self):
         """Accepts one or more files as base64 data URLs in JSON (same
