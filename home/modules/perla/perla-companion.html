@@ -30,6 +30,7 @@
       --wax: #8a3226;
       --wax-bright: #b8452f;
       --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
+      --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
 
@@ -3017,6 +3018,30 @@
       margin-bottom: 0;
     }
 
+    /* ---------- Global Notifications ---------- */
+    /* App-scope floating notices: reuses .qa-feedback-card styling and the
+       qa-feedback-in keyframes, but mounts in a fixed top-center container
+       visible from every panel (chat, History, Reminders, Quick Actions,
+       Drive). The app-header is z-index 20 and position:fixed across the
+       window top, so an offset below it keeps cards clear of the header. */
+    .global-notifications {
+      position: fixed;
+      top: calc(58px + 10px + var(--safe-top));
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 19;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+      width: min(92vw, 360px);
+      pointer-events: none;
+    }
+
+    .global-notifications > * {
+      pointer-events: auto;
+    }
+
     /* ---------- Quick Actions ---------- */
     #quickActionsPanel {
       position: relative;
@@ -3026,6 +3051,16 @@
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
       padding: 10px 18px calc(48px + var(--safe-bottom));
+    }
+
+    /* While Quick Actions is open the panel must own the entire content
+     column: it's a flex:1 sibling of .content-wrap, so without hiding the
+     chat beneath it the two would each claim half the height and the
+     button grid would stop at a phantom midline instead of extending to
+     the bottom edge of the window. Same "swap .content-wrap out" idea as
+     #drivePanel — done declaratively so open/close/relock need no JS. */
+    #quickActionsPanel:not([hidden]) ~ .content-wrap {
+      display: none;
     }
 
     .qa-container {
@@ -3281,23 +3316,6 @@
     }
 
     /* ---------- QA Output / Feedback Banner ---------- */
-    .qa-feedback-container {
-      position: absolute;
-      top: 10px;
-      left: 18px;
-      right: 18px;
-      z-index: 12;
-      pointer-events: none;
-    }
-
-    .qa-feedback-container:empty {
-      display: none;
-    }
-
-    .qa-feedback-container>* {
-      pointer-events: auto;
-    }
-
     .qa-feedback-card {
       display: flex;
       align-items: center;
@@ -3529,6 +3547,7 @@
   </div>
 
   <div id="app" class="app" hidden>
+    <div id="globalNotifications" class="global-notifications" aria-live="polite"></div>
     <header class="app-header">
       <div class="app-header-inner">
         <div class="header-left">
@@ -3750,7 +3769,6 @@
 
     <div id="quickActionsPanel" class="dropdown-panel" hidden>
       <!-- Sticky Feedback & Result container at top -->
-      <div id="qaFeedback" class="qa-feedback-container"></div>
       <div id="qaResult" class="qa-result"></div>
 
       <div id="qaInputRow" class="qa-input-row" hidden>
@@ -3865,14 +3883,14 @@
                   <rect x="3" y="3" width="18" height="18" rx="3" />
                   <line x1="9" y1="3" x2="9" y2="21" />
                 </svg></span>
-              <span class="qa-label">Open App…</span>
+              <span class="qa-label">Open App</span>
             </button>
             <button class="qa-btn qa-btn-input" data-qa="open_folder">
               <span class="qa-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
                   stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                 </svg></span>
-              <span class="qa-label">Open Folder…</span>
+              <span class="qa-label">Open Folder</span>
             </button>
             <button class="qa-btn" data-qa="list_reminders">
               <span class="qa-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
@@ -4403,6 +4421,7 @@
           }
         });
         output.scrollIntoView({ block: "end" });
+        notify("success", "Session restored", "Your previous conversation is loaded.");
       } else {
         showWelcome(activeTier);
       }
@@ -4551,7 +4570,7 @@
           elevateStatus.textContent = "";
           elevateInput.value = "";
           setElevated(true);
-          addEntry("system", "", "Full Mode activated for 5 minutes.");
+          notify("success", "Full Mode activated for 5 minutes.");
 
           const until = Date.now() + (data.expires_in || 0) * 1000;
           sessionStorage.setItem("perla_elevate_until", String(until));
@@ -4563,9 +4582,9 @@
             stopTierTimer();
             setElevated(false);
             if (activeTier === 2) {
-              addEntry("system", "", "Full Mode expired, Tier 2 is locked again.", 2);
+              notify("error", "Full Mode expired, Tier 2 is locked again.");
             } else {
-              addEntry("system", "", "Full Mode expired.", 2);
+              notify("error", "Full Mode expired.");
             }
           }, (data.expires_in || 0) * 1000);
         } else {
@@ -5031,7 +5050,7 @@
         a.remove();
         setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
       } catch (e) {
-        addEntry("system", "", `Couldn't download ${fileInfo.filename || "that file"}.`);
+        notify("error", `Couldn't download ${fileInfo.filename || "that file"}.`);
       }
     }
 
@@ -5768,21 +5787,21 @@
 
       const remaining = MAX_IMAGES_PER_MESSAGE - attachQueue.length;
       if (remaining <= 0) {
-        addEntry("system", "", `You can attach up to ${MAX_IMAGES_PER_MESSAGE} images per message.`);
+        notify("error", `You can attach up to ${MAX_IMAGES_PER_MESSAGE} images per message.`);
         return;
       }
       const accepted = files.slice(0, remaining);
       if (files.length > accepted.length) {
-        addEntry("system", "", `Only added ${accepted.length} of ${files.length} images, max ${MAX_IMAGES_PER_MESSAGE} per message.`);
+        notify("error", `Only added ${accepted.length} of ${files.length} images, max ${MAX_IMAGES_PER_MESSAGE} per message.`);
       }
 
       accepted.forEach((file) => {
         if (!file.type.startsWith("image/")) {
-          addEntry("system", "", `${file.name || "That file"} isn't an image.`);
+          notify("error", `${file.name || "That file"} isn't an image.`);
           return;
         }
         if (file.size > 10 * 1024 * 1024) {
-          addEntry("system", "", `${file.name || "That image"} is too large, max 10MB.`);
+          notify("error", `${file.name || "That image"} is too large, max 10MB.`);
           return;
         }
         const reader = new FileReader();
@@ -5792,7 +5811,7 @@
           updateComposerState();
           saveCurrentTierDraft();
         };
-        reader.onerror = () => addEntry("system", "", `Couldn't read ${file.name || "that image"}.`);
+        reader.onerror = () => notify("error", `Couldn't read ${file.name || "that image"}.`);
         reader.readAsDataURL(file);
       });
     }
@@ -6004,12 +6023,12 @@
 
       const remaining = MAX_TEXT_FILES_PER_MESSAGE - textFileQueue.length;
       if (remaining <= 0) {
-        addEntry("system", "", `You can attach up to ${MAX_TEXT_FILES_PER_MESSAGE} text/code files per message.`);
+        notify("error", `You can attach up to ${MAX_TEXT_FILES_PER_MESSAGE} text/code files per message.`);
         return;
       }
       const accepted = files.slice(0, remaining);
       if (files.length > accepted.length) {
-        addEntry("system", "", `Only added ${accepted.length} of ${files.length} files, max ${MAX_TEXT_FILES_PER_MESSAGE} per message.`);
+        notify("error", `Only added ${accepted.length} of ${files.length} files, max ${MAX_TEXT_FILES_PER_MESSAGE} per message.`);
       }
 
       accepted.forEach((file) => {
@@ -6022,7 +6041,7 @@
           // the send over one bad file. The OS file picker's `accept`
           // filter already keeps most of these out; this covers drag-drop
           // or a picker that ignores `accept`.
-          addEntry("system", "", `${file.name || "That file"} isn't a supported file type, skipped.`);
+          notify("error", `${file.name || "That file"} isn't a supported file type, skipped.`);
           return;
         }
         // Document formats (PDF/PPTX/DOCX/XLSX/etc) are legitimately much
@@ -6034,7 +6053,7 @@
           const limitLabel = isDocument
             ? `${Math.round(maxBytes / (1024 * 1024))}MB`
             : `${Math.round(maxBytes / 1024)}KB`;
-          addEntry("system", "", `${file.name || "That file"} is too large, max ${limitLabel}, skipped.`);
+          notify("error", `${file.name || "That file"} is too large, max ${limitLabel}, skipped.`);
           return;
         }
         const reader = new FileReader();
@@ -6044,7 +6063,7 @@
           updateComposerState();
           saveCurrentTierDraft();
         };
-        reader.onerror = () => addEntry("system", "", `Couldn't read ${file.name || "that file"}, skipped.`);
+        reader.onerror = () => notify("error", `Couldn't read ${file.name || "that file"}, skipped.`);
         // Read as a data URL (base64), same transport shape as images —
         // the server decodes+decides text-vs-binary on its own; the client
         // doesn't need to pre-decode UTF-8 itself.
@@ -6772,7 +6791,7 @@
       clearCurrentTierDraft();
 
       if (!CONFIG.ENDPOINT) {
-        addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+        notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
         return;
       }
 
@@ -6809,9 +6828,9 @@
             // to send (handle_text only 400s here if message/images/text
             // attachments all ended up empty) — surface why, same tone as
             // any other inline system note.
-            addEntry("system", "", data.error, requestTier);
+            notify("error", data.error);
           } else if (res.status === 403 && data.error) {
-            addEntry("system", "", data.error, requestTier);
+            notify("error", data.error);
           } else {
             throw new Error("request failed");
           }
@@ -6821,7 +6840,7 @@
           // Non-fatal: some attached files were dropped, but the rest of
           // the message (other files, and/or typed text) still went
           // through — surface the reason without blocking the actual reply.
-          addEntry("system", "", data.file_warnings.join(" · "), requestTier);
+          notify("error", data.file_warnings.join(" · "));
         }
         if (data.image) {
           await addImageEntry("Perla", data.image, data.text || "", requestTier);
@@ -6837,7 +6856,7 @@
         statusDot.className = "status-dot ok";
         setStatusText("connected");
       } catch (e) {
-        addEntry("system", "", "Couldn't reach Perla. Check the connection.", requestTier);
+        notify("error", "Couldn't reach Perla. Check the connection.");
         statusDot.className = "status-dot err";
         setStatusText("unreachable");
       } finally {
@@ -6907,7 +6926,7 @@
       const blob = new Blob(audioChunks, { type: "audio/webm" });
 
       if (!CONFIG.ENDPOINT) {
-        addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+        notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
         micTimer.textContent = "";
         return;
       }
@@ -6933,7 +6952,7 @@
           }
           if (res.status === 403 && data.error) {
             if (data.transcript) addEntry("user", "You", data.transcript, requestTier);
-            addEntry("system", "", data.error, requestTier);
+            notify("error", data.error);
           } else {
             throw new Error("request failed");
           }
@@ -6955,7 +6974,7 @@
         statusDot.className = "status-dot ok";
         setStatusText("connected");
       } catch (e) {
-        addEntry("system", "", "Couldn't reach Perla. Check the connection.", requestTier);
+        notify("error", "Couldn't reach Perla. Check the connection.");
         statusDot.className = "status-dot err";
         setStatusText("unreachable");
       } finally {
@@ -7085,7 +7104,7 @@
         historyEntriesCache = data.entries || [];
         renderFilteredHistoryEntries();
       } catch (e) {
-        addEntry("system", "", "Couldn't load that day's conversation.");
+        notify("error", "Couldn't load that day's conversation.");
         historyStatus.textContent = "";
       }
     }
@@ -7101,13 +7120,13 @@
         : historyEntriesCache.filter((e) => String(e.tier) === historyTierMode);
 
       if (historyEntriesCache.length === 0) {
-        addEntry("system", "", "No conversations logged that day.");
+        notify("error", "No conversations logged that day.");
         historyStatus.textContent = "";
         return;
       }
       if (filtered.length === 0) {
         const tierLabel = historyTierMode === "1" ? "Tier 1" : "Tier 2";
-        addEntry("system", "", `No ${tierLabel} conversations logged that day.`);
+        notify("error", `No ${tierLabel} conversations logged that day.`);
         historyStatus.textContent = `0 of ${historyEntriesCache.length} exchange${historyEntriesCache.length === 1 ? "" : "s"}`;
         return;
       }
@@ -7149,7 +7168,7 @@
 
     async function openHistoryPanel() {
       if (!CONFIG.ENDPOINT) {
-        addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+        notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
         return;
       }
       saveCurrentTierDraft();
@@ -7164,7 +7183,7 @@
       updateComposerMode();
       liveOutputHTML = output.innerHTML;
       output.innerHTML = "";
-      addEntry("system", "", "Viewing past conversations [READ ONLY]");
+      notify("info", "Viewing past conversations [READ ONLY]");
 
       if (!daysLoaded) {
         historyStatus.textContent = "Loading days…";
@@ -7275,7 +7294,7 @@
 
     async function openRemindersPanel() {
       if (!CONFIG.ENDPOINT) {
-        addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+        notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
         return;
       }
       saveCurrentTierDraft();
@@ -7302,7 +7321,7 @@
         remindersStatus.textContent = "";
       } catch (e) {
         output.innerHTML = "";
-        addEntry("system", "", "Couldn't load reminders.");
+        notify("error", "Couldn't load reminders.");
         remindersStatus.textContent = "";
       }
     }
@@ -7770,7 +7789,7 @@
 
     function openDrivePanel() {
       if (!CONFIG.ENDPOINT) {
-        addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+        notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
         return;
       }
       // Persist whatever's currently sitting in the composer (typed text,
@@ -8191,33 +8210,33 @@
       }
     }
 
-    // ---------- Quick Actions (deterministic, no-LLM commands) ----------
-    // Each button here calls /api/quick-action directly — never through
-    // OpenCode/the model. This exists because the model was unreliable
-    // about actually calling its own MCP tools on casual phrasing (e.g.
-    // "send me my screen" sometimes got a confabulated text description
-    // instead of an actual screenshot). A fixed menu removes the model
-    // from the decision entirely: tap a button, run the fixed action, done.
-    const quickActionsBtn = document.getElementById("quickActionsBtn");
-    const quickActionsPanel = document.getElementById("quickActionsPanel");
-    const qaFeedback = document.getElementById("qaFeedback");
-    const qaResult = document.getElementById("qaResult");
-    let qaFeedbackTimer = null;
-
-    function clearQaFeedbackTimer() {
-      if (qaFeedbackTimer) {
-        clearTimeout(qaFeedbackTimer);
-        qaFeedbackTimer = null;
-      }
+    // ---------- Global notifications ----------
+    // App-scope notices (formerly inline .entry-system chat messages) that
+    // float above every panel, sharing the Quick Actions feedback-card look.
+    // findGlobalNotifications is looked up per call (never cached in a
+    // top-level const) so this works even when called during early script
+    // init, before DOM refs are gathered below.
+    function findGlobalNotifications() {
+      return document.getElementById("globalNotifications");
     }
 
-    function showQaFeedback(type, title, meta = "", autoDismiss = true) {
-      clearQaFeedbackTimer();
-      if (!qaFeedback) return;
-      qaFeedback.innerHTML = "";
+    function dismissNotification(card) {
+      if (!card || !card.parentNode) return;
+      card.classList.add("closing");
+      setTimeout(() => {
+        if (card.parentNode) card.remove();
+      }, 250);
+    }
+
+    function notify(type, title, meta = "", autoDismiss = true) {
+      const container = findGlobalNotifications();
+      if (!container) {
+        console.warn("[notify]", type, title, meta);
+        return null;
+      }
 
       const card = document.createElement("div");
-      card.className = `qa-feedback-card ${type}`;
+      card.className = "qa-feedback-card" + (type === "info" ? "" : " " + type);
 
       const iconSpan = document.createElement("span");
       iconSpan.className = "qa-feedback-icon";
@@ -8225,8 +8244,10 @@
         iconSpan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="16" height="16"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>';
       } else if (type === "success") {
         iconSpan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="20 6 9 17 4 12"/></svg>';
-      } else {
+      } else if (type === "error") {
         iconSpan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+      } else {
+        iconSpan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><circle cx="12" cy="12" r="10"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
       }
       card.appendChild(iconSpan);
 
@@ -8250,24 +8271,27 @@
       closeBtn.className = "qa-feedback-close";
       closeBtn.setAttribute("aria-label", "Dismiss");
       closeBtn.textContent = "✕";
-      closeBtn.addEventListener("click", () => {
-        clearQaFeedbackTimer();
-        card.classList.add("closing");
-        setTimeout(() => { card.remove(); }, 250);
-      });
+      closeBtn.addEventListener("click", () => dismissNotification(card));
       card.appendChild(closeBtn);
 
-      qaFeedback.appendChild(card);
+      container.appendChild(card);
 
       if (autoDismiss && type !== "loading") {
-        qaFeedbackTimer = setTimeout(() => {
-          if (card.parentNode) {
-            card.classList.add("closing");
-            setTimeout(() => { card.remove(); }, 250);
-          }
-        }, 3600);
+        setTimeout(() => dismissNotification(card), 4200);
       }
+      return card;
     }
+
+    // ---------- Quick Actions (deterministic, no-LLM commands) ----------
+    // Each button here calls /api/quick-action directly — never through
+    // OpenCode/the model. This exists because the model was unreliable
+    // about actually calling its own MCP tools on casual phrasing (e.g.
+    // "send me my screen" sometimes got a confabulated text description
+    // instead of an actual screenshot). A fixed menu removes the model
+    // from the decision entirely: tap a button, run the fixed action, done.
+    const quickActionsBtn = document.getElementById("quickActionsBtn");
+    const quickActionsPanel = document.getElementById("quickActionsPanel");
+    const qaResult = document.getElementById("qaResult");
 
     function closeQuickActionsPanel() {
       if (activeOverlay !== "quick-actions") return;
@@ -8276,8 +8300,6 @@
       quickActionsPanel.hidden = true;
       quickActionsStatus.textContent = "";
       qaResult.innerHTML = "";
-      clearQaFeedbackTimer();
-      if (qaFeedback) qaFeedback.innerHTML = "";
       closeQaInputRow();
       output.innerHTML = liveOutputHTML !== null ? liveOutputHTML : "";
       output.scrollIntoView({ block: "end" });
@@ -8287,7 +8309,7 @@
 
     function openQuickActionsPanel() {
       if (!CONFIG.ENDPOINT) {
-        addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+        notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
         return;
       }
       saveCurrentTierDraft();
@@ -8304,8 +8326,6 @@
       liveOutputHTML = output.innerHTML;
       output.innerHTML = "";
       qaResult.innerHTML = "";
-      clearQaFeedbackTimer();
-      if (qaFeedback) qaFeedback.innerHTML = "";
       quickActionsStatus.textContent = "";
     }
 
@@ -8376,7 +8396,7 @@
     }
 
     function renderQaText(text, isError) {
-      showQaFeedback(isError ? "error" : "success", text, isError ? "Action failed" : "Completed");
+      notify(isError ? "error" : "success", text, isError ? "Action failed" : "Completed");
     }
 
     async function renderQaImage(imageUrl) {
@@ -8385,7 +8405,7 @@
       card.className = "qa-screenshot-card";
       card.innerHTML = `
       <div class="qa-screenshot-header">
-        <span>📸 Full Screenshot</span>
+        <span>Full Screenshot</span>
         <span>Just now</span>
       </div>
       <div class="qa-screenshot-body">
@@ -8406,10 +8426,10 @@
         <span class="qa-screenshot-hint">Tap to expand</span>
       `;
         body.addEventListener("click", () => openLightbox(objectUrl));
-        showQaFeedback("success", "Screenshot captured", "Tap the image above to view full size");
+        notify("success", "Screenshot captured", "Tap the image above to view full size");
       } catch (e) {
         body.innerHTML = '<span class="entry-image-error">Couldn\'t load the screenshot.</span>';
-        showQaFeedback("error", "Failed to load screenshot preview", "Try capturing again");
+        notify("error", "Failed to load screenshot preview", "Try capturing again");
       }
     }
 
@@ -8417,19 +8437,19 @@
       qaResult.innerHTML = "";
       const pending = (reminders && reminders.pending) || [];
       if (pending.length === 0) {
-        showQaFeedback("success", "No pending reminders", "Your schedule is clear");
+        notify("success", "No pending reminders", "Your schedule is clear");
         return;
       }
       const list = buildReminderList(pending, "pending",
         (r) => r.overdue ? `Due ${formatReminderTime(r.due)}, waiting to fire` : `Due ${formatReminderTime(r.due)}`
       );
       qaResult.appendChild(list);
-      showQaFeedback("success", `${pending.length} reminder${pending.length === 1 ? "" : "s"} found`, "Showing pending items below");
+      notify("success", `${pending.length} reminder${pending.length === 1 ? "" : "s"} found`, "Showing pending items below");
     }
 
     async function runQuickAction(action, target) {
       if (!CONFIG.ENDPOINT) {
-        addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+        notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
         return;
       }
 
@@ -8437,7 +8457,7 @@
       const actionLabel = btn ? btn.querySelector(".qa-label").textContent.trim() : action;
 
       if (btn) btn.classList.add("is-loading");
-      showQaFeedback("loading", `Running ${actionLabel}…`, target ? `Target: ${target}` : "Contacting Perla daemon", false);
+      const qaLoadingCard = notify("loading", `Running ${actionLabel}…`, target ? `Target: ${target}` : "Contacting Perla daemon", false);
       if (qaResult) qaResult.innerHTML = "";
       // Reset scroll to the top whenever a new result is about to render —
       // otherwise a screenshot/reminder list appearing above the button grid
@@ -8459,7 +8479,7 @@
         });
 
         if (res.status === 401) {
-          showQaFeedback("error", "Session expired", "Please authenticate again");
+          dismissNotification(qaLoadingCard);
           relockSession();
           return;
         }
@@ -8472,6 +8492,7 @@
             setTimeout(() => btn.classList.remove("is-success"), 1200);
           }
           await renderQaImage(data.image);
+          dismissNotification(qaLoadingCard);
           if (quickActionsPanel) quickActionsPanel.scrollTop = 0;
           return;
         }
@@ -8482,6 +8503,7 @@
             setTimeout(() => btn.classList.remove("is-success"), 1200);
           }
           renderQaReminders(data.reminders);
+          dismissNotification(qaLoadingCard);
           if (quickActionsPanel) quickActionsPanel.scrollTop = 0;
           return;
         }
@@ -8491,20 +8513,23 @@
             btn.classList.add("is-success");
             setTimeout(() => btn.classList.remove("is-success"), 1200);
           }
-          showQaFeedback("success", data.message || `${actionLabel} completed`, "Just now");
+          dismissNotification(qaLoadingCard);
+          notify("success", data.message || `${actionLabel} completed`, "Just now");
         } else {
           if (btn) {
             btn.classList.add("is-error");
             setTimeout(() => btn.classList.remove("is-error"), 1500);
           }
-          showQaFeedback("error", data.error || `Could not run ${actionLabel}`, "Action reported an error");
+          dismissNotification(qaLoadingCard);
+          notify("error", data.error || `Could not run ${actionLabel}`, "Action reported an error");
         }
       } catch (e) {
         if (btn) {
           btn.classList.add("is-error");
           setTimeout(() => btn.classList.remove("is-error"), 1500);
         }
-        showQaFeedback("error", "Connection error", "Couldn't reach Perla companion daemon");
+        dismissNotification(qaLoadingCard);
+        notify("error", "Connection error", "Couldn't reach Perla companion daemon");
       } finally {
         if (btn) btn.classList.remove("is-loading");
       }
@@ -8737,6 +8762,7 @@
     // than surfacing that as a generic "Couldn't reach Perla", toss the token
     // and bounce back to the gate.
     function relockSession() {
+      const hadSession = !!authToken;
       sessionStorage.removeItem("perla_session_token");
       sessionStorage.removeItem("perla_elevate_until");
       sessionStorage.removeItem("perla_elevated");
@@ -8750,6 +8776,9 @@
       gateError.textContent = "Session expired, enter your password.";
       gatePassword.value = "";
       gatePassword.focus();
+      if (hadSession) {
+        notify("error", "Session expired, enter your password.");
+      }
     }
 
     // ---------- Clear conversation ----------
@@ -8774,6 +8803,7 @@
       output.innerHTML = "";
       setChatLog(activeTier, "");
       showWelcome(activeTier);
+      notify("success", "Conversation cleared");
     });
 
     // ---------- Check session ----------
@@ -8789,11 +8819,11 @@
     checkSessionBtn.addEventListener("click", async () => {
       closeAppMenu();
       if (!CONFIG.ENDPOINT) {
-        addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+        notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
         return;
       }
       if (!authToken) {
-        addEntry("system", "", "No active session to check.");
+        notify("error", "No active session to check.");
         return;
       }
       try {
@@ -8805,12 +8835,12 @@
           return;
         }
         if (!res.ok) {
-          addEntry("system", "", "Session check failed, unexpected response.");
+          notify("error", "Session check failed, unexpected response.");
           return;
         }
-        addEntry("system", "", "Session is active.");
+        notify("success", "Session is active.");
       } catch (err) {
-        addEntry("system", "", "Couldn't reach Perla to check the session.");
+        notify("error", "Couldn't reach Perla to check the session.");
       }
     });
 
@@ -8825,33 +8855,38 @@
     restartServiceBtn.addEventListener("click", async () => {
       closeAppMenu();
       if (!CONFIG.ENDPOINT) {
-        addEntry("system", "", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+        notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
         return;
       }
       if (!authToken) {
-        addEntry("system", "", "No active session, can't restart.");
+        notify("error", "No active session, can't restart.");
         return;
       }
       if (!window.confirm("Restart the Perla service? You'll be briefly disconnected.")) return;
+      const restartingCard = notify("loading", "Restarting the Perla service", "This may take a few seconds.", false);
       try {
         const res = await fetch(CONFIG.ENDPOINT + "/api/internal/restart", {
           method: "POST",
           headers: { Authorization: "Bearer " + authToken },
         });
         if (res.status === 401) {
+          dismissNotification(restartingCard);
           relockSession();
           return;
         }
         if (!res.ok) {
-          addEntry("system", "", "Restart request failed, unexpected response.");
+          dismissNotification(restartingCard);
+          notify("error", "Restart request failed", "Unexpected response.");
           return;
         }
-        addEntry("system", "", "Restarting the Perla service, this may take a few seconds.");
+        dismissNotification(restartingCard);
+        notify("success", "Restart requested", "The Perla service is coming back up.");
       } catch (err) {
         // A network error here is actually the EXPECTED outcome once the
         // daemon has taken the connection down mid-restart, not necessarily
         // a real failure — so this is phrased as informational, not an error.
-        addEntry("system", "", "Restart triggered, the connection dropped, which is expected while it comes back up.");
+        dismissNotification(restartingCard);
+        notify("info", "Restart triggered", "The connection dropped, which is expected while it comes back up.");
       }
     });
 
