@@ -1,4 +1,4 @@
-# Version 26.9.11.1
+# Version 26.9.11.2
 
 Perla:
-- Overhauled Reminder UI
+- Overhauled Voice input UI

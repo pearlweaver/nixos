@@ -1119,6 +1119,160 @@
       display: none;
     }
 
+    /* ---------- Voice draft (record → preview → send) ---------- */
+    .composer.voice-drafting #textInput,
+    .composer.voice-drafting .composer-row {
+      display: none;
+    }
+
+    .voice-draft {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      padding: 6px 8px;
+      border-radius: 12px;
+      border: 1px solid rgba(201, 123, 141, 0.4);
+      background: var(--bg-panel);
+      animation: panel-drop 0.18s ease;
+    }
+
+    .voice-draft[hidden] {
+      display: none;
+    }
+
+    .voice-draft-time {
+      flex-shrink: 0;
+      font-size: 12px;
+      color: var(--ink-faint);
+      min-width: 32px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .voice-draft.recording .voice-draft-time {
+      color: var(--wax-bright);
+    }
+
+    .voice-draft-btn {
+      flex-shrink: 0;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: var(--ink-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+    }
+
+    .voice-draft-btn:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--brass-bright);
+    }
+
+    .voice-draft-discard:hover {
+      color: var(--wax-bright);
+    }
+
+    .voice-draft-stop {
+      color: var(--wax-bright);
+      animation: blink-wax 1.6s ease-in-out infinite;
+    }
+
+    .voice-draft-play {
+      color: var(--brass-bright);
+    }
+
+    .voice-draft-send {
+      color: var(--brass-bright);
+      border: 1px solid var(--brass-dim);
+    }
+
+    .voice-draft-send:disabled {
+      opacity: 0.45;
+      cursor: default;
+      animation: none;
+    }
+
+    @keyframes blink-wax {
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.45;
+      }
+    }
+
+    /* Voice bubble in the chat */
+    .voice-bubble {
+      max-width: 260px;
+    }
+
+    .voice-widget {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 200px;
+    }
+
+    .voice-play {
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 1px solid var(--brass-dim);
+      background: rgba(201, 123, 141, 0.1);
+      color: var(--brass-bright);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: color 0.15s ease, background 0.15s ease;
+    }
+
+    .voice-play:hover {
+      background: rgba(201, 123, 141, 0.22);
+    }
+
+    .voice-duration {
+      flex-shrink: 0;
+      font-size: 11px;
+      color: var(--ink-faint);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .voice-transcript {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--ink-faint);
+      line-height: 1.35;
+    }
+
+    .voice-wave {
+      flex: 1;
+      min-width: 60px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      overflow: hidden;
+    }
+
+    .voice-wave i {
+      flex: 1;
+      min-width: 2px;
+      height: 12%;
+      border-radius: 2px;
+      background: rgba(201, 123, 141, 0.28);
+      transition: height 0.05s linear;
+    }
+
     /* ---------- Thinking indicator ---------- */
     .thinking {
       align-self: flex-start;
@@ -4140,7 +4294,38 @@
         <div id="output" class="output" aria-live="polite"></div>
       </main>
 
-      <footer class="composer">
+      <footer class="composer" id="composerFooter">
+        <div id="voiceDraft" class="voice-draft" hidden>
+          <button id="voiceDraftDiscard" class="voice-draft-btn voice-draft-discard" aria-label="Discard"
+            title="Discard">
+            <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+              width="15" height="15">
+              <line x1="5.5" y1="5.5" x2="16.5" y2="16.5" />
+              <line x1="16.5" y1="5.5" x2="5.5" y2="16.5" />
+            </svg>
+          </button>
+          <div id="voiceDraftWave" class="voice-wave" role="img" aria-label="Voice message waveform"></div>
+          <span id="voiceDraftTime" class="voice-draft-time">0:00</span>
+          <button id="voiceDraftStop" class="voice-draft-btn voice-draft-stop" aria-label="Stop recording"
+            title="Stop" hidden>
+            <svg viewBox="0 0 22 22" width="13" height="13">
+              <rect x="6" y="6" width="10" height="10" rx="2" fill="currentColor" />
+            </svg>
+          </button>
+          <button id="voiceDraftPlay" class="voice-draft-btn voice-draft-play" aria-label="Play" title="Play" hidden>
+            <svg viewBox="0 0 22 22" width="13" height="13">
+              <polygon points="6 3 19 11 6 19" fill="currentColor" />
+            </svg>
+          </button>
+          <button id="voiceDraftSend" class="voice-draft-btn voice-draft-send" aria-label="Send voice message"
+            title="Send" hidden>
+            <svg viewBox="0 0 22 22" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5" />
+              <polyline points="5 12 12 5 19 12" />
+            </svg>
+          </button>
+        </div>
         <div id="attachPreview" class="attach-preview" hidden></div>
         <textarea id="textInput" rows="1" placeholder="Write to Perla…"></textarea>
         <div class="composer-row">
@@ -7043,27 +7228,129 @@
       }
     }
 
-    // ---------- Voice recording ----------
+    // ---------- Voice recording → draft (WhatsApp-style) ----------
     const micBtn = document.getElementById("micBtn");
     const micTimer = document.getElementById("micTimer");
+    const composerFooter = document.getElementById("composerFooter");
+    const voiceDraftEl = document.getElementById("voiceDraft");
+    const voiceDraftWave = document.getElementById("voiceDraftWave");
+    const voiceDraftTime = document.getElementById("voiceDraftTime");
+    const voiceDraftDiscard = document.getElementById("voiceDraftDiscard");
+    const voiceDraftStop = document.getElementById("voiceDraftStop");
+    const voiceDraftPlay = document.getElementById("voiceDraftPlay");
+    const voiceDraftSend = document.getElementById("voiceDraftSend");
+
+    const VOICE_ICONS = {
+      play: '<svg viewBox="0 0 22 22" width="13" height="13"><polygon points="6 3 19 11 6 19" fill="currentColor" /></svg>',
+      pause: '<svg viewBox="0 0 22 22" width="13" height="13"><rect x="6" y="4" width="3.4" height="14" rx="1.6" fill="currentColor" /><rect x="12.6" y="4" width="3.4" height="14" rx="1.6" fill="currentColor" /></svg>',
+    };
+
+    // Turns either the daemon's full URL ("/api/voice/<name>") or the
+    // history log's bare filename ("<name>.webm") into a fetchable URL.
+    function voiceApiUrl(value) {
+      if (!value) return null;
+      if (/^\/(api\/voice\/|api\/files\/)/.test(value)) return CONFIG.ENDPOINT + value;
+      return CONFIG.ENDPOINT + "/api/voice/" + encodeURIComponent(value.split("/").pop());
+    }
 
     let mediaRecorder = null;
+    let mediaStream = null;
     let audioChunks = [];
     let recording = false;
     let recordStart = 0;
     let timerInterval = null;
+    let draftState = "idle";    // idle | recording | draft | sending
+    let voiceDraftBlob = null;
+    let voiceDraftBars = null;
+    let voiceDraftUrl = null;
+    let voiceDraftAudio = null;
+    let discardAfterStop = false;
+    let liveWaveRaf = null;
+    let activeVoiceAudio = null;
+    let micAnalyserCtx = null;
+    let micAnalyserNode = null;
+    let micSourceNode = null;
+
+    function formatDur(sec) {
+      if (!isFinite(sec) || sec < 0) sec = 0;
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return m + ":" + String(s).padStart(2, "0");
+    }
+
+    // Renders `bars` (0..1 array) as the heights of child <i> elements.
+    // `progress01` colors the already-played portion brass, the rest faint.
+    function renderBarsInto(waveEl, bars, progress01) {
+      while (waveEl.firstChild) waveEl.removeChild(waveEl.firstChild);
+      if (!bars || !bars.length) return;
+      const p = Math.max(0, Math.min(1, progress01 || 0));
+      bars.forEach((val, i) => {
+        const bar = document.createElement("i");
+        bar.style.height = Math.max(8, Math.round(val * 100)) + "%";
+        bar.style.background = i / bars.length <= p ? "rgba(201, 123, 141, 0.95)" : "rgba(201, 123, 141, 0.28)";
+        waveEl.appendChild(bar);
+      });
+    }
+
+    async function computeWaveBars(blob, n) {
+      const count = n || 44;
+      try {
+        const buf = await blob.arrayBuffer();
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!micAnalyserCtx) micAnalyserCtx = new Ctx();
+        const decoded = await micAnalyserCtx.decodeAudioData(buf);
+        const ch = decoded.getChannelData(0);
+        const step = Math.max(1, Math.floor(ch.length / count));
+        const bars = [];
+        let overallMax = 0;
+        for (let i = 0; i < count; i++) {
+          let v = 0;
+          const end = Math.min(ch.length, (i + 1) * step);
+          for (let j = i * step; j < end; j++) {
+            const a = Math.abs(ch[j]);
+            if (a > v) v = a;
+          }
+          bars.push(v);
+          if (v > overallMax) overallMax = v;
+        }
+        if (overallMax > 0) {
+          for (let i = 0; i < bars.length; i++) {
+            bars[i] = Math.max(0.08, Math.min(1, bars[i] / overallMax));
+          }
+        }
+        return bars;
+      } catch (e) {
+        return Array(count).fill(0.5);
+      }
+    }
+
+    function setDraftState(state) {
+      draftState = state;
+      composerFooter.classList.toggle("voice-drafting", state !== "idle");
+      voiceDraftEl.hidden = state === "idle";
+      voiceDraftEl.classList.toggle("recording", state === "recording");
+      voiceDraftStop.hidden = state !== "recording";
+      voiceDraftPlay.hidden = state !== "draft";
+      voiceDraftSend.hidden = state !== "draft";
+      if (state !== "recording" && liveWaveRaf) {
+        cancelAnimationFrame(liveWaveRaf);
+        liveWaveRaf = null;
+      }
+      updateComposerState();
+    }
 
     micBtn.addEventListener("click", async () => {
-      if (!recording) {
+      if (draftState === "idle") {
         await startRecording();
-      } else {
-        stopRecording();
+      } else if (draftState === "recording") {
+        stopRecording(true);
       }
     });
 
     async function startRecording() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStream = stream;
         mediaRecorder = new MediaRecorder(stream);
         audioChunks = [];
         mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
@@ -7075,7 +7362,9 @@
         recording = true;
         recordStart = Date.now();
         micBtn.classList.add("recording");
-        updateComposerState();
+        setupLiveWave();
+        setDraftState("recording");
+        micTimer.textContent = "";
         timerInterval = setInterval(updateTimer, 250);
         updateTimer();
       } catch (e) {
@@ -7083,39 +7372,184 @@
       }
     }
 
-    function stopRecording() {
-      if (mediaRecorder && recording) {
-        mediaRecorder.stop();
-        recording = false;
-        micBtn.classList.remove("recording");
-        clearInterval(timerInterval);
-        micTimer.textContent = "Sending…";
-        updateComposerState();
-      }
+    // Stops the recorder; `keep` drafts the audio in the composer so it can
+    // be replayed or sent, `!keep` discards the take entirely.
+    function stopRecording(keep) {
+      if (!mediaRecorder || !recording) return;
+      discardAfterStop = !keep;
+      mediaRecorder.stop();
+      recording = false;
+      micBtn.classList.remove("recording");
+      clearInterval(timerInterval);
+      timerInterval = null;
+      updateComposerState();
     }
 
     function updateTimer() {
       const elapsed = Math.floor((Date.now() - recordStart) / 1000);
-      const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
-      const ss = String(elapsed % 60).padStart(2, "0");
-      micTimer.textContent = `${mm}:${ss} — tap to stop`;
+      voiceDraftTime.textContent = formatDur(elapsed);
+    }
+
+    // Live waveform: pull time-domain samples from the mic analyser and
+    // grow the draft bar's <i> elements in real time while recording.
+    function setupLiveWave() {
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!micAnalyserCtx) micAnalyserCtx = new Ctx();
+        if (micAnalyserCtx.state === "suspended") micAnalyserCtx.resume().catch(() => {});
+        micSourceNode = micAnalyserCtx.createMediaStreamSource(mediaStream);
+        micAnalyserNode = micAnalyserCtx.createAnalyser();
+        micAnalyserNode.fftSize = 128;
+        micSourceNode.connect(micAnalyserNode);
+      } catch (e) {
+        micAnalyserNode = null;
+      }
+      const n = 44;
+      const bars = [];
+      voiceDraftWave.innerHTML = "";
+      for (let i = 0; i < n; i++) {
+        const bar = document.createElement("i");
+        bar.style.height = "10%";
+        voiceDraftWave.appendChild(bar);
+        bars.push(bar);
+      }
+      let data = null;
+      const loop = () => {
+        if (draftState !== "recording") return;
+        if (micAnalyserNode) {
+          if (!data) data = new Uint8Array(micAnalyserNode.frequencyBinCount);
+          micAnalyserNode.getByteTimeDomainData(data);
+          for (let i = 0; i < n; i++) {
+            const idx = Math.floor((i / n) * data.length);
+            const v = Math.abs((data[idx] - 128) / 128);
+            bars[i].style.height = Math.max(10, Math.round(v * 95)) + "%";
+            bars[i].style.background = v > 0.22 ? "rgba(201, 123, 141, 0.95)" : "rgba(201, 123, 141, 0.35)";
+          }
+        }
+        liveWaveRaf = requestAnimationFrame(loop);
+      };
+      liveWaveRaf = requestAnimationFrame(loop);
+    }
+
+    function teardownVoiceAnalyser() {
+      try {
+        if (micSourceNode) micSourceNode.disconnect();
+        if (micAnalyserNode) micAnalyserNode.disconnect();
+      } catch (e) {}
+      micSourceNode = null;
+      micAnalyserNode = null;
+      if (liveWaveRaf) {
+        cancelAnimationFrame(liveWaveRaf);
+        liveWaveRaf = null;
+      }
     }
 
     async function handleRecordingComplete() {
       const blob = new Blob(audioChunks, { type: "audio/webm" });
+      audioChunks = [];
+      const keep = !discardAfterStop;
+      discardAfterStop = false;
+      teardownVoiceAnalyser();
 
-      if (!CONFIG.ENDPOINT) {
-        notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
-        micTimer.textContent = "";
+      if (!keep || blob.size === 0) {
+        clearVoiceDraft();
         return;
       }
 
-      const requestTier = activeTier; // capture now — activeTier may change before the reply arrives
+      // Recording drops into the message box as a draft — user listens to
+      // it, then sends or discards. Nothing is auto-sent.
+      voiceDraftBlob = blob;
+      voiceDraftBars = null;
+      voiceDraftUrl = URL.createObjectURL(blob);
+      voiceDraftAudio = new Audio(voiceDraftUrl);
+      voiceDraftAudio.playBtn = voiceDraftPlay;
+      voiceDraftAudio.addEventListener("loadedmetadata", () => {
+        if (isFinite(voiceDraftAudio.duration) && voiceDraftAudio.duration > 0) {
+          voiceDraftTime.textContent = formatDur(voiceDraftAudio.duration);
+        }
+      });
+      voiceDraftAudio.addEventListener("timeupdate", () => {
+        if (voiceDraftBars && voiceDraftAudio.duration) {
+          renderBarsInto(voiceDraftWave, voiceDraftBars, voiceDraftAudio.currentTime / voiceDraftAudio.duration);
+        }
+      });
+      voiceDraftAudio.addEventListener("ended", () => {
+        voiceDraftPlay.innerHTML = VOICE_ICONS.play;
+      });
 
+      setDraftState("draft");
+      voiceDraftTime.textContent = formatDur(0);
+      drawDraftBars();
+    }
+
+    function drawDraftBars() {
+      if (!voiceDraftBlob) return;
+      computeWaveBars(voiceDraftBlob, 44).then((bars) => {
+        voiceDraftBars = bars;
+        renderBarsInto(voiceDraftWave, bars, 0);
+      }).catch(() => {});
+    }
+
+    // Plays a voice audio element, pausing any other playback (draft,
+    // chat bubbles, or a TTS reply) so only one sound is audible.
+    function playVoiceAudio(audio, playBtn) {
+      if (!audio) return;
+      if (audio.paused) {
+        if (activeVoiceAudio && activeVoiceAudio !== audio) {
+          activeVoiceAudio.pause();
+          if (activeVoiceAudio.playBtn) activeVoiceAudio.playBtn.innerHTML = VOICE_ICONS.play;
+        }
+        if (responseAudio && !responseAudio.paused) responseAudio.pause();
+        activeVoiceAudio = audio;
+        if (playBtn) playBtn.innerHTML = VOICE_ICONS.pause;
+        audio.play().catch(() => { if (playBtn) playBtn.innerHTML = VOICE_ICONS.play; });
+      } else {
+        audio.pause();
+        if (playBtn) playBtn.innerHTML = VOICE_ICONS.play;
+      }
+    }
+
+    voiceDraftPlay.addEventListener("click", () => playVoiceAudio(voiceDraftAudio, voiceDraftPlay));
+    voiceDraftStop.addEventListener("click", () => stopRecording(true));
+    voiceDraftDiscard.addEventListener("click", () => {
+      if (draftState === "recording") {
+        stopRecording(false);
+      } else {
+        clearVoiceDraft();
+      }
+    });
+    voiceDraftSend.addEventListener("click", sendVoiceDraft);
+
+    function clearVoiceDraft() {
+      teardownVoiceAnalyser();
+      clearInterval(timerInterval);
+      timerInterval = null;
+      recording = false;
+      micBtn.classList.remove("recording");
+      if (voiceDraftAudio) {
+        voiceDraftAudio.pause();
+        voiceDraftAudio = null;
+      }
+      voiceDraftBlob = null;
+      voiceDraftBars = null;
+      voiceDraftUrl = null;
+      voiceDraftWave.innerHTML = "";
+      setDraftState("idle");
+      micTimer.textContent = "";
+    }
+
+    async function sendVoiceDraft() {
+      if (draftState !== "draft" || !voiceDraftBlob) return;
+
+      const requestTier = activeTier; // capture now — activeTier may change before the reply arrives
+      const bars = voiceDraftBars || null;
+      const fallbackUrl = voiceDraftUrl;
+
+      setDraftState("sending");
       showThinking(requestTier);
       try {
         const form = new FormData();
-        form.append("audio", blob, "input.webm");
+        form.append("audio", voiceDraftBlob, "input.webm");
         form.append("tier", String(requestTier));
 
         const res = await fetch(CONFIG.ENDPOINT + CONFIG.VOICE_PATH, {
@@ -7138,7 +7572,13 @@
           return;
         }
 
-        if (data.transcript) addEntry("user", "You", data.transcript, requestTier);
+        clearVoiceDraft();
+
+        // The user's turn renders as a voice message (audio bubble); the
+        // transcript stays as a faint hint under the wave.
+        if (data.transcript) {
+          addVoiceUserMessageEntry(data.transcript, data.voice || null, bars, requestTier, fallbackUrl);
+        }
         if (data.image) {
           await addImageEntry("Perla", data.image, data.text || "", requestTier);
         } else if (data.file) {
@@ -7156,10 +7596,186 @@
         notify("error", "Couldn't reach Perla. Check the connection.");
         statusDot.className = "status-dot err";
         setStatusText("unreachable");
+        // Put the take back as a draft so the recording isn't lost.
+        if (voiceDraftBlob) {
+          setDraftState("draft");
+          drawDraftBars();
+        }
       } finally {
         hideThinking(requestTier);
-        micTimer.textContent = "";
       }
+    }
+
+    // Builds the playable voice widget: play button, waveform, duration.
+    // `localAudio` (the just-recorded blob URL) is played directly when
+    // available; otherwise the daemon's stored `audioUrl` is fetched with
+    // the auth header so playback works after deploy. If nothing can be
+    // fetched (e.g. the file was purged at midnight), `onUnavailable`
+    // degrades the bubble to the transcript text.
+    function buildVoiceWidget(opts) {
+      const wrap = document.createElement("div");
+      wrap.className = "voice-widget";
+
+      const playBtn = document.createElement("button");
+      playBtn.className = "voice-play";
+      playBtn.setAttribute("aria-label", "Play voice message");
+      playBtn.innerHTML = VOICE_ICONS.play;
+
+      const wave = document.createElement("div");
+      wave.className = "voice-wave";
+
+      const durEl = document.createElement("span");
+      durEl.className = "voice-duration";
+      durEl.textContent = "0:00";
+
+      wrap.append(playBtn, wave, durEl);
+
+      let audioEl = null;
+      let barsArr = (opts.bars && opts.bars.length) ? opts.bars : null;
+      if (barsArr) {
+        renderBarsInto(wave, barsArr, 0);
+      } else {
+        renderBarsInto(wave, Array(44).fill(0.25), 0);
+      }
+
+      function wireAudio(audio) {
+        audio.playBtn = playBtn;
+        audio.addEventListener("loadedmetadata", () => {
+          if (isFinite(audio.duration) && audio.duration > 0) {
+            durEl.textContent = formatDur(audio.duration);
+          }
+        });
+        audio.addEventListener("timeupdate", () => {
+          if (barsArr && audio.duration && barsArr.length) {
+            renderBarsInto(wave, barsArr, audio.currentTime / audio.duration);
+          }
+        });
+        audio.addEventListener("ended", () => {
+          playBtn.innerHTML = VOICE_ICONS.play;
+          if (barsArr && barsArr.length) renderBarsInto(wave, barsArr, 0);
+        });
+      }
+
+      playBtn.addEventListener("click", () => playVoiceAudio(audioEl, playBtn));
+
+      if (opts.localAudio) {
+        audioEl = opts.localAudio;
+        wireAudio(audioEl);
+      } else if (opts.audioUrl) {
+        fetch(opts.audioUrl, { headers: { Authorization: "Bearer " + authToken } })
+          .then((res) => {
+            if (!res.ok) throw new Error("voice fetch failed");
+            return res.blob();
+          })
+          .then((blob) => {
+            audioEl = new Audio(URL.createObjectURL(blob));
+            wireAudio(audioEl);
+            if (!barsArr) {
+              computeWaveBars(blob, 44).then((b) => {
+                barsArr = b;
+                renderBarsInto(wave, b, 0);
+              }).catch(() => {});
+            }
+          })
+          .catch(() => {
+            if (opts.onUnavailable) opts.onUnavailable();
+          });
+      } else if (opts.onUnavailable) {
+        opts.onUnavailable();
+      }
+
+      return wrap;
+    }
+
+    // Renders the user's sent voice message as an audio bubble (instead of
+    // the plain TTS text) in the live chat.
+    function addVoiceUserMessageEntry(transcript, voiceUrl, bars, forTier, fallbackUrl) {
+      const targetTier = forTier !== undefined ? forTier : activeTier;
+      const live = isViewingTierChat(targetTier);
+      if (live) {
+        output.querySelectorAll(".welcome").forEach((w) => w.remove());
+      }
+
+      const entry = document.createElement("div");
+      entry.className = "entry entry-user";
+      const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+      const bubble = document.createElement("div");
+      bubble.className = "entry-bubble voice-bubble";
+      const fallbackToText = () => {
+        bubble.classList.remove("voice-bubble");
+        bubble.innerHTML = "";
+        const p = document.createElement("p");
+        p.textContent = transcript || "(voice message)";
+        bubble.appendChild(p);
+      };
+      const widget = buildVoiceWidget({
+        bars,
+        audioUrl: voiceApiUrl(voiceUrl),
+        localAudio: fallbackUrl ? new Audio(fallbackUrl) : null,
+        onUnavailable: fallbackToText,
+      });
+      bubble.appendChild(widget);
+      if (transcript) {
+        const hint = document.createElement("div");
+        hint.className = "voice-transcript";
+        hint.textContent = transcript;
+        bubble.appendChild(hint);
+      }
+      entry.appendChild(bubble);
+
+      const meta = document.createElement("div");
+      meta.className = "entry-meta";
+      const ts = document.createElement("span");
+      ts.className = "entry-time";
+      ts.textContent = time;
+      meta.appendChild(ts);
+      entry.appendChild(meta);
+
+      const wentLive = deliverEntry(entry, targetTier);
+      if (wentLive) {
+        output.scrollIntoView({ block: "end" });
+        entry.scrollIntoView({ behavior: "smooth", block: "end" });
+      }
+      return entry;
+    }
+
+    // Same voice bubble rendered into the history panel for a past day.
+    function addVoiceHistoryEntry(transcript, voicePath, timeStr) {
+      const entry = document.createElement("div");
+      entry.className = "entry entry-user";
+      const bubble = document.createElement("div");
+      bubble.className = "entry-bubble voice-bubble";
+      const fallbackToText = () => {
+        bubble.classList.remove("voice-bubble");
+        bubble.innerHTML = "";
+        const p = document.createElement("p");
+        p.textContent = transcript || "(voice message)";
+        bubble.appendChild(p);
+      };
+      const widget = buildVoiceWidget({
+        bars: null,
+        audioUrl: voiceApiUrl(voicePath),
+        localAudio: null,
+        onUnavailable: fallbackToText,
+      });
+      bubble.appendChild(widget);
+      if (transcript) {
+        const hint = document.createElement("div");
+        hint.className = "voice-transcript";
+        hint.textContent = transcript;
+        bubble.appendChild(hint);
+      }
+      entry.appendChild(bubble);
+      const meta = document.createElement("div");
+      meta.className = "entry-meta";
+      const ts = document.createElement("span");
+      ts.className = "entry-time";
+      ts.textContent = timeStr || "";
+      meta.appendChild(ts);
+      entry.appendChild(meta);
+      output.appendChild(entry);
+      return entry;
     }
 
     // ---------- History (view-only past conversations) ----------
@@ -7398,7 +8014,11 @@
       const isTier0 = e.tier === 0;
 
       if (e.input) {
-        addHistoryEntry("user", "You", e.input, e.time);
+        if (e.voice) {
+          addVoiceHistoryEntry(e.input, e.voice, e.time);
+        } else {
+          addHistoryEntry("user", "You", e.input, e.time);
+        }
       }
       if (e.response) {
         const kind = isTier0 ? "perla entry-tier0" : "perla";

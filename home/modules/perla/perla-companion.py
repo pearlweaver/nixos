@@ -36,7 +36,7 @@ import tempfile
 import time
 import uuid
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -85,6 +85,10 @@ PERLA_WHISPER_MODEL = os.environ.get("PERLA_WHISPER_MODEL", "tiny")
 PERLA_WHISPER_LANG = os.environ.get("PERLA_WHISPER_LANG", "en")
 PERLA_AUDIO_DIR = os.environ.get("PERLA_AUDIO_DIR", os.path.expanduser("~/.local/share/perla-audio"))
 PERLA_SCREENSHOT_DIR = os.environ.get("PERLA_SCREENSHOT_DIR", os.path.expanduser("~/.local/share/perla-screenshots"))
+# User voice messages, kept for a day and swept at midnight (daily_voice_purge)
+# so the chat/history voice bubbles survive until then but never accumulate.
+PERLA_VOICE_DIR = os.environ.get("PERLA_VOICE_DIR", os.path.expanduser("~/.local/share/perla-voice"))
+VOICE_FILE_RE = re.compile(r"^[0-9a-f-]+\.(webm|m4a|mp3|wav|oga|ogg)$")
 PERLA_AUDIO_INPUT = os.environ.get("PERLA_AUDIO_INPUT", "")
 
 # --- File transfer (send_file / list_files MCP tools) ----------------------
@@ -2070,12 +2074,15 @@ def transcribe_audio(audio_path):
         return ""
 
 
-def log_request(input_text, response, tier, tool_used, source="remote", sent_file=None):
+def log_request(input_text, response, tier, tool_used, source="remote", sent_file=None,
+                voice_filename=None):
     """Log to Obsidian vault. `source` distinguishes local vs remote in the
     log so you can tell which surface a conversation came from.
     `sent_file` (optional {"id", "filename"}) records a file Perla sent
     this turn, so History can surface a download entry alongside the
-    text exchange."""
+    text exchange. `voice_filename` (optional) records the stored user
+    voice message so History can replay it for up to a day before the
+    midnight sweep deletes the audio and the entry falls back to text."""
     tier_label = f"Tier {tier} ({source})"
     if tool_used:
         log_dir = os.path.join(PERLA_VAULT, "Command Log")
@@ -2089,6 +2096,8 @@ def log_request(input_text, response, tier, tool_used, source="remote", sent_fil
         with open(log_file, "a") as f:
             f.write(f"## {datetime.now().strftime('%H:%M')} — {tier_label}\n")
             f.write(f"- **Input:** {input_text}\n")
+            if voice_filename:
+                f.write(f"- **Voice:** {os.path.basename(voice_filename)}\n")
             f.write(f"- **Response:** {response}\n")
             if sent_file:
                 f.write(f"- **File:** {sent_file['filename']} (id:{sent_file['id']})\n")
@@ -2101,6 +2110,7 @@ HISTORY_HEADER_RE = re.compile(
     r"^##\s+(\d{2}:\d{2})\s+—\s+Tier\s+(\d+)\s*\(([^)]*)\)\s*$"
 )
 HISTORY_INPUT_RE = re.compile(r"^-\s+\*\*Input:\*\*\s?(.*)$")
+HISTORY_VOICE_RE = re.compile(r"^-\s+\*\*Voice:\*\*\s?(.*)$")
 HISTORY_RESPONSE_RE = re.compile(r"^-\s+\*\*Response:\*\*\s?(.*)$")
 HISTORY_FILE_RE = re.compile(r"^-\s+\*\*File:\*\*\s?(.*)\s\(id:([0-9a-f]{32})\)\s*$")
 
@@ -2138,7 +2148,7 @@ def _parse_log_file(path):
     pending_blanks = 0    # blank lines inside the block (paragraph breaks)
 
     def flush():
-        if current is not None and (current["input"] or current["response"] or current.get("file")):
+        if current is not None and (current["input"] or current["response"] or current.get("file") or current.get("voice")):
             entries.append(current)
 
     for line in lines:
@@ -2153,6 +2163,7 @@ def _parse_log_file(path):
                 "input": "",
                 "response": "",
                 "file": None,
+                "voice": None,
             }
             pending_field = None
             pending_blanks = 0
@@ -2165,6 +2176,13 @@ def _parse_log_file(path):
         if input_m:
             current["input"] = input_m.group(1)
             pending_field = "input"
+            pending_blanks = 0
+            continue
+
+        voice_m = HISTORY_VOICE_RE.match(line)
+        if voice_m:
+            current["voice"] = voice_m.group(1)
+            pending_field = None
             pending_blanks = 0
             continue
 
@@ -2204,11 +2222,22 @@ def _parse_log_file(path):
 
 def get_history_for_day(date_str):
     """Merge Conversations/{date}.md and Command Log/{date}.md, sorted by
-    time. `date_str` must already be validated as YYYY-MM-DD by the caller."""
+    time. `date_str` must already be validated as YYYY-MM-DD by the caller.
+
+    Voice references are the day-kept audio files written by log_request.
+    If the file is gone (midnight purge), the entry drops its `voice` field
+    here so the UI falls back to the transcript text instead of a dead
+    player — history must never break just because the audio was cleaned."""
     entries = []
     for folder in ("Conversations", "Command Log"):
         path = os.path.join(PERLA_VAULT, folder, f"{date_str}.md")
         entries.extend(_parse_log_file(path))
+
+    for e in entries:
+        if e.get("voice"):
+            name = os.path.basename(e["voice"])
+            if not os.path.exists(os.path.join(PERLA_VOICE_DIR, name)):
+                e["voice"] = None
 
     entries.sort(key=lambda e: e["time"])
     return entries
@@ -2476,7 +2505,7 @@ def is_screen_vision_request(text):
 
 
 def process_message(message, tier, source, confirm=False, user_image_paths=None,
-                     text_attachments=None):
+                     text_attachments=None, voice_filename=None):
     """The single entrypoint every surface funnels through: OpenCode, then
     logging. Returns (response_text, tool_used, confirm_required,
     confirm_action, image_path). image_path is None except for two cases —
@@ -2542,7 +2571,8 @@ def process_message(message, tier, source, confirm=False, user_image_paths=None,
             sid, port, message, tier, image_path=attach_paths
         )
 
-        log_request(message, response_text, tier, tool_used, source=source, sent_file=sent_file_ref)
+        log_request(message, response_text, tier, tool_used, source=source,
+                     sent_file=sent_file_ref, voice_filename=voice_filename)
 
         if is_memory_worthy(message) and not obsidian_write:
             log_memory_mismatch(message, response_text, tier, source=source)
@@ -2688,6 +2718,16 @@ class CompanionHandler(BaseHTTPRequestHandler):
                 self.send_file(PERLA_AVATAR, content_type)
             else:
                 self.send_error(404)
+            return
+
+        if path.startswith("/api/voice/"):
+            if not self.check_auth():
+                return
+            filename = os.path.basename(path)
+            if not VOICE_FILE_RE.match(filename):
+                self.send_error(400)
+                return
+            self.send_file(os.path.join(PERLA_VOICE_DIR, filename), "audio/webm")
             return
 
         if path == "/manifest.webmanifest":
@@ -3168,16 +3208,40 @@ class CompanionHandler(BaseHTTPRequestHandler):
         tmp.write(audio_data)
         tmp.close()
 
+        # Preserve the user's voice message so it can be replayed in chat for
+        # up to a day. Lives in PERLA_VOICE_DIR (swept at midnight, not the
+        # 1-hour TTS dir) so the bubble survives until then. If we can't
+        # store it, the turn still proceeds — the UI just renders text.
+        voice_filename = None
+        try:
+            os.makedirs(PERLA_VOICE_DIR, exist_ok=True)
+            ext = os.path.splitext(tmp.name)[1].lower() or ".webm"
+            if ext not in (".webm", ".m4a", ".mp3", ".wav", ".oga", ".ogg"):
+                ext = ".webm"
+            voice_name = f"{uuid.uuid4()}{ext}"
+            voice_path = os.path.join(PERLA_VOICE_DIR, voice_name)
+            with open(voice_path, "wb") as vf:
+                vf.write(audio_data)
+            voice_filename = voice_name
+        except OSError:
+            print("WARNING: could not store voice message", flush=True)
+
         try:
             transcript = transcribe_audio(tmp.name)
         finally:
             os.unlink(tmp.name)
 
         if not transcript:
+            if voice_filename:
+                try:
+                    os.unlink(os.path.join(PERLA_VOICE_DIR, voice_filename))
+                except OSError:
+                    pass
             self.send_json(200, {
                 "transcript": "",
                 "text": "I couldn't understand the audio. Could you try again?",
-                "audio": None
+                "audio": None,
+                "voice": None
             })
             return
 
@@ -3188,7 +3252,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
             return
 
         response_text, tool_used, confirm_required, action, image_path, sent_file = process_message(
-            transcript, tier, source, confirm=False
+            transcript, tier, source, confirm=False, voice_filename=voice_filename
         )
 
         audio_url = None
@@ -3206,6 +3270,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
             "transcript": transcript,
             "text": response_text,
             "audio": audio_url,
+            "voice": f"/api/voice/{voice_filename}" if voice_filename else None,
             "confirm_required": confirm_required,
             "action": action,
             "tier": tier,
@@ -3724,6 +3789,34 @@ def cleanup_old_files(directory, max_age_seconds, check_interval=300):
             print(f"ERROR: cleanup failed for {directory}: {e}", flush=True)
 
 
+def daily_voice_purge():
+    """Sweep user voice messages once per day, at local midnight — the same
+    beat as the perla-promote memory timer, so chat/history voice bubbles live
+    for a day and are never referenced after the audio is gone (history then
+    falls back to the stored transcript text). Runs once on startup too, so a
+    daemon that was off over midnight still converges on the next boot."""
+    while True:
+        today_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            for f in os.listdir(PERLA_VOICE_DIR):
+                if not VOICE_FILE_RE.match(f):
+                    continue
+                path = os.path.join(PERLA_VOICE_DIR, f)
+                try:
+                    if datetime.fromtimestamp(os.path.getmtime(path)) < today_midnight:
+                        os.unlink(path)
+                except OSError:
+                    pass
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            print(f"ERROR: voice purge failed: {e}", flush=True)
+        # Sleep until just after the next midnight.
+        now = datetime.now()
+        next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=30, microsecond=0)
+        time.sleep(max(60, (next_midnight - now).total_seconds()))
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -3750,6 +3843,10 @@ def main():
     threading.Thread(
         target=cleanup_old_files, args=(PERLA_SCREENSHOT_DIR, 900), daemon=True
     ).start()
+    # User voice messages: kept for the day, swept at local midnight (same
+    # beat as perla-promote). Runs on boot too so late restarts converge.
+    os.makedirs(PERLA_VOICE_DIR, exist_ok=True)
+    threading.Thread(target=daily_voice_purge, daemon=True).start()
 
     # ThreadingHTTPServer, NOT HTTPServer: /api/text blocks its thread in the
     # whole OpenCode round-trip (call_opencode, up to 300s). If the model then

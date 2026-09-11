@@ -646,6 +646,7 @@ in {
         "PERLA_WHISPER_MODEL=${cfg.whisper_model}"
         "PERLA_WHISPER_LANG=${cfg.whisper_lang}"
         "PERLA_AUDIO_DIR=%h/.local/share/perla-audio"
+        "PERLA_VOICE_DIR=%h/.local/share/perla-voice"
         "PERLA_COMPANION_PORT=8443"
         "PERLA_GATE_PASSWORD=${cfg.gate_password}"
         "PERLA_FILES_DIR=${cfg.files_dir}"
