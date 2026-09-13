@@ -44,6 +44,7 @@
       ".config/opencode"
       ".password-store"
       ".local/share/keyrings"
+      ".local/share/Trash"
       ".mozilla"
       ".env"
       ".envrc"

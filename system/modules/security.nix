@@ -1,5 +1,22 @@
 { ... }: {
 
+  # Passwordless sudo, scoped to EXACTLY the one command the Perla quick-actions
+  # daemon runs ("sudo nixos-rebuild switch --flake ." from ~/nixos-config, see
+  # SCOPED_COMMANDS.rebuild_nixos in home/modules/perla/perla-companion.py). The
+  # args are part of the match, so nothing else becomes passwordless. This is
+  # what lets the web "Rebuild NixOS" action run without a password prompt.
+  security.sudo.extraRules = [
+    {
+      users = [ "thedreamdev" ];
+      commands = [
+        {
+          command = "/run/current-system/sw/bin/nixos-rebuild switch --flake .";
+          options = [ "NOPASSWD" ];
+        }
+      ];
+    }
+  ];
+
   # KERNEL HARDENING
   boot.kernel.sysctl = {
     # Network security

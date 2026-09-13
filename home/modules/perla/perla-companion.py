@@ -39,7 +39,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote, unquote
 import threading
 
 # ---------------------------------------------------------------------------
@@ -909,6 +909,7 @@ MAX_DRIVE_UPLOAD_BYTES = 100 * 1024 * 1024
 _DRIVE_EXCLUDE_DEFAULT = (
     ".ssh:.gnupg:.config/sops:.config/opencode:.password-store:"
     ".local/share/keyrings:.mozilla:.env:.envrc:"
+    ".local/share/Trash:"
     "Documents/Obsidian/PerlaNew/Memory/Long-Term"
 )
 
@@ -1057,21 +1058,118 @@ def drive_mkdir(parent_rel, name):
     return True, _drive_rel(target)
 
 
+def _drive_trash_candidates():
+    """Absolute paths for the freedesktop.org system trash, all under
+    $HOME/.local/share/Trash — the 'files' directory (actual moved items),
+    the 'info' directory (.trashinfo metadata), and the enclosing root.
+    Computed fresh on every call like _drive_exclude_roots, so no daemon
+    restart is needed to pick up anything that changes. DRIVE_ROOT is our
+    $HOME, so every Drive item shares this one home-filesystem trash."""
+    home = os.path.realpath(os.path.expanduser("~"))
+    trash_root = os.path.join(home, ".local", "share", "Trash")
+    return trash_root, os.path.join(trash_root, "files"), os.path.join(trash_root, "info")
+
+
 def drive_delete(rel_path):
+    """Move a file or folder into the system trash (~/.local/share/Trash,
+    freedesktop spec) instead of permanently deleting it, so BOTH Perla's
+    Undo and the OS file manager's Trash can bring it back. Returns
+    (ok, detail): on success detail is a {"trash_name", "name", "path"}
+    dict the undo popup needs to restore it; on failure it's an error
+    string (same shape every other drive_* returns)."""
     abs_path, error = _drive_resolve(rel_path, must_exist=True, allow_root=False)
     if error:
         return False, error
     if os.path.realpath(abs_path) == _drive_root_real():
         return False, "can't delete the root folder"
+    original_real = os.path.realpath(abs_path)
+    _, files_dir, info_dir = _drive_trash_candidates()
     try:
-        if os.path.isdir(abs_path) and not os.path.islink(abs_path):
-            import shutil as _shutil
-            _shutil.rmtree(abs_path)
-        else:
-            os.remove(abs_path)
+        os.makedirs(files_dir, exist_ok=True)
+        os.makedirs(info_dir, exist_ok=True)
     except OSError as e:
-        return False, f"couldn't delete: {e}"
-    return True, None
+        return False, f"couldn't prepare the trash: {e}"
+
+    # Dedupe a colliding name the same way an upload/copy would, so two
+    # same-named items trashed over time each keep their own entry.
+    trash_name = os.path.basename(_drive_unique_dest(files_dir, os.path.basename(original_real)))
+    try:
+        import shutil as _shutil
+        _shutil.move(original_real, os.path.join(files_dir, trash_name))
+    except OSError as e:
+        return False, f"couldn't move to trash: {e}"
+
+    # The .trashinfo file is what makes a trashed item restorable (by
+    # Perla's undo AND by the file manager). Path must be the URL-encoded
+    # absolute original location per the spec.
+    try:
+        with open(os.path.join(info_dir, trash_name + ".trashinfo"), "w", encoding="utf-8") as f:
+            f.write("[Trash Info]\n")
+            f.write("Path=" + quote(original_real) + "\n")
+            f.write("DeletionDate=" + datetime.now().strftime("%Y-%m-%dT%H:%M:%S") + "\n")
+    except OSError as e:
+        # The item is already safely in the trash — the delete succeeded;
+        # surface only that the metadata write failed (restore-from-OS-trash
+        # needs it, Perla's undo does not since it re-resolves anyway).
+        return True, {
+            "trash_name": trash_name,
+            "name": os.path.basename(original_real),
+            "path": rel_path,
+            "info_warning": str(e),
+        }
+    return True, {
+        "trash_name": trash_name,
+        "name": os.path.basename(original_real),
+        "path": rel_path,
+    }
+
+
+def drive_restore(trash_name):
+    """Bring a trashed item back to its original location (the Path from
+    its .trashinfo), deduping if something new now sits at that exact
+    spot. Returns (new_rel_path, error). Validation uses _drive_resolve
+    on the restored location's parent, so the exclusion denylist and
+    traversal protection apply to the destination just like any other
+    Drive target. The .trashinfo is removed once the move succeeds."""
+    trash_name = (trash_name or "").strip()
+    if not trash_name or "/" in trash_name or "\\" in trash_name or trash_name in (".", ".."):
+        return None, "invalid trash name"
+    files_path = os.path.join(_drive_trash_candidates()[1], trash_name)
+    info_path = os.path.join(_drive_trash_candidates()[2], trash_name + ".trashinfo")
+    if not os.path.exists(files_path):
+        return None, "that item isn't in the trash"
+    if not os.path.exists(info_path):
+        return None, "missing trash metadata for that item"
+    try:
+        with open(info_path, encoding="utf-8") as f:
+            info = f.read()
+    except OSError as e:
+        return None, f"couldn't read trash metadata: {e}"
+    original_abs = None
+    for line in info.splitlines():
+        if line.startswith("Path="):
+            original_abs = unquote(line[len("Path="):].strip())
+            break
+    if not original_abs:
+        return None, "trash metadata has no original path"
+
+    parent_abs, error = _drive_resolve(
+        os.path.dirname(os.path.relpath(original_abs, _drive_root_real())),
+        must_exist=True,
+    )
+    if error:
+        return None, error
+    dest = _drive_unique_dest(parent_abs, os.path.basename(original_abs))
+    try:
+        import shutil as _shutil
+        _shutil.move(files_path, dest)
+    except OSError as e:
+        return None, f"couldn't restore: {e}"
+    try:
+        os.remove(info_path)
+    except OSError:
+        pass
+    return _drive_rel(dest), None
 
 
 def drive_save_upload(parent_rel, filename, raw_bytes):
@@ -1231,6 +1329,208 @@ def drive_read_for_view(rel_path, max_bytes=2 * 1024 * 1024):
     if size > max_bytes:
         text = text[:max_bytes] + "\n\n[... truncated for preview — download the file to see the rest ...]"
     return text, filename, None
+
+
+# ---------------------------------------------------------------------------
+# Scoped commands — a fixed, named table of commands the Quick Actions UI
+# (and nothing else) can trigger, extending SYSTEM_ACTIONS' "name selects a
+# hardcoded argv, never free text" guarantee to ops that don't fit that
+# allowlist's shape (log tails, rebuilds, disk/memory checks). Every entry's
+# argv is either fully hardcoded, or — for the one parameterized command,
+# restart_service — built from a value validated against the real list of
+# systemd --user units first, so a caller-supplied string can only ever
+# SELECT an existing unit, never inject a flag, path, or second command.
+# ---------------------------------------------------------------------------
+NIXOS_CONFIG_DIR = os.path.expanduser("~/nixos-config")
+
+SCOPED_COMMANDS = {
+    "disk_usage": {
+        "label": "Disk usage",
+        "argv": ["df", "-h"],
+        "timeout": 15,
+    },
+    "memory_usage": {
+        "label": "Memory usage",
+        "argv": ["free", "-h"],
+        "timeout": 15,
+    },
+    "uptime": {
+        "label": "Uptime",
+        "argv": ["uptime"],
+        "timeout": 10,
+    },
+    "tail_companion_log": {
+        "label": "Companion log (last 100 lines)",
+        "argv": ["journalctl", "--user", "-u", "perla-companion.service", "-n", "100", "--no-pager"],
+        "timeout": 15,
+    },
+    "tail_t1_log": {
+        "label": "Tier 1 server log (last 100 lines)",
+        "argv": ["journalctl", "--user", "-u", "perla-t1.service", "-n", "100", "--no-pager"],
+        "timeout": 15,
+    },
+    "rebuild_nixos": {
+        "label": "Rebuild NixOS (nixos-rebuild switch)",
+        # NOTE: this requires the user running perla-companion to have
+        # passwordless sudo for exactly this command (e.g. via a
+        # /etc/sudoers.d/ rule scoped to the nixos-rebuild binary and these
+        # args) — nothing here can supply an interactive sudo password.
+        "argv": ["sudo", "nixos-rebuild", "switch", "--flake", "."],
+        "cwd": NIXOS_CONFIG_DIR,
+        "timeout": 600,
+    },
+    "rebuild_home_manager": {
+        "label": "Rebuild Home Manager (home-manager switch)",
+        "argv": ["home-manager", "switch", "--flake", ".#thedreamdev"],
+        "cwd": NIXOS_CONFIG_DIR,
+        "timeout": 600,
+    },
+}
+
+# systemd unit-name charset per systemd.unit(5): letters, digits, and
+# ":-_.\@" — kept conservative here (no "\" or "@", since this tool never
+# needs templated/instance units) so a name can't smuggle in path
+# separators, spaces, or shell metacharacters, even though it's never
+# passed through a shell either way (subprocess.run with a list, no
+# shell=True).
+_SERVICE_NAME_RE = re.compile(r"^[A-Za-z0-9:_.-]+$")
+
+
+def _list_user_units():
+    """Real, currently-known systemd --user unit names (with and without
+    a trailing .service), for validating a restart target against
+    something that actually exists rather than trusting the input."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "list-units", "--all", "--type=service",
+             "--no-legend", "--plain", "--full"],
+            capture_output=True, text=True, timeout=10
+        )
+    except Exception:
+        return set()
+    names = set()
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        unit = parts[0]
+        if unit.endswith(".service"):
+            names.add(unit)
+            names.add(unit[: -len(".service")])
+    return names
+
+
+def restart_named_service(name):
+    """Restart exactly one systemd --user unit chosen by name — only if
+    that name matches an existing unit. Returns (ok, message). This is
+    the ONE parameterized scoped command: the argument SELECTS among
+    real units, it never becomes part of a shell string or an arbitrary
+    argv position."""
+    raw = (name or "").strip()
+    if not raw:
+        return False, "No service name given."
+    if not _SERVICE_NAME_RE.match(raw):
+        return False, f"'{raw}' isn't a valid service name."
+
+    unit = raw if raw.endswith(".service") else raw + ".service"
+    known = _list_user_units()
+    if unit not in known and raw not in known:
+        return False, (
+            f"'{raw}' doesn't match a known systemd --user service. "
+            "Check the name with `systemctl --user list-units` first."
+        )
+
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "restart", unit],
+            capture_output=True, text=True, timeout=30
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"Restarting '{unit}' timed out."
+    except Exception as e:
+        return False, f"Couldn't restart '{unit}': {e}"
+
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        return False, f"Restarting '{unit}' failed: {stderr[:300] or 'unknown error'}"
+    return True, f"Restarted {unit}."
+
+
+def status_named_service(name):
+    """Show the runtime status of exactly one systemd --user unit chosen by
+    name — only if that name matches an existing unit. Same trust model as
+    restart_named_service: the argument SELECTS among real units, it never
+    becomes part of a shell string or an arbitrary argv position.
+
+    Returns (ok, output). Unlike restart, a non-zero systemctl exit isn't a
+    failure: systemctl status returns non-zero for stopped/failed/inactive
+    units, and that state IS the answer we're reporting rather than an error
+    condition. ok is only False when the unit name is invalid/unknown or
+    the check itself couldn't run."""
+    raw = (name or "").strip()
+    if not raw:
+        return False, "No service name given."
+    if not _SERVICE_NAME_RE.match(raw):
+        return False, f"'{raw}' isn't a valid service name."
+
+    unit = raw if raw.endswith(".service") else raw + ".service"
+    known = _list_user_units()
+    if unit not in known and raw not in known:
+        return False, (
+            f"'{raw}' doesn't match a known systemd --user service. "
+            "Check the name with `systemctl --user list-units` first."
+        )
+
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "status", unit],
+            capture_output=True, text=True, timeout=30
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"Checking status of '{unit}' timed out."
+    except Exception as e:
+        return False, f"Couldn't check status of '{unit}': {e}"
+
+    output = (result.stdout or "") + (("\n" + result.stderr) if result.stderr else "")
+    output = output.strip() or f"'{unit}' returned no output."
+    # Same payload cap as run_scoped_command — status shouldn't balloon HTTP.
+    if len(output) > 20000:
+        output = output[:20000] + "\n\n[... output truncated ...]"
+    return True, output
+
+
+def run_scoped_command(name):
+    """Run exactly one fixed, pre-registered command by name. Returns
+    (ok, output_or_error). No caller-supplied text ever becomes part of
+    the argv for these — the name only selects an index into
+    SCOPED_COMMANDS, whose argv lists are hardcoded above."""
+    entry = SCOPED_COMMANDS.get(name)
+    if entry is None:
+        return False, f"'{name}' isn't a registered scoped command."
+
+    cwd = entry.get("cwd")
+    if cwd and not os.path.isdir(cwd):
+        return False, f"Configured directory '{cwd}' doesn't exist."
+
+    try:
+        result = subprocess.run(
+            entry["argv"], capture_output=True, text=True,
+            timeout=entry.get("timeout", 30), cwd=cwd,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"'{entry['label']}' timed out."
+    except FileNotFoundError as e:
+        return False, f"Command not found for '{entry['label']}': {e}"
+    except Exception as e:
+        return False, f"'{entry['label']}' failed to run: {e}"
+
+    output = (result.stdout or "") + (("\n" + result.stderr) if result.stderr else "")
+    output = output.strip() or "(no output)"
+    # Cap what comes back over HTTP/into the UI — a runaway log tail or
+    # rebuild output shouldn't balloon the response payload.
+    if len(output) > 20000:
+        output = output[:20000] + "\n\n[... output truncated ...]"
+    return result.returncode == 0, output
 
 
 def execute_system_action(action, target=None):
@@ -2842,6 +3142,16 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(200, {"ok": True})
             return
 
+        if path == "/api/scoped-commands":
+            if not self.check_auth():
+                return
+            commands = [
+                {"name": name, "label": entry["label"]}
+                for name, entry in SCOPED_COMMANDS.items()
+            ]
+            self.send_json(200, {"ok": True, "commands": commands})
+            return
+
         if path == "/api/reminders":
             if not self.check_auth():
                 return
@@ -2967,6 +3277,10 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.handle_drive_delete()
             return
 
+        if path == "/api/drive/restore":
+            self.handle_drive_restore()
+            return
+
         if path == "/api/drive/copy":
             self.handle_drive_copy()
             return
@@ -2993,6 +3307,10 @@ class CompanionHandler(BaseHTTPRequestHandler):
 
         if path == "/api/quick-action":
             self.handle_quick_action()
+            return
+
+        if path == "/api/scoped-command":
+            self.handle_scoped_command()
             return
 
         self.send_error(404)
@@ -3428,7 +3746,21 @@ class CompanionHandler(BaseHTTPRequestHandler):
         if not ok:
             self.send_json(200, {"ok": False, "error": detail})
             return
-        self.send_json(200, {"ok": True})
+        # `detail` carries {trash_name, name, path} so the caller can offer
+        # an Undo that restores the exact trash entry.
+        self.send_json(200, {"ok": True, "trash": detail})
+
+    def handle_drive_restore(self):
+        try:
+            body = json.loads(self.read_body())
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(400, {"error": "invalid JSON"})
+            return
+        new_rel, error = drive_restore(body.get("trash_name", ""))
+        if error:
+            self.send_json(200, {"ok": False, "error": error})
+            return
+        self.send_json(200, {"ok": True, "path": new_rel})
 
     def handle_drive_copy(self):
         try:
@@ -3711,6 +4043,63 @@ class CompanionHandler(BaseHTTPRequestHandler):
             "ok": ok,
             "error": None if ok else detail,
             "message": detail if ok else None,
+        })
+
+    def handle_scoped_command(self):
+        """Runs one entry from SCOPED_COMMANDS by name, or the single
+        parameterized restart_service command. Same trust tier as
+        /api/quick-action (any valid session, local or remote/phone) —
+        not local-only — since this is meant to be reachable from the
+        phone the same way Restart PC / Shut Down already are. The
+        safety property here isn't "local only", it's "no caller-supplied
+        text ever reaches subprocess as anything but a validated unit
+        name" — see SCOPED_COMMANDS / restart_named_service."""
+        try:
+            body = json.loads(self.read_body())
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(400, {"error": "invalid JSON"})
+            return
+
+        name = (body.get("name") or "").strip()
+        source = self.get_source()
+
+        if name == "restart_service":
+            target = body.get("target", "")
+            ok, message = restart_named_service(target)
+            log_request(f"[Scoped Command: restart_service {target}]", message,
+                        tier=0, tool_used=False, source=source)
+            self.send_json(200, {
+                "ok": ok,
+                "output": message if ok else None,
+                "error": None if ok else message,
+            })
+            return
+
+        if name == "status_service":
+            target = body.get("target", "")
+            ok, output = status_named_service(target)
+            log_request(f"[Scoped Command: status_service {target}]",
+                        output if ok else f"status check failed: {output}",
+                        tier=0, tool_used=False, source=source)
+            self.send_json(200, {
+                "ok": ok,
+                "output": output if ok else None,
+                "error": None if ok else output,
+            })
+            return
+
+        if name not in SCOPED_COMMANDS:
+            self.send_json(400, {"ok": False, "error": f"'{name}' isn't a recognized scoped command."})
+            return
+
+        ok, output = run_scoped_command(name)
+        log_request(f"[Scoped Command: {name}]",
+                    output if ok else f"FAILED: {output}",
+                    tier=0, tool_used=False, source=source)
+        self.send_json(200, {
+            "ok": ok,
+            "output": output if ok else None,
+            "error": None if ok else output,
         })
 
     def _parse_multipart_field(self, raw, boundary, field_name):

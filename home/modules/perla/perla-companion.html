@@ -3366,7 +3366,10 @@
       overflow-y: auto;
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
-      padding: 10px 18px calc(48px + var(--safe-bottom));
+      /* Extra bottom padding clears the collapsed output drawer (~46px +
+       safe-area) that's pinned via position:fixed over this panel — see
+       #qaDrawer — so the last row of buttons never sits underneath it. */
+      padding: 10px 18px calc(70px + var(--safe-bottom));
     }
 
     /* While Quick Actions is open the panel must own the entire content
@@ -3377,6 +3380,222 @@
      #drivePanel — done declaratively so open/close/relock need no JS. */
     #quickActionsPanel:not([hidden]) ~ .content-wrap {
       display: none;
+    }
+
+    /* ---------- Quick Actions output drawer ---------- */
+    /* Pinned to the bottom of the viewport, independent of the button
+     grid's own scroll — running a command never reflows or scrolls the
+     buttons out of view the way inserting a result card at the top of
+     qaResult used to. Collapsed by default (just the header bar);
+     expanding grows upward via max-height rather than pushing anything,
+     since it's position:fixed and out of normal flow entirely. Results
+     APPEND (newest first) rather than replacing each other, so a string
+     of quick actions/scoped commands reads as a small log instead of
+     only ever showing the last one. */
+    #qaDrawer {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 18;
+      max-width: 820px;
+      margin: 0 auto;
+      background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
+      border-top: 1px solid var(--rule);
+      border-left: 1px solid var(--rule);
+      border-right: 1px solid var(--rule);
+      border-radius: 14px 14px 0 0;
+      box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.35);
+      display: flex;
+      flex-direction: column;
+      transition: max-height 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+      max-height: 46px; /* collapsed: header only */
+      overflow: hidden;
+    }
+
+    #qaDrawer[hidden] {
+      display: none !important;
+    }
+
+    #qaDrawer.expanded {
+      max-height: min(60vh, 480px);
+    }
+
+    .qa-drawer-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      cursor: pointer;
+      flex-shrink: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .qa-drawer-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .qa-drawer-count {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--brass-bright);
+      background: rgba(201, 123, 141, 0.14);
+      border-radius: 20px;
+      padding: 1px 8px;
+      min-width: 18px;
+      text-align: center;
+    }
+
+    .qa-drawer-count:empty,
+    .qa-drawer-count[data-count="0"] {
+      display: none;
+    }
+
+    .qa-drawer-spacer {
+      flex: 1;
+    }
+
+    .qa-drawer-clear {
+      background: transparent;
+      border: none;
+      color: var(--ink-faint);
+      font-size: 11.5px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .qa-drawer-clear:hover {
+      color: var(--wax-bright);
+      background: rgba(184, 69, 47, 0.12);
+    }
+
+    .qa-drawer-chevron {
+      display: flex;
+      align-items: center;
+      color: var(--ink-faint);
+      transition: transform 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    #qaDrawer.expanded .qa-drawer-chevron {
+      transform: rotate(180deg);
+    }
+
+    .qa-drawer-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      padding: 0 14px calc(14px + var(--safe-bottom));
+      scrollbar-width: thin;
+      scrollbar-color: var(--brass-dim) transparent;
+    }
+
+    .qa-drawer-body::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .qa-drawer-body::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .qa-drawer-body::-webkit-scrollbar-thumb {
+      background: var(--brass-dim);
+      border-radius: 8px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+
+    .qa-drawer-empty {
+      color: var(--ink-faint);
+      font-style: italic;
+      font-size: 13px;
+      text-align: center;
+      padding: 20px 0;
+    }
+
+    .qa-drawer-entry {
+      border: 1px solid var(--rule-faint);
+      border-radius: 10px;
+      margin-bottom: 10px;
+      overflow: hidden;
+      background: rgba(0, 0, 0, 0.15);
+      animation: qa-feedback-in 0.18s ease;
+    }
+
+    .qa-drawer-entry-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--rule-faint);
+      font-size: 12px;
+    }
+
+    .qa-drawer-entry-status {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .qa-drawer-entry-status.ok {
+      background: #7fae6a;
+      box-shadow: 0 0 6px rgba(127, 174, 106, 0.6);
+    }
+
+    .qa-drawer-entry-status.fail {
+      background: var(--wax-bright);
+      box-shadow: 0 0 6px rgba(184, 69, 47, 0.6);
+    }
+
+    .qa-drawer-entry-label {
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .qa-drawer-entry-time {
+      color: var(--ink-faint);
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .qa-drawer-entry-body {
+      padding: 10px 12px;
+    }
+
+    .qa-drawer-entry-body pre {
+      margin: 0;
+      font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--ink);
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    .qa-drawer-entry-body.is-error pre {
+      color: var(--wax-bright);
+    }
+
+    .qa-drawer-entry-body img {
+      display: block;
+      max-width: 100%;
+      max-height: 260px;
+      border-radius: 6px;
+      cursor: zoom-in;
+      margin: 0 auto;
     }
 
     .qa-container {
@@ -3746,6 +3965,40 @@
       color: var(--ink);
     }
 
+    /* Action buttons inside a feedback card (e.g. Drive's "Undo" after a
+     delete) — a small brass pill sitting between the message content and
+     the dismiss ✕. Kept inside the flex row so a card with an action still
+     reads as a single inline toast. */
+    .qa-feedback-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .qa-feedback-action {
+      flex-shrink: 0;
+      height: 28px;
+      padding: 0 13px;
+      border-radius: 14px;
+      border: 1px solid var(--brass-dim);
+      background: rgba(201, 123, 141, 0.12);
+      color: var(--brass-bright);
+      font-family: var(--font-serif);
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
+    }
+
+    .qa-feedback-action:hover {
+      background: rgba(201, 123, 141, 0.24);
+    }
+
+    .qa-feedback-action:active {
+      transform: scale(0.96);
+    }
+
     /* Screenshot Card */
     .qa-result {
       margin-bottom: 14px;
@@ -4112,6 +4365,42 @@
       <!-- Sticky Feedback & Result container at top -->
       <div id="qaResult" class="qa-result"></div>
 
+      <div id="qaDrawer" class="qa-drawer" hidden>
+        <div class="qa-drawer-header" id="qaDrawerHeader">
+          <span class="qa-drawer-title">
+            <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+              stroke-linejoin="round" width="15" height="15">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="8" y1="13" x2="16" y2="13" />
+              <line x1="8" y1="17" x2="13" y2="17" />
+            </svg>
+            <span>Output</span>
+          </span>
+          <span id="qaDrawerCount" class="qa-drawer-count" data-count="0"></span>
+          <span class="qa-drawer-spacer"></span>
+          <button id="qaDrawerClear" class="qa-drawer-clear" title="Clear all results" aria-label="Clear all results">
+            <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+              stroke-linejoin="round" width="14" height="14">
+              <path d="M3 6h18" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              <line x1="10" y1="11" x2="10" y2="17" />
+              <line x1="14" y1="11" x2="14" y2="17" />
+            </svg>
+          </button>
+          <span class="qa-drawer-chevron">
+            <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+              stroke-linejoin="round" width="14" height="14">
+              <polyline points="5 8 11 14 17 8" />
+            </svg>
+          </span>
+        </div>
+        <div id="qaDrawerBody" class="qa-drawer-body">
+          <div class="qa-drawer-empty">No results yet — run a command to see its output here.</div>
+        </div>
+      </div>
+
       <div id="qaInputRow" class="qa-input-row" hidden>
         <input id="qaInputField" type="text" placeholder="" autocomplete="off" />
         <button id="qaInputGo" class="qa-input-go">Go</button>
@@ -4282,6 +4571,111 @@
                   <line x1="12" y1="2" x2="12" y2="12" />
                 </svg></span>
               <span class="qa-label">Shut Down</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Section: Scoped Commands -->
+        <!-- Every button here maps to exactly one hardcoded argv on the
+             server (SCOPED_COMMANDS in perla-companion.py) — same "name
+             selects a fixed command, never free text" guarantee as the
+             Power & System actions above, just for ops those don't cover
+             (log tails, disk/memory checks, rebuilds). The one exception,
+             Restart Service, takes a name but only ever uses it to SELECT
+             an existing systemd --user unit (validated server-side against
+             `systemctl --user list-units`) — it can't inject a flag or a
+             second command. -->
+        <div class="qa-section">
+          <div class="qa-section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+              stroke-linejoin="round" width="13" height="13">
+              <polyline points="4 17 10 11 4 5" />
+              <line x1="12" y1="19" x2="20" y2="19" />
+            </svg>
+            <span>Scoped Commands</span>
+          </div>
+          <div class="qa-grid">
+            <button class="qa-btn" data-scoped="disk_usage">
+              <span class="qa-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                  <ellipse cx="12" cy="5" rx="9" ry="3" />
+                  <path d="M3 5v14a9 3 0 0 0 18 0V5" />
+                  <path d="M3 12a9 3 0 0 0 18 0" />
+                </svg></span>
+              <span class="qa-label">Disk Usage</span>
+            </button>
+            <button class="qa-btn" data-scoped="memory_usage">
+              <span class="qa-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                  <rect x="2" y="7" width="20" height="10" rx="1" />
+                  <line x1="6" y1="7" x2="6" y2="17" />
+                  <line x1="10" y1="7" x2="10" y2="17" />
+                  <line x1="14" y1="7" x2="14" y2="17" />
+                  <line x1="18" y1="7" x2="18" y2="17" />
+                </svg></span>
+              <span class="qa-label">Memory Usage</span>
+            </button>
+            <button class="qa-btn" data-scoped="uptime">
+              <span class="qa-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg></span>
+              <span class="qa-label">Uptime</span>
+            </button>
+            <button class="qa-btn" data-scoped="tail_companion_log">
+              <span class="qa-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="8" y1="13" x2="16" y2="13" />
+                  <line x1="8" y1="17" x2="13" y2="17" />
+                </svg></span>
+              <span class="qa-label">Companion Log</span>
+            </button>
+            <button class="qa-btn" data-scoped="tail_t1_log">
+              <span class="qa-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="8" y1="13" x2="16" y2="13" />
+                  <line x1="8" y1="17" x2="13" y2="17" />
+                </svg></span>
+              <span class="qa-label">Tier 1 Log</span>
+            </button>
+            <button class="qa-btn qa-btn-danger" data-scoped="rebuild_nixos"
+              data-confirm="Run nixos-rebuild switch? This rebuilds the whole system and may take several minutes.">
+              <span class="qa-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                  <path d="M12 2 2 7l10 5 10-5-10-5z" />
+                  <path d="M2 17l10 5 10-5" />
+                  <path d="M2 12l10 5 10-5" />
+                </svg></span>
+              <span class="qa-label">Rebuild NixOS</span>
+            </button>
+            <button class="qa-btn qa-btn-danger" data-scoped="rebuild_home_manager"
+              data-confirm="Run home-manager switch --flake .#thedreamdev?">
+              <span class="qa-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <polyline points="9 22 9 12 15 12 15 22" />
+                </svg></span>
+              <span class="qa-label">Rebuild Home Manager</span>
+            </button>
+            <button class="qa-btn qa-btn-input" data-scoped="restart_service">
+              <span class="qa-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                  <polyline points="1 4 1 10 7 10" />
+                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                </svg></span>
+              <span class="qa-label">Restart Service</span>
+            </button>
+            <button class="qa-btn qa-btn-input" data-scoped="status_service">
+              <span class="qa-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                </svg></span>
+              <span class="qa-label">Check Service Status</span>
             </button>
           </div>
         </div>
@@ -4649,10 +5043,12 @@
       HISTORY_DAY_PATH: "/api/history/day",
       REMINDERS_PATH: "/api/reminders",
       QUICK_ACTION_PATH: "/api/quick-action",
+      SCOPED_COMMAND_PATH: "/api/scoped-command",
       AVATAR_PATH: "/api/avatar",
       DRIVE_LIST_PATH: "/api/drive/list",
       DRIVE_MKDIR_PATH: "/api/drive/mkdir",
       DRIVE_DELETE_PATH: "/api/drive/delete",
+      DRIVE_RESTORE_PATH: "/api/drive/restore",
       DRIVE_UPLOAD_PATH: "/api/drive/upload",
       DRIVE_DOWNLOAD_PATH: "/api/drive/download",
       DRIVE_VIEW_PATH: "/api/drive/view",
@@ -5166,6 +5562,132 @@
         output.scrollIntoView({ block: "end" });
         entry.scrollIntoView({ behavior: "smooth", block: "end" });
       }
+      return entry;
+    }
+
+    // Renders the server's "About to execute a potentially destructive
+    // action. Confirm?" reply as an actual bubble with Confirm/Reject
+    // buttons, instead of the dead end it used to be (data.confirm_required
+    // was never read client-side, so the prompt just sat there with no way
+    // to answer it). Confirm re-POSTs `originalMessage` with confirm:true
+    // through the exact same /api/text path submitText already uses;
+    // Reject just disables the buttons and leaves a note. Only ever
+    // rendered live for the tier that's currently on screen — a
+    // confirmation prompt has no meaning to leave "backgrounded" the way
+    // a normal reply does, since it's blocking that specific pending action.
+    function addConfirmationEntry(promptText, originalMessage, forTier) {
+      const targetTier = forTier !== undefined ? forTier : activeTier;
+      if (!isViewingTierChat(targetTier)) {
+        // The user navigated away before the confirmation prompt came
+        // back — surface it as a notification instead of silently
+        // dropping it, since there's no natural "unread" home for a
+        // prompt that needs an action, not just a read.
+        notify("error", "A destructive action needs confirmation", promptText);
+        markTierUnread(targetTier);
+        return;
+      }
+      output.querySelectorAll(".welcome").forEach((w) => w.remove());
+
+      const entry = document.createElement("div");
+      entry.className = "entry entry-perla";
+      const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+      const bubble = document.createElement("div");
+      bubble.className = "entry-bubble";
+      const p = document.createElement("p");
+      p.textContent = promptText;
+      bubble.appendChild(p);
+
+      const actions = document.createElement("div");
+      actions.style.display = "flex";
+      actions.style.gap = "8px";
+      actions.style.marginTop = "10px";
+
+      const confirmBtn = document.createElement("button");
+      confirmBtn.textContent = "Confirm";
+      confirmBtn.className = "elevate-submit";
+      confirmBtn.style.padding = "7px 14px";
+      confirmBtn.style.fontSize = "0.78rem";
+
+      const rejectBtn = document.createElement("button");
+      rejectBtn.textContent = "Reject";
+      rejectBtn.className = "qa-input-cancel";
+      rejectBtn.style.padding = "7px 14px";
+
+      confirmBtn.addEventListener("click", async () => {
+        confirmBtn.disabled = true;
+        rejectBtn.disabled = true;
+        confirmBtn.textContent = "Confirming…";
+        showThinking(targetTier);
+        try {
+          const res = await fetch(CONFIG.ENDPOINT + CONFIG.TEXT_PATH, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
+            body: JSON.stringify({ message: originalMessage, tier: targetTier, confirm: true }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            if (res.status === 401) { relockSession(); return; }
+            throw new Error(data.error || "request failed");
+          }
+          p.textContent = promptText;
+          actions.remove();
+          const note = document.createElement("div");
+          note.style.marginTop = "6px";
+          note.style.fontSize = "12px";
+          note.style.color = "var(--ink-faint)";
+          note.style.fontStyle = "italic";
+          note.textContent = "Confirmed.";
+          bubble.appendChild(note);
+
+          if (data.image) {
+            await addImageEntry("Perla", data.image, data.text || "", targetTier);
+          } else if (data.file) {
+            addSentFileEntry(data.file, data.text || "", targetTier);
+          } else {
+            const replyEntry = addEntry("perla", "Perla", data.text || "(no response)", targetTier);
+            if (data.audio && isViewingTierChat(targetTier)) {
+              playAudio(data.audio);
+              addReplayButton(replyEntry, data.audio);
+            }
+          }
+        } catch (e) {
+          notify("error", "Couldn't confirm — try again.");
+          confirmBtn.disabled = false;
+          rejectBtn.disabled = false;
+          confirmBtn.textContent = "Confirm";
+        } finally {
+          hideThinking(targetTier);
+        }
+      });
+
+      rejectBtn.addEventListener("click", () => {
+        confirmBtn.disabled = true;
+        rejectBtn.disabled = true;
+        actions.remove();
+        const note = document.createElement("div");
+        note.style.marginTop = "6px";
+        note.style.fontSize = "12px";
+        note.style.color = "var(--ink-faint)";
+        note.style.fontStyle = "italic";
+        note.textContent = "Rejected — nothing was run.";
+        bubble.appendChild(note);
+      });
+
+      actions.appendChild(confirmBtn);
+      actions.appendChild(rejectBtn);
+      bubble.appendChild(actions);
+      entry.appendChild(bubble);
+
+      const meta = document.createElement("div");
+      meta.className = "entry-meta";
+      meta.innerHTML = `<span class="entry-time">${time}</span>`;
+      entry.appendChild(meta);
+
+      output.appendChild(entry);
+      setChatLog(targetTier, output.innerHTML);
+      output.scrollIntoView({ block: "end" });
+      entry.scrollIntoView({ behavior: "smooth", block: "end" });
       return entry;
     }
 
@@ -7200,6 +7722,15 @@
           }
           return;
         }
+        if (data.confirm_required) {
+          // Destructive-keyword trip-wire (is_destructive server-side) —
+          // stop here and render a Confirm/Reject bubble instead of
+          // treating data.text as a normal reply. `data.action` is the
+          // ORIGINAL message text to re-send with confirm:true if the
+          // user actually wants to proceed.
+          addConfirmationEntry(data.text || "About to execute a potentially destructive action.", data.action, requestTier);
+          return;
+        }
         if (data.file_warnings && data.file_warnings.length > 0) {
           // Non-fatal: some attached files were dropped, but the rest of
           // the message (other files, and/or typed text) still went
@@ -7578,6 +8109,14 @@
         // transcript stays as a faint hint under the wave.
         if (data.transcript) {
           addVoiceUserMessageEntry(data.transcript, data.voice || null, bars, requestTier, fallbackUrl);
+        }
+        if (data.confirm_required) {
+          // Same trip-wire as text messages — the transcribed speech
+          // matched a destructive keyword. Route confirm/reject through
+          // the plain /api/text path (handle_voice has no confirm=true
+          // parameter of its own); `action` here is the transcript text.
+          addConfirmationEntry(data.text || "About to execute a potentially destructive action.", data.action, requestTier);
+          return;
         }
         if (data.image) {
           await addImageEntry("Perla", data.image, data.text || "", requestTier);
@@ -8939,8 +9478,7 @@
     drivePasteBtn.addEventListener("click", drivePasteHere);
 
     async function driveDeleteEntry(entryPath, name) {
-      if (!window.confirm(`Delete "${name}"? This can't be undone.`)) return;
-      driveStatus.textContent = "Deleting…";
+      driveStatus.textContent = "Moving to Trash…";
       try {
         const res = await fetch(CONFIG.ENDPOINT + CONFIG.DRIVE_DELETE_PATH, {
           method: "POST",
@@ -8951,8 +9489,31 @@
         const data = await res.json();
         if (!res.ok || !data.ok) throw new Error(data.error || "failed");
         await loadDrivePath(driveCurrentPath);
+        // Delete is a move-to-trash now, and the toast's Undo restores the
+        // exact trash entry — no destructive confirm needed up front.
+        const trashName = (data.trash && data.trash.trash_name) || "";
+        const undo = trashName ? [{ label: "Undo", onClick: () => driveRestoreEntry(trashName, name) }] : null;
+        notify("info", `Moved "${name}" to Trash`, "It's recoverable from the OS Trash.", true, undo);
       } catch (e) {
         driveStatus.textContent = "Couldn't delete: " + (e.message || "unknown error");
+      }
+    }
+
+    async function driveRestoreEntry(trashName, name) {
+      driveStatus.textContent = "Restoring…";
+      try {
+        const res = await fetch(CONFIG.ENDPOINT + CONFIG.DRIVE_RESTORE_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
+          body: JSON.stringify({ trash_name: trashName }),
+        });
+        if (res.status === 401) { relockSession(); return; }
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "failed");
+        await loadDrivePath(driveCurrentPath);
+        driveStatus.textContent = `Restored "${name}".`;
+      } catch (e) {
+        driveStatus.textContent = "Couldn't restore: " + (e.message || "unknown error");
       }
     }
 
@@ -9134,7 +9695,7 @@
       }, 250);
     }
 
-    function notify(type, title, meta = "", autoDismiss = true) {
+    function notify(type, title, meta = "", autoDismiss = true, actions = null) {
       const container = findGlobalNotifications();
       if (!container) {
         console.warn("[notify]", type, title, meta);
@@ -9173,6 +9734,24 @@
       }
       card.appendChild(contentDiv);
 
+      // Optional action buttons (e.g. Drive's "Undo" after a delete).
+      // Each click runs its callback then dismisses the card.
+      if (actions && actions.length) {
+        const actionsDiv = document.createElement("div");
+        actionsDiv.className = "qa-feedback-actions";
+        actions.forEach((action) => {
+          const btn = document.createElement("button");
+          btn.className = "qa-feedback-action";
+          btn.textContent = action.label;
+          btn.addEventListener("click", () => {
+            dismissNotification(card);
+            if (action.onClick) action.onClick();
+          });
+          actionsDiv.appendChild(btn);
+        });
+        card.appendChild(actionsDiv);
+      }
+
       const closeBtn = document.createElement("button");
       closeBtn.className = "qa-feedback-close";
       closeBtn.setAttribute("aria-label", "Dismiss");
@@ -9183,7 +9762,10 @@
       container.appendChild(card);
 
       if (autoDismiss && type !== "loading") {
-        setTimeout(() => dismissNotification(card), 4200);
+        // Cards with actionable buttons (Undo etc.) get a longer window so
+        // there's real time to act, instead of the 4.2s read-only toast.
+        const delay = actions && actions.length ? 10000 : 4200;
+        setTimeout(() => dismissNotification(card), delay);
       }
       return card;
     }
@@ -9207,6 +9789,11 @@
       quickActionsStatus.textContent = "";
       qaResult.innerHTML = "";
       closeQaInputRow();
+      // Collapse the output drawer rather than clearing it — the last
+      // batch of results (a rebuild log, a restarted-service confirmation)
+      // should still be there if the person reopens Quick Actions a
+      // moment later, same persistence the notify() toasts already imply.
+      setQaDrawerExpanded(false);
       output.innerHTML = liveOutputHTML !== null ? liveOutputHTML : "";
       output.scrollIntoView({ block: "end" });
       updateTierButtonHighlight();
@@ -9264,7 +9851,14 @@
     const QA_INPUT_PLACEHOLDERS = {
       open_app: "App name (e.g. Firefox, VLC)",
       open_folder: "Folder path (e.g. ~/Documents)",
+      restart_service: "Service name (e.g. perla-companion)",
+      status_service: "Service name (e.g. perla-companion)",
     };
+
+    // Actions whose "Go" press must route through the scoped-command
+    // endpoint (validated-name commands) rather than /api/quick-action
+    // (the fixed system-action allowlist).
+    const QA_SCOPED_INPUT_ACTIONS = new Set(["restart_service", "status_service"]);
 
     function openQaInputRow(action, btn) {
       if (qaActiveInputBtn && qaActiveInputBtn !== btn) {
@@ -9297,7 +9891,12 @@
         const action = qaPendingInputAction;
         if (!target || !action) return;
         closeQaInputRow();
-        runQuickAction(action, target);
+        if (QA_SCOPED_INPUT_ACTIONS.has(action)) {
+          if (action === "restart_service" && !window.confirm(`Restart the service "${target}"?`)) return;
+          runScopedCommand(action, target);
+        } else {
+          runQuickAction(action, target);
+        }
       });
     }
 
@@ -9305,36 +9904,130 @@
       notify(isError ? "error" : "success", text, isError ? "Action failed" : "Completed");
     }
 
-    async function renderQaImage(imageUrl) {
-      qaResult.innerHTML = "";
-      const card = document.createElement("div");
-      card.className = "qa-screenshot-card";
-      card.innerHTML = `
-      <div class="qa-screenshot-header">
-        <span>Full Screenshot</span>
-        <span>Just now</span>
-      </div>
-      <div class="qa-screenshot-body">
-        <span class="entry-image-loading">Loading preview…</span>
-      </div>
-    `;
-      qaResult.appendChild(card);
-      const body = card.querySelector(".qa-screenshot-body");
+    // ---------- Quick Actions output drawer ----------
+    // Appends one entry per command run (newest first) instead of the old
+    // qaResult behavior of overwriting the single card each time. Entries
+    // persist until "Clear" is pressed or the drawer is torn down on panel
+    // close (see closeQuickActionsPanel). Kept as a simple in-memory array
+    // + full re-render on change — this list is short-lived (cleared on
+    // panel close) and never large enough to need incremental DOM patching.
+    const qaDrawer = document.getElementById("qaDrawer");
+    const qaDrawerHeader = document.getElementById("qaDrawerHeader");
+    const qaDrawerBody = document.getElementById("qaDrawerBody");
+    const qaDrawerCount = document.getElementById("qaDrawerCount");
+    const qaDrawerClear = document.getElementById("qaDrawerClear");
+    let qaDrawerEntries = []; // { id, label, time, ok, kind: "text"|"image", output, imageUrl }
+    let qaDrawerEntrySeq = 0;
 
+    function setQaDrawerExpanded(expanded) {
+      qaDrawer.classList.toggle("expanded", expanded);
+    }
+
+    qaDrawerHeader.addEventListener("click", (e) => {
+      if (e.target.closest("#qaDrawerClear")) return;
+      setQaDrawerExpanded(!qaDrawer.classList.contains("expanded"));
+    });
+
+    qaDrawerClear.addEventListener("click", (e) => {
+      e.stopPropagation();
+      qaDrawerEntries = [];
+      renderQaDrawer();
+    });
+
+    function renderQaDrawer() {
+      qaDrawerCount.textContent = String(qaDrawerEntries.length);
+      qaDrawerCount.dataset.count = String(qaDrawerEntries.length);
+      qaDrawer.hidden = false; // once opened for the session, stays available (just empty)
+
+      if (qaDrawerEntries.length === 0) {
+        qaDrawerBody.innerHTML = '<div class="qa-drawer-empty">No results yet — run a command to see its output here.</div>';
+        return;
+      }
+
+      qaDrawerBody.innerHTML = "";
+      qaDrawerEntries.forEach((entry) => {
+        const card = document.createElement("div");
+        card.className = "qa-drawer-entry";
+
+        const header = document.createElement("div");
+        header.className = "qa-drawer-entry-header";
+        const dot = document.createElement("span");
+        dot.className = "qa-drawer-entry-status " + (entry.ok ? "ok" : "fail");
+        const label = document.createElement("span");
+        label.className = "qa-drawer-entry-label";
+        label.textContent = entry.label;
+        const time = document.createElement("span");
+        time.className = "qa-drawer-entry-time";
+        time.textContent = entry.time;
+        header.append(dot, label, time);
+        card.appendChild(header);
+
+        const body = document.createElement("div");
+        body.className = "qa-drawer-entry-body" + (entry.ok ? "" : " is-error");
+
+        if (entry.kind === "image") {
+          if (entry.imageObjectUrl) {
+            const img = document.createElement("img");
+            img.src = entry.imageObjectUrl;
+            img.alt = "Screenshot";
+            img.addEventListener("click", () => openLightbox(entry.imageObjectUrl));
+            body.appendChild(img);
+          } else {
+            const p = document.createElement("div");
+            p.className = "qa-drawer-empty";
+            p.textContent = "Loading preview…";
+            body.appendChild(p);
+          }
+        } else {
+          const pre = document.createElement("pre");
+          pre.textContent = entry.output || "(no output)";
+          body.appendChild(pre);
+        }
+        card.appendChild(body);
+        qaDrawerBody.appendChild(card);
+      });
+    }
+
+    // Adds one entry to the front of the drawer list and re-renders.
+    // Returns the entry object so a caller (e.g. the screenshot path) can
+    // mutate it later (filling in imageObjectUrl once the fetch resolves)
+    // and re-render again.
+    function appendQaDrawerEntry({ label, ok, kind, output, imageUrl }) {
+      const entry = {
+        id: ++qaDrawerEntrySeq,
+        label,
+        ok,
+        kind: kind || "text",
+        output,
+        imageUrl,
+        imageObjectUrl: null,
+        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      };
+      qaDrawerEntries.unshift(entry);
+      // Cap history so a long session doesn't grow this unboundedly —
+      // older entries are dropped silently past this point, same
+      // trade-off as any bounded log view.
+      if (qaDrawerEntries.length > 30) qaDrawerEntries.length = 30;
+      renderQaDrawer();
+      return entry;
+    }
+
+    async function renderQaImage(imageUrl, label) {
+      const entry = appendQaDrawerEntry({ label: label || "Screenshot", ok: true, kind: "image", imageUrl });
+      setQaDrawerExpanded(true);
       try {
         const url = imageUrl.startsWith("http") ? imageUrl : CONFIG.ENDPOINT + imageUrl;
         const res = await fetch(url, { headers: { Authorization: "Bearer " + authToken } });
         if (!res.ok) throw new Error("image fetch failed");
         const blob = await res.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        body.innerHTML = `
-        <img src="${objectUrl}" alt="Screenshot" />
-        <span class="qa-screenshot-hint">Tap to expand</span>
-      `;
-        body.addEventListener("click", () => openLightbox(objectUrl));
-        notify("success", "Screenshot captured", "Tap the image above to view full size");
+        entry.imageObjectUrl = URL.createObjectURL(blob);
+        renderQaDrawer();
+        notify("success", "Screenshot captured", "Open the Output drawer to view it");
       } catch (e) {
-        body.innerHTML = '<span class="entry-image-error">Couldn\'t load the screenshot.</span>';
+        entry.ok = false;
+        entry.kind = "text";
+        entry.output = "Couldn't load the screenshot.";
+        renderQaDrawer();
         notify("error", "Failed to load screenshot preview", "Try capturing again");
       }
     }
@@ -9350,13 +10043,6 @@
 
       if (btn) btn.classList.add("is-loading");
       const qaLoadingCard = notify("loading", `Running ${actionLabel}…`, target ? `Target: ${target}` : "Contacting Perla daemon", false);
-      if (qaResult) qaResult.innerHTML = "";
-      // Reset scroll to the top whenever a new result is about to render —
-      // otherwise a screenshot/reminder list appearing above the button grid
-      // shifts everything below it, and the panel is left showing whatever
-      // scroll offset it happened to have before that shift, which can land
-      // mid-way through the button grid instead of at a sensible position.
-      if (quickActionsPanel) quickActionsPanel.scrollTop = 0;
 
       try {
         const body = { action };
@@ -9383,9 +10069,8 @@
             btn.classList.add("is-success");
             setTimeout(() => btn.classList.remove("is-success"), 1200);
           }
-          await renderQaImage(data.image);
           dismissNotification(qaLoadingCard);
-          if (quickActionsPanel) quickActionsPanel.scrollTop = 0;
+          await renderQaImage(data.image, actionLabel);
           return;
         }
 
@@ -9396,6 +10081,7 @@
           }
           dismissNotification(qaLoadingCard);
           notify("success", data.message || `${actionLabel} completed`, "Just now");
+          appendQaDrawerEntry({ label: actionLabel, ok: true, kind: "text", output: data.message || "Completed." });
         } else {
           if (btn) {
             btn.classList.add("is-error");
@@ -9403,6 +10089,7 @@
           }
           dismissNotification(qaLoadingCard);
           notify("error", data.error || `Could not run ${actionLabel}`, "Action reported an error");
+          appendQaDrawerEntry({ label: actionLabel, ok: false, kind: "text", output: data.error || "Action reported an error." });
         }
       } catch (e) {
         if (btn) {
@@ -9411,6 +10098,71 @@
         }
         dismissNotification(qaLoadingCard);
         notify("error", "Connection error", "Couldn't reach Perla companion daemon");
+        appendQaDrawerEntry({ label: actionLabel, ok: false, kind: "text", output: "Connection error — couldn't reach Perla companion daemon." });
+      } finally {
+        if (btn) btn.classList.remove("is-loading");
+      }
+    }
+
+    // Scoped commands hit /api/scoped-command, a SEPARATE endpoint from
+    // /api/quick-action — every name here maps to a hardcoded argv on the
+    // server (SCOPED_COMMANDS), or for "restart_service" specifically, a
+    // caller-supplied name that only ever SELECTS an existing systemd
+    // --user unit (validated server-side), never anything shell-injected.
+    async function runScopedCommand(name, target) {
+      if (!CONFIG.ENDPOINT) {
+        notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+        return;
+      }
+      const btn = document.querySelector(`.qa-btn[data-scoped="${name}"]`);
+      const label = btn ? btn.querySelector(".qa-label").textContent.trim() : name;
+
+      if (btn) btn.classList.add("is-loading");
+      const loadingCard = notify("loading", `Running ${label}…`, target ? `Target: ${target}` : "This may take a moment", false);
+
+      try {
+        const body = { name };
+        if (target) body.target = target;
+        const res = await fetch(CONFIG.ENDPOINT + CONFIG.SCOPED_COMMAND_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
+          body: JSON.stringify(body),
+        });
+        if (res.status === 401) {
+          dismissNotification(loadingCard);
+          relockSession();
+          return;
+        }
+        const data = await res.json();
+        dismissNotification(loadingCard);
+
+        const entryLabel = target ? `${label}: ${target}` : label;
+        if (data.ok) {
+          if (btn) {
+            btn.classList.add("is-success");
+            setTimeout(() => btn.classList.remove("is-success"), 1200);
+          }
+          appendQaDrawerEntry({ label: entryLabel, ok: true, kind: "text", output: data.output });
+          setQaDrawerExpanded(true);
+          notify("success", `${label} completed`, "Open the Output drawer to view it");
+        } else {
+          if (btn) {
+            btn.classList.add("is-error");
+            setTimeout(() => btn.classList.remove("is-error"), 1500);
+          }
+          appendQaDrawerEntry({ label: entryLabel, ok: false, kind: "text", output: data.error || "Command failed" });
+          setQaDrawerExpanded(true);
+          notify("error", data.error || `${label} failed`);
+        }
+      } catch (e) {
+        if (btn) {
+          btn.classList.add("is-error");
+          setTimeout(() => btn.classList.remove("is-error"), 1500);
+        }
+        dismissNotification(loadingCard);
+        notify("error", "Connection error", "Couldn't reach Perla companion daemon");
+        appendQaDrawerEntry({ label, ok: false, kind: "text", output: "Connection error — couldn't reach Perla companion daemon." });
+        setQaDrawerExpanded(true);
       } finally {
         if (btn) btn.classList.remove("is-loading");
       }
@@ -9419,7 +10171,26 @@
     quickActionsPanel.addEventListener("click", (e) => {
       const btn = e.target.closest(".qa-btn");
       if (!btn) return;
+
+      const scoped = btn.dataset.scoped;
+      if (scoped) {
+        if (scoped === "restart_service" || scoped === "status_service") {
+          if (qaPendingInputAction === scoped) {
+            closeQaInputRow();
+          } else {
+            openQaInputRow(scoped, btn);
+          }
+          return;
+        }
+        closeQaInputRow();
+        const confirmMsg = btn.dataset.confirm;
+        if (confirmMsg && !window.confirm(confirmMsg)) return;
+        runScopedCommand(scoped);
+        return;
+      }
+
       const action = btn.dataset.qa;
+      if (!action) return;
 
       if (action === "open_app" || action === "open_folder") {
         if (qaPendingInputAction === action) {

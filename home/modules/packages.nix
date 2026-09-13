@@ -56,7 +56,11 @@
     opencode
     nodejs
     obs-studio
-    antigravity-ide
+    flutter
+    android-studio
+    android-tools
+    cmake
+    ninja
 
     # Important / Others
     playerctl
