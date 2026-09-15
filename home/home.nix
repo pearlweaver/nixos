@@ -6,6 +6,7 @@
     ./modules/packages.nix
     ./modules/xdg.nix
     ./modules/perla.nix
+    ./modules/flutter.nix
   ];
 
   home.username = "thedreamdev";
