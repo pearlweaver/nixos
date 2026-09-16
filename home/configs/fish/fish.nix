@@ -14,7 +14,9 @@
     shellAliases = {
       ll = "ls -l";
       rebuild-nix = "cd ~/nixos-config && sudo nixos-rebuild switch --flake .#nixos";
+      rebuild-nix-ryoku = "cd ~/nixos-config && sudo nixos-rebuild switch --flake .#ryoku";
       rebuild-home = "cd ~/nixos-config && home-manager switch --flake .#thedreamdev";
+      rebuild-home-ryoku = "cd ~/nixos-config && home-manager switch --flake .#thedreamdev-ryoku";
     };
 
     functions = {

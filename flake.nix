@@ -39,6 +39,11 @@
     };
 
     catppuccin.url = "github:catppuccin/nix";
+
+    ryoku = {
+      url = "github:aethctl/Ryoku-on-NixOS";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   # nixConfig = {
@@ -46,7 +51,7 @@
   #  extra-trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
   #};
 
-  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, catppuccin, sops-nix, ... }@inputs:
+  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, catppuccin, sops-nix, ryoku, ... }@inputs:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
@@ -79,12 +84,61 @@
         inherit pkgs;
         extraSpecialArgs = {
           inherit inputs;
+          ryokuSession = false;
         };
         modules = [
          ./home/home.nix
           catppuccin.homeModules.catppuccin
           noctalia.homeModules.default
           niri-flake.homeModules.niri
+          nixvim.homeModules.nixvim
+          sops-nix.homeManagerModules.sops
+        ];
+      };
+
+      # Ryoku (Hyprland desktop) separate config, boots as its own
+      # generation. Your `nixos` config above is not imported here, so
+      # nothing about Niri/Noctalia is touched. Switch to it with:
+      #   sudo nixos-rebuild switch --flake .#ryoku
+      # Switch back to your normal setup any time with:
+      #   sudo nixos-rebuild switch --flake .#nixos
+      nixosConfigurations.ryoku = nixpkgs.lib.nixosSystem {
+        inherit system;
+        specialArgs = {
+          inherit inputs;
+        };
+        modules = [
+          ./system/configuration.nix
+          niri-flake.nixosModules.niri
+          sops-nix.nixosModules.sops
+          ryoku.nixosModules.default
+          # Activate the Ryoku desktop and strip the Niri/Plasma setup that
+          # system/modules/desktop.nix applies to the normal `nixos` config.
+          # `mkForce` is needed because desktop.nix sets both unconditionally.
+          ({ lib, ... }: {
+            programs.ryoku.enable = true;
+            programs.niri.enable = lib.mkForce false;
+            services.desktopManager.plasma6.enable = lib.mkForce false;
+            # system/configs/services/services.nix hardcodes XDG_CURRENT_DESKTOP=niri,
+            # but this generation runs Hyprland/Ryoku, so force the correct value.
+            environment.sessionVariables.XDG_CURRENT_DESKTOP = lib.mkForce "Hyprland";
+          })
+        ];
+      };
+
+      homeConfigurations.thedreamdev-ryoku = home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        extraSpecialArgs = {
+          inherit inputs;
+          # Tells modules/apps.nix to skip importing the Rose Pine GTK/Qt6
+          # theme files, so Ryoku's own theming is what applies instead.
+          # Passed via extraSpecialArgs rather than `_module.args` to avoid
+          # an infinite recursion when the argument is read in `imports`.
+          ryokuSession = true;
+        };
+        modules = [
+          ./home/home-ryoku.nix
+          catppuccin.homeModules.catppuccin
           nixvim.homeModules.nixvim
           sops-nix.homeManagerModules.sops
         ];
