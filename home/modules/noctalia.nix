@@ -1,4 +1,98 @@
-{ config, pkgs, inputs, ... }: {
+{ config, pkgs, lib, inputs, ... }: {
+  xdg.configFile."noctalia/templates/kitty.conf".text = ''
+    color0 {{colors.terminal_normal_black.default.hex}}
+    color1 {{colors.terminal_normal_red.default.hex}}
+    color2 {{colors.terminal_normal_green.default.hex}}
+    color3 {{colors.terminal_normal_yellow.default.hex}}
+    color4 {{colors.terminal_normal_blue.default.hex}}
+    color5 {{colors.terminal_normal_magenta.default.hex}}
+    color6 {{colors.terminal_normal_cyan.default.hex}}
+    color7 {{colors.terminal_normal_white.default.hex}}
+    color8 {{colors.terminal_bright_black.default.hex}}
+    color9 {{colors.terminal_bright_red.default.hex}}
+    color10 {{colors.terminal_bright_green.default.hex}}
+    color11 {{colors.terminal_bright_yellow.default.hex}}
+    color12 {{colors.terminal_bright_blue.default.hex}}
+    color13 {{colors.terminal_bright_magenta.default.hex}}
+    color14 {{colors.terminal_bright_cyan.default.hex}}
+    color15 {{colors.terminal_bright_white.default.hex}}
+
+    cursor                {{colors.terminal_cursor.default.hex}}
+    cursor_text_color     {{colors.terminal_cursor_text.default.hex}}
+    background            {{colors.terminal_background.default.hex}}
+    foreground            {{colors.terminal_foreground.default.hex}}
+    selection_foreground  {{colors.terminal_selection_fg.default.hex}}
+    selection_background  {{colors.terminal_selection_bg.default.hex}}
+    active_border_color   {{colors.primary.default.hex}}
+    inactive_border_color {{colors.surface_variant.default.hex}}
+    url_color             {{colors.primary.default.hex}}
+
+    active_tab_foreground   {{colors.on_primary.default.hex}}
+    active_tab_background   {{colors.primary.default.hex}}
+    inactive_tab_foreground {{colors.on_surface_variant.default.hex}}
+    inactive_tab_background {{colors.surface_variant.default.hex}}
+    cursor_trail_color      {{colors.on_surface_variant.default.hex}}
+  '';
+
+  xdg.configFile."noctalia/templates/niri.kdl".text = ''
+    layout {
+
+        focus-ring {
+            active-color   "{{colors.primary.default.hex}}"
+            inactive-color "{{colors.surface.default.hex}}"
+            urgent-color   "{{colors.error.default.hex}}"
+        }
+
+        border {
+            active-color   "{{colors.primary.default.hex}}"
+            inactive-color "{{colors.surface.default.hex}}"
+            urgent-color   "{{colors.error.default.hex}}"
+        }
+
+        tab-indicator {
+            active-color   "{{colors.primary.default.hex}}"
+            inactive-color "{{colors.primary_container.default.hex}}"
+            urgent-color   "{{colors.error.default.hex}}"
+        }
+
+        insert-hint {
+            color "{{colors.primary.default.hex}}80"
+        }
+    }
+
+    recent-windows {
+        highlight {
+            active-color "{{colors.primary.default.hex}}"
+            urgent-color "{{colors.error.default.hex}}"
+        }
+    }
+  '';
+
+  home.activation.noctaliaThemeFixup = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+    _break_store_symlink() {
+      local path="$1"
+      if [ -L "$path" ]; then
+        local target
+        target=$(readlink -f "$path")
+        cp --remove-destination "$target" "$path"
+      fi
+      if [ -f "$path" ]; then
+        chmod u+rw "$path"
+      else
+        mkdir -p "$(dirname "$path")"
+        : >"$path"
+      fi
+    }
+
+    _break_store_symlink "$HOME/.config/niri/config.kdl"
+    _break_store_symlink "$HOME/.config/starship.toml"
+
+    niri_cfg="$HOME/.config/niri/config.kdl"
+    if [ -f "$niri_cfg" ] && ! grep -q 'include "noctalia.kdl"' "$niri_cfg"; then
+      printf '\n%s\n' 'include "noctalia.kdl"' >>"$niri_cfg"
+    fi
+  '';
+
   programs.noctalia = {
     enable = true;
     settings = {
@@ -26,8 +120,24 @@
 
       theme = {
         mode = "dark";
-        source = "builtin";
-        builtin = "Rosé Pine";
+        source = "wallpaper";
+        wallpaper_scheme = "m3-content";
+
+        templates = {
+          enable_builtin_templates = true;
+          builtin_ids = [ "gtk3" "gtk4" "qt" "niri" "starship" ];
+          enable_community_templates = true;
+          community_ids = [ "vscode" ];
+          user.kitty = {
+            input_path = "$XDG_CONFIG_HOME/noctalia/templates/kitty.conf";
+            output_path = "$XDG_CONFIG_HOME/kitty/themes/noctalia.conf";
+            post_hook = "pkill -USR1 kitty || true";
+          };
+          user.niri = {
+            input_path = "$XDG_CONFIG_HOME/noctalia/templates/niri.kdl";
+            output_path = "$XDG_CONFIG_HOME/niri/noctalia.kdl";
+          };
+        };
       };
 
       bar.default = {

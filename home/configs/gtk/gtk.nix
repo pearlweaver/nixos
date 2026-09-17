@@ -1,3 +1,3 @@
 { ... }: {
-  imports = [ ./themes/rose-pine.nix ];
+  imports = [ ./themes/noctalia.nix ];
 }

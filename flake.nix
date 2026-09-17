@@ -44,6 +44,11 @@
       url = "github:aethctl/Ryoku-on-NixOS";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    silentSDDM = {
+      url = "github:uiriansan/SilentSDDM";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   # nixConfig = {
@@ -51,7 +56,7 @@
   #  extra-trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
   #};
 
-  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, catppuccin, sops-nix, ryoku, ... }@inputs:
+  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, catppuccin, sops-nix, ryoku, silentSDDM, ... }@inputs:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
@@ -77,6 +82,7 @@
           ./system/configuration.nix
           niri-flake.nixosModules.niri
           sops-nix.nixosModules.sops
+          silentSDDM.nixosModules.default
         ];
       };
 
@@ -112,6 +118,7 @@
           niri-flake.nixosModules.niri
           sops-nix.nixosModules.sops
           ryoku.nixosModules.default
+          silentSDDM.nixosModules.default
           # Activate the Ryoku desktop and strip the Niri/Plasma setup that
           # system/modules/desktop.nix applies to the normal `nixos` config.
           # `mkForce` is needed because desktop.nix sets both unconditionally.

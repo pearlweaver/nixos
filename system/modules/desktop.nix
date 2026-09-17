@@ -6,6 +6,11 @@
   programs.niri.enable = true;
   programs.niri.package = pkgs.niri;
 
+  programs.silentSDDM = {
+    enable = true;
+    theme = "rei";
+  };
+
   nix.settings.experimental-features = [
     "flakes"
     "nix-command"
