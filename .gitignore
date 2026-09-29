@@ -6,3 +6,4 @@ hyprland_setup/
 __pycache__/
 *.pyc
 result/
+.superpowers/
