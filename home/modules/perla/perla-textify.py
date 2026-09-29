@@ -16,7 +16,7 @@ Two different strategies, chosen per format:
     formatting — all of which a text-only extraction throws away. These
     are instead rendered page-by-page/slide-by-slide into PNGs and
     handed back as a list of image bytes, which perla-companion.py sends
-    through the SAME path as any other user-attached image (mimo-v2.5's
+    through the SAME path as any other user-attached image (mimo-v2.6's
     vision input), not through the text-inlining path at all.
 
 Why a separate module rather than folding this into perla-companion.py:

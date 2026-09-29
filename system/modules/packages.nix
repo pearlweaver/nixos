@@ -31,6 +31,7 @@
     helium
     wireshark
     dig
+    cisco-packet-tracer_9
     
     inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default
   ];

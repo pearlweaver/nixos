@@ -9,8 +9,8 @@
       package = pkgs.adw-gtk3;
     };
     iconTheme = {
-      name = "rose-pine";
-      package = pkgs.rose-pine-icon-theme;
+      name = "noctalia-folders";
+      package = pkgs.papirus-icon-theme;
     };
     font = {
       name = "Monocraft";

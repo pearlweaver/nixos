@@ -8,6 +8,9 @@
       cursor_shape = "beam";
       cursor_trail = 1;
 
+      background_opacity = 0.95;
+      background_blur = 1;
+
       scrollback_lines = -1;
 
       enable_audio_bell = false;

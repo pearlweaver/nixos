@@ -70,17 +70,13 @@ in {
     text = builtins.toJSON {
       "$schema" = "https://opencode.ai/config.json";
       model = cfg.opencode_model;
+      # NOTE: a top-level `permission` map must NOT be added here. Empirically,
+      # when tier-1's opencode serve sessions (agent=build) carry a permission
+      # map, every request to opencode's zen free-tier model trips a server-side
+      # 403 "OpenCode's free tier can only be used from within OpenCode", and the
+      # daemon turns the empty result into "(no response)". Scoping the denies to
+      # agent.perla below avoids the gate while keeping tier-1 tool restrictions.
       instructions = [ (builtins.readFile ./perla/AGENTS.md) ];
-      permission = {
-        bash = "deny";
-        edit = "deny";
-        webfetch = "deny";
-        task = "deny";
-        todowrite = "deny";
-        websearch = "deny";
-        lsp = "deny";
-        skill = "deny";
-      };
       agent = {
         perla = {
           description = "${cfg.assistant_name} — personal AI assistant";
@@ -648,6 +644,7 @@ in {
         "PERLA_AUDIO_DIR=%h/.local/share/perla-audio"
         "PERLA_VOICE_DIR=%h/.local/share/perla-voice"
         "PERLA_COMPANION_PORT=8443"
+        "PERLA_TURN_TIMEOUT=${toString cfg.turn_timeout_seconds}"
         "PERLA_GATE_PASSWORD=${cfg.gate_password}"
         "PERLA_FILES_DIR=${cfg.files_dir}"
         "PERLA_EXTRA_SEARCH_DIRS=${lib.concatStringsSep ":" cfg.extra_search_dirs}"

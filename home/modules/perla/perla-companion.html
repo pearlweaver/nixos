@@ -394,6 +394,21 @@
       padding: 6px 14px;
     }
 
+    /* A send that never made it to Perla. The bubble keeps its shape and
+       only the border goes wax-red, so the message stays readable while
+       reading as "this one didn't get through". The Retry button that
+       rides in the meta row clears the state and re-sends the same
+       payload. */
+    .entry-failed .entry-bubble {
+      border-color: var(--wax-bright);
+    }
+
+    .entry-fail-label {
+      font-size: 11px;
+      color: var(--wax-bright);
+      white-space: nowrap;
+    }
+
     .entry p {
       margin: 0;
       font-size: 17px;
@@ -610,7 +625,9 @@
     }
 
     .replay-btn,
-    .copy-btn {
+    .copy-btn,
+    .stop-btn,
+    .retry-btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -626,8 +643,26 @@
     }
 
     .replay-btn:hover,
-    .copy-btn:hover {
+    .copy-btn:hover,
+    .stop-btn:hover,
+    .retry-btn:hover {
       color: var(--brass-bright);
+    }
+
+    /* Retry lives on a message that's already marked failed, so it wears
+       the wax-red accent to tie it to the border. */
+    .retry-btn {
+      color: var(--wax-bright);
+    }
+
+    .retry-btn:hover {
+      color: var(--brass-bright);
+    }
+
+    .stop-btn:disabled,
+    .retry-btn:disabled {
+      opacity: 0.35;
+      cursor: default;
     }
 
     .copy-btn.copied {
@@ -1196,6 +1231,21 @@
       opacity: 0.45;
       cursor: default;
       animation: none;
+    }
+
+    /* Stop-generation control in the draft bar while a voice turn is in
+       flight — matches the .stop-btn icon in message meta rows. */
+    .voice-draft-interrupt {
+      color: var(--ink-dim);
+    }
+
+    .voice-draft-interrupt:hover:not(:disabled) {
+      color: var(--brass-bright);
+    }
+
+    .voice-draft-interrupt:disabled {
+      opacity: 0.45;
+      cursor: default;
     }
 
     @keyframes blink-wax {
@@ -4719,6 +4769,15 @@
               <polyline points="5 12 12 5 19 12" />
             </svg>
           </button>
+          <!-- Shown only while the voice turn is in flight. The voice bubble
+               itself only renders once the server's transcript comes back, so
+               the draft bar is the one place a stop control can live here. -->
+          <button id="voiceDraftInterrupt" class="voice-draft-btn voice-draft-interrupt"
+            aria-label="Stop generating" title="Stop" hidden>
+            <svg viewBox="0 0 22 22" width="13" height="13">
+              <rect x="5.5" y="5.5" width="11" height="11" rx="2" fill="currentColor" />
+            </svg>
+          </button>
         </div>
         <div id="attachPreview" class="attach-preview" hidden></div>
         <textarea id="textInput" rows="1" placeholder="Write to Perla…"></textarea>
@@ -5037,6 +5096,8 @@
       ENDPOINT: "https://nixos.fish-glyptodon.ts.net",           // Tailscale HTTPS address
       TEXT_PATH: "/api/text",
       VOICE_PATH: "/api/voice",
+      QUESTION_PATH: "/api/question",
+      INTERRUPT_PATH: "/api/interrupt",
       HEALTH_PATH: "/api/health",
       GATE_PATH: "/api/gate",
       HISTORY_DAYS_PATH: "/api/history/days",
@@ -5398,38 +5459,105 @@
       }
 
       // Inline transforms, applied only on already-escaped source text.
+      //
+      // Code spans are lifted out to placeholders BEFORE any other rule runs
+      // and dropped back at the end. Doing it in-line instead (letting the
+      // code rule emit <code> and carrying on) let every LATER rule rewrite
+      // the text inside it, so `**not bold**` rendered as bold and
+      // `[x](http://evil.com)` became a live link inside code. The placeholder
+      // keys are built from a character that can't appear in escaped output
+      // (\\x00), so no amount of user text can forge one.
       function inline(s) {
-        s = s.replace(/`([^`]+)`/g, (m, code) => "<code>" + code + "</code>");
+        const spans = [];
+        s = s.replace(/(`+)([\s\S]*?[^`])\1(?!`)/g, (m, ticks, code) => {
+          spans.push(code);
+          return "\x00" + (spans.length - 1) + "\x00";
+        });
+
         s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
         s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
         s = s.replace(/(^|[^_])_([^_\n]+)_(?!_)/g, "$1<em>$2</em>");
         s = s.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+        s = s.replace(/!\[([^\]]*)\]\(((?:[^()]|\([^()]*\))*)\)/g, "$1");
         s = s.replace(/\[([^\]]+)\]\(((?:[^()]|\([^()]*\))*)\)/g, (m, label, url) => {
           if (/^[a-z][a-z0-9+.-]*:/i.test(url) && !/^(https?|mailto|tel):/i.test(url)) {
             return m; // render the raw text — never emit javascript:/data:/vbscript:/file: etc.
           }
           return '<a href="' + url + '" target="_blank" rel="noopener">' + label + "</a>";
         });
-        return s;
+
+        return s.replace(/\x00(\d+)\x00/g, (m, i) => {
+          // Only a placeholder this function actually wrote gets restored. A
+          // stray NUL in the source (legal in JSON, so a model could emit one)
+          // must not be able to forge an index and splice in a bogus <code>.
+          const n = Number(i);
+          if (n >= spans.length) return "";
+          return "<code>" + spans[n] + "</code>";
+        });
       }
 
       const lines = String(text).replace(/\r\n/g, "\n").split("\n");
       const out = [];
       let i = 0;
 
+      // Opening fence for ``` or ~~~, with an optional info string. Returns
+      // {marker, lang} or null. The closing fence must use the same marker
+      // and be at least as long, per CommonMark.
+      function openFence(line) {
+        const m = line.match(/^\s{0,3}(`{3,}|~{3,})[ \t]*([^\s`]*)[^\n]*$/);
+        if (!m) return null;
+        return { marker: m[1][0].repeat(m[1].length), lang: m[2] || "" };
+      }
+
+      function closesFence(line, marker) {
+        const m = line.match(/^\s{0,3}(`{3,}|~{3,})[ \t]*$/);
+        return !!m && m[1][0].repeat(m[1].length).charAt(0) === marker.charAt(0)
+          && m[1].length >= marker.length;
+      }
+
+      // Code is content, never markup: escape it and hand back a <pre> with
+      // inline() deliberately NOT applied, so nothing inside can become bold,
+      // a link, or anything else.
+      function codeBlock(body) {
+        return "<pre><code>" + esc(body) + "</code></pre>";
+      }
+
       while (i < lines.length) {
         const line = lines[i];
 
-        const fence = line.match(/^```([\w+-]*)\s*$/);
+        const fence = openFence(line);
         if (fence) {
           const buf = [];
           i++;
-          while (i < lines.length && !/^```/.test(lines[i])) {
+          while (i < lines.length && !closesFence(lines[i], fence.marker)) {
             buf.push(lines[i]);
             i++;
           }
-          i++;
-          out.push("<pre><code>" + esc(buf.join("\n")) + "</code></pre>");
+          i++; // consume the closing fence (or run off the end on an unclosed one)
+          out.push(codeBlock(buf.join("\n")));
+          continue;
+        }
+
+        // 4-space (or one-tab) indented code block — the other standard way to
+        // mark up code. Without this these lines fell through to the paragraph
+        // branch and their markdown was rendered as formatting.
+        if (/^(?: {4}|\t)/.test(line) && line.trim() !== "") {
+          const buf = [];
+          while (i < lines.length && (/^(?: {4}|\t)/.test(lines[i]) || lines[i].trim() === "")) {
+            // A blank line only continues the block if more indented code
+            // follows; otherwise it ends the block (CommonMark).
+            if (lines[i].trim() === "") {
+              let j = i;
+              while (j < lines.length && lines[j].trim() === "") j++;
+              if (j >= lines.length || !/^(?: {4}|\t)/.test(lines[j])) break;
+              for (let b = i; b < j; b++) buf.push("");
+              i = j;
+              continue;
+            }
+            buf.push(lines[i].replace(/^(?: {4}|\t)/, ""));
+            i++;
+          }
+          out.push(codeBlock(buf.join("\n")));
           continue;
         }
 
@@ -5479,7 +5607,8 @@
         while (
           i < lines.length &&
           lines[i].trim() !== "" &&
-          !/^```/.test(lines[i]) &&
+          !openFence(lines[i]) &&
+          !/^(?: {4}|\t)/.test(lines[i]) &&
           !/^(#{1,4})\s/.test(lines[i]) &&
           !/^>\s?/.test(lines[i]) &&
           !/^\d+[.)]\s/.test(lines[i]) &&
@@ -5618,6 +5747,9 @@
         confirmBtn.disabled = true;
         rejectBtn.disabled = true;
         confirmBtn.textContent = "Confirming…";
+        // Re-sending starts a fresh turn — give it the same in-flight Stop
+        // control the original send had.
+        const removeStop = addStopButton(entry, targetTier);
         showThinking(targetTier);
         try {
           const res = await fetch(CONFIG.ENDPOINT + CONFIG.TEXT_PATH, {
@@ -5640,17 +5772,7 @@
           note.textContent = "Confirmed.";
           bubble.appendChild(note);
 
-          if (data.image) {
-            await addImageEntry("Perla", data.image, data.text || "", targetTier);
-          } else if (data.file) {
-            addSentFileEntry(data.file, data.text || "", targetTier);
-          } else {
-            const replyEntry = addEntry("perla", "Perla", data.text || "(no response)", targetTier);
-            if (data.audio && isViewingTierChat(targetTier)) {
-              playAudio(data.audio);
-              addReplayButton(replyEntry, data.audio);
-            }
-          }
+          renderReplyResult(data, targetTier);
         } catch (e) {
           notify("error", "Couldn't confirm — try again.");
           confirmBtn.disabled = false;
@@ -5658,6 +5780,7 @@
           confirmBtn.textContent = "Confirm";
         } finally {
           hideThinking(targetTier);
+          removeStop();
         }
       });
 
@@ -5677,6 +5800,270 @@
       actions.appendChild(confirmBtn);
       actions.appendChild(rejectBtn);
       bubble.appendChild(actions);
+      entry.appendChild(bubble);
+
+      const meta = document.createElement("div");
+      meta.className = "entry-meta";
+      meta.innerHTML = `<span class="entry-time">${time}</span>`;
+      entry.appendChild(meta);
+
+      output.appendChild(entry);
+      setChatLog(targetTier, output.innerHTML);
+      output.scrollIntoView({ block: "end" });
+      entry.scrollIntoView({ behavior: "smooth", block: "end" });
+      return entry;
+    }
+
+    // Renders a final assistant reply payload (the shape every reply-path
+    // endpoint returns) as either an image bubble, a sent-file bubble, or a
+    // plain text bubble with optional TTS audio. Shared by submitText /
+    // sendVoiceDraft and the /api/question answering flow so the question
+    // round-trip's resolution renders identically to a normal reply.
+    // Renders a finished turn's reply. This is the ONE place every completed
+    // turn ends up (plain text, question round-trips, voice, drive), so it's
+    // also where the in-flight Stop button gets taken back off the message.
+    function renderReplyResult(data, requestTier) {
+      clearStopButton(requestTier);
+      if (data.image) {
+        return addImageEntry("Perla", data.image, data.text || "", requestTier);
+      }
+      if (data.file) {
+        return addSentFileEntry(data.file, data.text || "", requestTier);
+      }
+      const entry = addEntry("perla", "Perla", data.text || "(no response)", requestTier);
+      if (data.audio && isViewingTierChat(requestTier)) {
+        playAudio(data.audio);
+        addReplayButton(entry, data.audio);
+      }
+      return entry;
+    }
+
+    // Renders an interactive question card for the model's opencode `question`
+    // tool payload: one option-group per question (options toggle as
+    // multi-select, plus a free-text "custom" field per question — typed text
+    // is appended to that question's answers), an Answer button that POSTs to
+    // /api/question, and a Skip/Dismiss button that rejects instead. The
+    // daemon keeps the message turn open across round-trips: if answering
+    // produces ANOTHER question, the card is re-rendered in place with the new
+    // request_id; if it produces the final reply, that is rendered exactly as
+    // a normal Perla reply. Cards are deduped by request_id (the daemon
+    // surfaces the same pending question to every message sent while it's
+    // unanswered, and the client must not stack spares).
+    function addQuestionEntry(payload, forTier) {
+      const targetTier = forTier !== undefined ? forTier : activeTier;
+      const requestId = payload.request_id;
+      if (requestId) {
+        const existing = document.querySelector('[data-q-request="' + CSS.escape(requestId) + '"]');
+        if (existing) {
+          // Already showing this exact question — the duplicate came from a
+          // second message sent while the first was still unanswered.
+          if (isViewingTierChat(targetTier)) {
+            output.scrollIntoView({ block: "end" });
+            existing.scrollIntoView({ behavior: "smooth", block: "end" });
+          }
+          return existing;
+        }
+      }
+      if (!isViewingTierChat(targetTier)) {
+        const firstText = payload.questions && payload.questions[0] &&
+          (payload.questions[0].question || payload.questions[0].text);
+        notify("error", "Perla has a question for you", firstText || "check the chat");
+        markTierUnread(targetTier);
+        return null;
+      }
+      output.querySelectorAll(".welcome").forEach((w) => w.remove());
+
+      const entry = document.createElement("div");
+      entry.className = "entry entry-perla entry-question";
+      if (requestId) entry.dataset.qRequest = requestId;
+      const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+      const bubble = document.createElement("div");
+      bubble.className = "entry-bubble";
+
+      const heading = document.createElement("p");
+      heading.textContent = payload.questions && payload.questions.length > 1
+        ? "Before I continue, a quick question:" : "Before I continue:";
+      heading.style.fontWeight = "600";
+      bubble.appendChild(heading);
+
+      // One mutating block per question; selections live in memory (Set of
+      // option labels) plus the custom text input, collected on submit.
+      const answerGroups = payload.questions.map((q, qi) => {
+        const group = document.createElement("div");
+        group.style.marginTop = "10px";
+
+        const qText = document.createElement("p");
+        qText.textContent = q.question || q.header || q.text || ("Question " + (qi + 1));
+        qText.style.marginBottom = "6px";
+        if (q.header && q.header !== qText.textContent) {
+          const hdr = document.createElement("div");
+          hdr.textContent = q.header;
+          hdr.style.fontSize = "0.72rem";
+          hdr.style.color = "var(--ink-faint)";
+          hdr.style.marginBottom = "3px";
+          group.appendChild(hdr);
+        }
+        group.appendChild(qText);
+
+        const selected = new Set();
+        const options = Array.isArray(q.options) ? q.options : [];
+        if (options.length) {
+          const optionsWrap = document.createElement("div");
+          optionsWrap.style.display = "flex";
+          optionsWrap.style.flexDirection = "column";
+          optionsWrap.style.gap = "6px";
+          options.forEach((opt) => {
+            const label = (opt && opt.label) || "";
+            if (!label) return;
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.textContent = opt.description ? label + " — " + opt.description : label;
+            btn.style.padding = "6px 11px";
+            btn.style.fontSize = "0.8rem";
+            btn.style.borderRadius = "8px";
+            btn.style.cursor = "pointer";
+            btn.style.width = "100%";
+            btn.style.textAlign = "left";
+            btn.style.background = "rgba(201, 123, 141, 0.10)";
+            btn.style.border = "1px solid rgba(201, 123, 141, 0.45)";
+            btn.style.color = "var(--ink-primary, #eee)";
+            btn.addEventListener("click", () => {
+              if (selected.has(label)) {
+                selected.delete(label);
+                btn.style.background = "rgba(201, 123, 141, 0.10)";
+              } else {
+                selected.add(label);
+                btn.style.background = "rgba(201, 123, 141, 0.45)";
+              }
+            });
+            optionsWrap.appendChild(btn);
+          });
+          group.appendChild(optionsWrap);
+        }
+
+        const custom = document.createElement("input");
+        custom.type = "text";
+        custom.placeholder = "Or type your own answer…";
+        custom.style.marginTop = "8px";
+        custom.style.width = "100%";
+        custom.style.boxSizing = "border-box";
+        custom.style.padding = "7px 10px";
+        custom.style.borderRadius = "8px";
+        custom.style.border = "1px solid rgba(255,255,255,0.22)";
+        custom.style.background = "rgba(255,255,255,0.06)";
+        custom.style.color = "var(--ink-primary, #eee)";
+        group.appendChild(custom);
+
+        group._selected = selected;
+        group._custom = custom;
+        return group;
+      });
+      answerGroups.forEach((g) => bubble.appendChild(g));
+
+      const actions = document.createElement("div");
+      actions.style.display = "flex";
+      actions.style.gap = "8px";
+      actions.style.marginTop = "12px";
+
+      const answerBtn = document.createElement("button");
+      answerBtn.textContent = "Answer";
+      answerBtn.className = "elevate-submit";
+      answerBtn.style.padding = "7px 14px";
+      answerBtn.style.fontSize = "0.78rem";
+
+      const dismissBtn = document.createElement("button");
+      dismissBtn.textContent = "Skip";
+      dismissBtn.className = "qa-input-cancel";
+      dismissBtn.style.padding = "7px 14px";
+
+      const statusNote = document.createElement("div");
+      statusNote.style.marginTop = "6px";
+      statusNote.style.fontSize = "12px";
+      statusNote.style.color = "var(--ink-faint)";
+      statusNote.style.fontStyle = "italic";
+
+      function disableButtons() {
+        answerBtn.disabled = true;
+        dismissBtn.disabled = true;
+      }
+
+      function submitAnswer(payloadToSend) {
+        return fetch(CONFIG.ENDPOINT + CONFIG.QUESTION_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
+          body: JSON.stringify(payloadToSend),
+        }).then((res) => res.json().then((d) => ({ res, d })));
+      }
+
+      answerBtn.addEventListener("click", async () => {
+        const answers = answerGroups.map((g) => {
+          const picked = Array.from(g._selected);
+          const customText = g._custom.value.trim();
+          if (customText) picked.push(customText);
+          return picked;
+        });
+        const allAnswered = answers.every((a) => a.length > 0);
+        if (!allAnswered) {
+          statusNote.textContent = "Pick an option (or type an answer) for every question.";
+          bubble.appendChild(statusNote);
+          return;
+        }
+        disableButtons();
+        answerBtn.textContent = "Answering…";
+        showThinking(targetTier);
+        try {
+          const { res, d } = await submitAnswer({ tier: targetTier, request_id: requestId, answers: answers });
+          if (!res.ok) {
+            if (res.status === 401) { relockSession(); return; }
+            if (!res.ok) throw new Error("answer rejected");
+          }
+          entry.remove();
+          if (d.question_required) {
+            addQuestionEntry(d, targetTier);
+          } else {
+            renderReplyResult(d, targetTier);
+          }
+        } catch (e) {
+          notify("error", "Couldn't send your answer — try again.");
+          answerBtn.disabled = false;
+          dismissBtn.disabled = false;
+          answerBtn.textContent = "Answer";
+        } finally {
+          hideThinking(targetTier);
+        }
+      });
+
+      dismissBtn.addEventListener("click", async () => {
+        disableButtons();
+        dismissBtn.textContent = "Skipping…";
+        showThinking(targetTier);
+        try {
+          const { res, d } = await submitAnswer({ tier: targetTier, request_id: requestId, dismiss: true });
+          if (!res.ok) {
+            if (res.status === 401) { relockSession(); return; }
+            if (!res.ok) throw new Error("dismiss rejected");
+          }
+          entry.remove();
+          if (d.question_required) {
+            addQuestionEntry(d, targetTier);
+            return;
+          }
+          renderReplyResult(d, targetTier);
+        } catch (e) {
+          notify("error", "Couldn't skip — try again.");
+          answerBtn.disabled = false;
+          dismissBtn.disabled = false;
+          dismissBtn.textContent = "Skip";
+        } finally {
+          hideThinking(targetTier);
+        }
+      });
+
+      actions.appendChild(answerBtn);
+      actions.appendChild(dismissBtn);
+      bubble.appendChild(actions);
+      bubble.appendChild(statusNote);
       entry.appendChild(bubble);
 
       const meta = document.createElement("div");
@@ -5776,6 +6163,13 @@
       meta.className = "entry-meta";
       meta.innerHTML = `<span class="entry-time">${time}</span>`;
       entry.appendChild(meta);
+
+      // Stamped BEFORE delivery, because deliverEntry() persists this entry's
+      // innerHTML into the tier's chat log. The id is what lets a failed send
+      // be re-wired with a live Retry button when the chat is restored from
+      // that log (switching tiers re-reads it) — the failure state itself
+      // lives in failedSends, keyed by this id, and never touches the markup.
+      entry.dataset.turnId = "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
       const wentLive = deliverEntry(entry, targetTier);
       if (wentLive) {
@@ -6479,6 +6873,10 @@
       updateTier2UnreadBadge();
 
       output.innerHTML = getChatLog(tier);
+      // The restored markup carries only each entry's data-turn-id; the live
+      // Retry closure for a still-failed send lives in failedSends, so
+      // re-apply it here (and strip any that no longer have one).
+      restoreFailedSendState(output);
       if (!output.innerHTML) {
         showWelcome(tier);
       }
@@ -6580,6 +6978,217 @@
       btn.innerHTML = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" width="14" height="14"><path d="M6.5 4.5v13l11-6.5-11-6.5z"/></svg>';
       btn.addEventListener("click", () => playAudio(audioValue));
       meta.appendChild(btn);
+    }
+
+    const STOP_ICON_SVG = '<svg viewBox="0 0 22 22" width="12" height="12" fill="currentColor"><rect x="5.5" y="5.5" width="11" height="11" rx="2"/></svg>';
+
+    // Aborts whatever the given tier is doing (in-flight generation and/or a
+    // pending question). Sending a new message interrupts too — this button
+    // is for stopping without sending anything. The request that was waiting
+    // on the turn receives the server's "Stopped." reply and clears itself.
+    async function interruptTurn(forTier) {
+      const targetTier = forTier !== undefined ? forTier : activeTier;
+      try {
+        const res = await fetch(CONFIG.ENDPOINT + CONFIG.INTERRUPT_PATH, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + authToken,
+          },
+          body: JSON.stringify({ tier: targetTier }),
+        });
+        if (res.status === 401) {
+          relockSession();
+          return;
+        }
+        if (!res.ok) notify("error", "Couldn't stop that.");
+      } catch (err) {
+        notify("error", "Couldn't stop that.");
+      }
+    }
+
+    // Puts a Stop button in the message's meta row (the same place as the
+    // timestamp / play / copy icons) while its turn is still in flight, and
+    // takes it away again once the turn lands. The entry is force-shown
+    // (meta-visible) the whole time so the row is actually visible on touch
+    // devices where :hover doesn't apply.
+    //
+    // Registered per-tier so a turn that survives a question round-trip (the
+    // Stop button must stay put while the card is up) can still be cleaned up
+    // when the final reply finally renders. A new message on the same tier
+    // replaces the old one — that turn is being interrupted anyway.
+    const stopButtonRemovers = {};
+
+    function addStopButton(entry, forTier) {
+      if (!entry) return () => { };
+      const targetTier = forTier !== undefined ? forTier : activeTier;
+      const meta = entry.querySelector(".entry-meta");
+      if (!meta) return () => { };
+      if (stopButtonRemovers[targetTier]) stopButtonRemovers[targetTier]();
+      const btn = document.createElement("button");
+      btn.className = "stop-btn";
+      btn.setAttribute("aria-label", "Stop generating");
+      btn.title = "Stop";
+      btn.innerHTML = STOP_ICON_SVG;
+      btn.addEventListener("click", () => {
+        btn.disabled = true;
+        interruptTurn(targetTier);
+      });
+      meta.appendChild(btn);
+      entry.classList.add("meta-visible");
+      const remove = () => {
+        btn.remove();
+        // Don't un-show the row if a failed-send marking is now the reason
+        // it's visible (markEntryFailed adds meta-visible too, and the
+        // send's finally block removes the stop button afterwards).
+        if (!entry.classList.contains("entry-failed")) {
+          entry.classList.remove("meta-visible");
+        }
+        if (stopButtonRemovers[targetTier] === remove) delete stopButtonRemovers[targetTier];
+      };
+      stopButtonRemovers[targetTier] = remove;
+      return remove;
+    }
+
+    // Called whenever a turn has actually ended (final reply rendered) so the
+    // Stop button doesn't linger on a message that's already been answered.
+    function clearStopButton(forTier) {
+      const targetTier = forTier !== undefined ? forTier : activeTier;
+      if (stopButtonRemovers[targetTier]) stopButtonRemovers[targetTier]();
+    }
+
+    // ---------- Failed-send state (Retry) ----------
+    const RETRY_ICON_SVG = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M17.5 6.5v4h-4"/><path d="M4.5 15.5v-4h4"/><path d="M6.1 9a5.5 5.5 0 0 1 9.2-2.4l2.2 2.2"/><path d="M15.9 13a5.5 5.5 0 0 1-9.2 2.4L4.5 13.2"/></svg>';
+
+    // A message that never made it to Perla: wax-red border, a "Not sent"
+    // label, and — when re-sending the identical request could plausibly
+    // succeed — a Retry button that re-sends the ORIGINAL payload
+    // (attachments included) through the same send path.
+    //
+    // `retryable` is deliberately narrow. Network errors, timeouts and 5xx
+    // are transient, so retrying the same bytes is a real fix. 400 (every
+    // attachment rejected / nothing left to send) and 403 (tier not
+    // elevated) are deterministic: the identical request fails identically,
+    // so those get the failed styling and their notify() text but no button.
+    //
+    // failedSends holds the payload for every still-failed turn, keyed by the
+    // entry's data-turn-id — and deliberately holds NO DOM node or closure.
+    // The chat log persists as innerHTML and a tier switch re-reads it, which
+    // destroys the original element; resolving the entry fresh on click is
+    // what keeps Retry pointed at the bubble currently on screen.
+    const failedSends = {};
+
+    // markEntryFailed runs AFTER deliverEntry already snapshotted the entry,
+    // so the red border / label / button aren't in the stored log yet.
+    // Re-snapshot the tier on screen so the failure state survives a reload
+    // (the Retry button itself is still stripped on restore — its payload is
+    // gone with the JS heap — but the message keeps reading as "Not sent"). A
+    // backgrounded tier is skipped: its log entry is an immutable string
+    // appended at delivery time, and restoreFailedSendState() re-applies that
+    // tier's live state from failedSends on switch-back anyway.
+    function persistFailedState(tier) {
+      if (isViewingTierChat(tier)) setChatLog(tier, output.innerHTML);
+    }
+
+    // Finds the bubble a turn id belongs to, wherever it currently lives.
+    function findTurnEntry(turnId) {
+      if (!turnId) return null;
+      return output.querySelector('.entry[data-turn-id="' + CSS.escape(turnId) + '"]')
+        || backgroundScratch.querySelector('.entry[data-turn-id="' + CSS.escape(turnId) + '"]');
+    }
+
+    // Re-sends a failed turn. Resolves the entry by id at click time so a
+    // retry still works after a tier switch replaced the DOM.
+    function retryFailedSend(turnId) {
+      const rec = failedSends[turnId];
+      if (!rec) return;
+      const entry = findTurnEntry(turnId);
+      if (!entry) return;
+      if (isViewingTierChat(rec.tier)) {
+        entry.scrollIntoView({ behavior: "smooth", block: "end" });
+      }
+      sendTextTurn(entry, rec.payload);
+    }
+
+    // `opts.turnId` marks a failure as retryable and registers the payload.
+    // Pass no turnId for a deterministic failure (400/403/missing endpoint):
+    // styled as failed, but no button.
+    function markEntryFailed(entry, opts) {
+      const o = opts || {};
+      if (!entry) return;
+      const meta = entry.querySelector(".entry-meta");
+      const turnId = o.turnId || (entry.dataset ? entry.dataset.turnId : null);
+      entry.classList.add("entry-failed");
+      if (meta) {
+        // Idempotent — a second failure on a retry reuses the same row.
+        let label = meta.querySelector(".entry-fail-label");
+        if (!label) {
+          label = document.createElement("span");
+          label.className = "entry-fail-label";
+          label.textContent = "Not sent";
+          meta.appendChild(label);
+        }
+        if (o.retryable && turnId) {
+          // Always rebuild: a button restored from the chat log is inert
+          // markup with no handler, so it must be replaced, not reused.
+          const stale = meta.querySelector(".retry-btn");
+          if (stale) stale.remove();
+          const btn = document.createElement("button");
+          btn.className = "retry-btn";
+          btn.setAttribute("aria-label", "Retry sending this message");
+          btn.title = "Retry";
+          btn.innerHTML = RETRY_ICON_SVG;
+          btn.addEventListener("click", () => retryFailedSend(turnId));
+          meta.appendChild(btn);
+        }
+      }
+      entry.classList.add("meta-visible");
+      persistFailedState(o.tier);
+    }
+
+    // Undoes markEntryFailed so a retry puts the message back into its
+    // normal in-flight look before re-posting.
+    function clearEntryFailed(entry) {
+      if (!entry) return;
+      entry.classList.remove("entry-failed");
+      if (entry.dataset.turnId) delete failedSends[entry.dataset.turnId];
+      const meta = entry.querySelector(".entry-meta");
+      if (!meta) return;
+      const label = meta.querySelector(".entry-fail-label");
+      if (label) label.remove();
+      const btn = meta.querySelector(".retry-btn");
+      if (btn) btn.remove();
+    }
+
+    // Re-applies failure state after a chat restore (tier switch). Entries
+    // whose turn is still recorded as failed get a FRESH live Retry button;
+    // entries whose turn is unknown — a reloaded page, where the payload is
+    // gone with the JS heap — are stripped back to plain bubbles rather than
+    // left with a control that does nothing.
+    function restoreFailedSendState(root) {
+      const scope = root || output;
+      scope.querySelectorAll(".entry[data-turn-id]").forEach((entry) => {
+        const rec = failedSends[entry.dataset.turnId];
+        if (!rec) {
+          if (entry.classList.contains("entry-failed")) {
+            entry.classList.remove("entry-failed", "meta-visible");
+            const meta = entry.querySelector(".entry-meta");
+            if (meta) {
+              const label = meta.querySelector(".entry-fail-label");
+              if (label) label.remove();
+              const btn = meta.querySelector(".retry-btn");
+              if (btn) btn.remove();
+            }
+          }
+          return;
+        }
+        markEntryFailed(entry, { retryable: true, turnId: entry.dataset.turnId, tier: rec.tier });
+      });
+      // Belt and braces: any retry button with no live record behind it.
+      scope.querySelectorAll(".retry-btn").forEach((btn) => {
+        const entry = btn.closest(".entry");
+        if (!entry || !failedSends[entry.dataset.turnId]) btn.remove();
+      });
     }
 
     // ---------- Audio playback ----------
@@ -7657,57 +8266,78 @@
 
     sendText.addEventListener("click", submitText);
 
-    async function submitText() {
-      const message = textInput.value.trim();
-      const images = attachQueue;
-      const textFiles = textFileQueue;
-      if (!message && images.length === 0 && textFiles.length === 0) return;
-
-      // One combined bubble: file chips, then images, then the typed text —
-      // attachments above the message content, not as separate bubbles
-      // below it.
-      addUserMessageEntry(message, images, textFiles);
-
-      textInput.value = "";
-      textInput.style.height = "auto";
-      attachQueue = [];
-      textFileQueue = [];
-      renderAttachPreview();
-      updateComposerState();
-      clearCurrentTierDraft();
-
-      if (!CONFIG.ENDPOINT) {
-        notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
-        return;
+    // Builds the POST /api/text payload. Kept separate from the send so a
+    // retry re-sends byte-identical content — text, images and file
+    // attachments exactly as the user first composed them.
+    function buildTextBody(message, images, textFiles, tier) {
+      const body = { message, tier };
+      if (images && images.length > 0) {
+        body.images = images.map((item) => item.dataUrl);
       }
+      if (textFiles && textFiles.length > 0) {
+        body.text_files = textFiles.map((item) => ({
+          data: item.dataUrl,
+          filename: item.filename,
+        }));
+      }
+      return body;
+    }
 
-      const requestTier = activeTier; // capture now — activeTier may change before the reply arrives
+    // The one place a text turn is actually sent. Both the composer send and
+    // a Retry click go through here, so a retry can never drift from the
+    // original request. `userEntry` is the bubble the message already lives
+    // in — on a retry we re-use that same bubble rather than stacking a
+    // duplicate one.
+    //
+    // Owns the whole in-flight presentation: the Stop button, the thinking
+    // indicator, and the failure marking. Returns a small result so callers
+    // don't have to reason about which branch was taken.
+    async function sendTextTurn(userEntry, payload) {
+      const requestTier = payload.tier;
 
+      // A retry starts from a clean slate: no red border, no "Not sent",
+      // no stale retry button — just the message and its Stop button again.
+      clearEntryFailed(userEntry);
+      const removeStop = addStopButton(userEntry, requestTier);
+      let keepStop = false; // a question card leaves the turn running behind it
       showThinking(requestTier);
+
+      const onRetryableFailure = (reason) => {
+        // Register just the payload (and which tier owns it). No DOM node and
+        // no closure are stored: the chat log persists as innerHTML and a tier
+        // switch replaces the element, so retryFailedSend() resolves the
+        // bubble fresh from the id when the button is actually clicked.
+        if (userEntry.dataset.turnId) {
+          failedSends[userEntry.dataset.turnId] = { payload, tier: requestTier };
+        }
+        markEntryFailed(userEntry, {
+          retryable: true,
+          turnId: userEntry.dataset.turnId,
+          tier: requestTier,
+        });
+        if (reason === "offline") {
+          notify("error", "Couldn't reach Perla. Check the connection.");
+          statusDot.className = "status-dot err";
+          setStatusText("unreachable");
+        }
+      };
+
       try {
-        const body = { message, tier: requestTier };
-        if (images.length > 0) {
-          body.images = images.map((item) => item.dataUrl);
-        }
-        if (textFiles.length > 0) {
-          body.text_files = textFiles.map((item) => ({
-            data: item.dataUrl,
-            filename: item.filename,
-          }));
-        }
         const res = await fetch(CONFIG.ENDPOINT + CONFIG.TEXT_PATH, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: "Bearer " + authToken,
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify(payload),
         });
         const data = await res.json();
         if (!res.ok) {
           if (res.status === 401) {
+            // Session expired, not a failed send — nothing to retry, the
+            // lock screen takes it from here.
             relockSession();
-            return;
+            return { ok: false, retryable: false };
           }
           if (res.status === 400 && data.error) {
             // Every attached file was rejected and there was nothing else
@@ -7720,7 +8350,10 @@
           } else {
             throw new Error("request failed");
           }
-          return;
+          // 400/403 are deterministic — the identical request fails
+          // identically — so mark it failed but offer no Retry.
+          markEntryFailed(userEntry, { retryable: false, tier: requestTier });
+          return { ok: false, retryable: false };
         }
         if (data.confirm_required) {
           // Destructive-keyword trip-wire (is_destructive server-side) —
@@ -7729,7 +8362,18 @@
           // ORIGINAL message text to re-send with confirm:true if the
           // user actually wants to proceed.
           addConfirmationEntry(data.text || "About to execute a potentially destructive action.", data.action, requestTier);
-          return;
+          return { ok: false, pending: true };
+        }
+        if (data.question_required) {
+          // The model paused its turn to ask a (multiple choice) question —
+          // render an answer card instead of a reply; the daemon keeps the
+          // turn open and returns the real reply on /api/question. The turn
+          // is STILL running behind that card, so the Stop button stays put
+          // (that's exactly when you want it — the question can be skipped
+          // via its own button, or the whole thing stopped with this one).
+          addQuestionEntry(data, requestTier);
+          keepStop = true;
+          return { ok: false, pending: true };
         }
         if (data.file_warnings && data.file_warnings.length > 0) {
           // Non-fatal: some attached files were dropped, but the rest of
@@ -7737,26 +8381,52 @@
           // through — surface the reason without blocking the actual reply.
           notify("error", data.file_warnings.join(" · "));
         }
-        if (data.image) {
-          await addImageEntry("Perla", data.image, data.text || "", requestTier);
-        } else if (data.file) {
-          addSentFileEntry(data.file, data.text || "", requestTier);
-        } else {
-          const entry = addEntry("perla", "Perla", data.text || "(no response)", requestTier);
-          if (data.audio && isViewingTierChat(requestTier)) {
-            playAudio(data.audio);
-            addReplayButton(entry, data.audio);
-          }
-        }
+        renderReplyResult(data, requestTier);
         statusDot.className = "status-dot ok";
         setStatusText("connected");
+        return { ok: true };
       } catch (e) {
-        notify("error", "Couldn't reach Perla. Check the connection.");
-        statusDot.className = "status-dot err";
-        setStatusText("unreachable");
+        // Network error, timeout, or a non-JSON body — the message may or
+        // may not have reached Perla, so it's the ambiguous case where a
+        // Retry is genuinely useful.
+        onRetryableFailure("offline");
+        return { ok: false, retryable: true };
       } finally {
         hideThinking(requestTier);
+        if (!keepStop) removeStop();
       }
+    }
+
+    async function submitText() {
+      const message = textInput.value.trim();
+      const images = attachQueue;
+      const textFiles = textFileQueue;
+      if (!message && images.length === 0 && textFiles.length === 0) return;
+
+      // One combined bubble: file chips, then images, then the typed text —
+      // attachments above the message content, not as separate bubbles
+      // below it.
+      const userEntry = addUserMessageEntry(message, images, textFiles);
+
+      textInput.value = "";
+      textInput.style.height = "auto";
+      attachQueue = [];
+      textFileQueue = [];
+      renderAttachPreview();
+      updateComposerState();
+      clearCurrentTierDraft();
+
+      if (!CONFIG.ENDPOINT) {
+        notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
+        // Nothing was sent, so the message is as undelivered as a failed
+        // one — but Retry can't help until an endpoint exists, so it's
+        // marked without a button.
+        markEntryFailed(userEntry, { retryable: false, tier: activeTier });
+        return;
+      }
+
+      const requestTier = activeTier; // capture now — activeTier may change before the reply arrives
+      await sendTextTurn(userEntry, buildTextBody(message, images, textFiles, requestTier));
     }
 
     // ---------- Voice recording → draft (WhatsApp-style) ----------
@@ -7770,6 +8440,7 @@
     const voiceDraftStop = document.getElementById("voiceDraftStop");
     const voiceDraftPlay = document.getElementById("voiceDraftPlay");
     const voiceDraftSend = document.getElementById("voiceDraftSend");
+    const voiceDraftInterrupt = document.getElementById("voiceDraftInterrupt");
 
     const VOICE_ICONS = {
       play: '<svg viewBox="0 0 22 22" width="13" height="13"><polygon points="6 3 19 11 6 19" fill="currentColor" /></svg>',
@@ -7863,6 +8534,7 @@
       voiceDraftStop.hidden = state !== "recording";
       voiceDraftPlay.hidden = state !== "draft";
       voiceDraftSend.hidden = state !== "draft";
+      voiceDraftInterrupt.hidden = state !== "sending";
       if (state !== "recording" && liveWaveRaf) {
         cancelAnimationFrame(liveWaveRaf);
         liveWaveRaf = null;
@@ -8050,6 +8722,10 @@
       }
     });
     voiceDraftSend.addEventListener("click", sendVoiceDraft);
+    voiceDraftInterrupt.addEventListener("click", () => {
+      voiceDraftInterrupt.disabled = true;
+      interruptTurn(activeTier);
+    });
 
     function clearVoiceDraft() {
       teardownVoiceAnalyser();
@@ -8107,8 +8783,9 @@
 
         // The user's turn renders as a voice message (audio bubble); the
         // transcript stays as a faint hint under the wave.
+        let voiceEntry = null;
         if (data.transcript) {
-          addVoiceUserMessageEntry(data.transcript, data.voice || null, bars, requestTier, fallbackUrl);
+          voiceEntry = addVoiceUserMessageEntry(data.transcript, data.voice || null, bars, requestTier, fallbackUrl);
         }
         if (data.confirm_required) {
           // Same trip-wire as text messages — the transcribed speech
@@ -8118,17 +8795,17 @@
           addConfirmationEntry(data.text || "About to execute a potentially destructive action.", data.action, requestTier);
           return;
         }
-        if (data.image) {
-          await addImageEntry("Perla", data.image, data.text || "", requestTier);
-        } else if (data.file) {
-          addSentFileEntry(data.file, data.text || "", requestTier);
-        } else {
-          const entry = addEntry("perla", "Perla", data.text || "(no response)", requestTier);
-          if (data.audio && isViewingTierChat(requestTier)) {
-            playAudio(data.audio);
-            addReplayButton(entry, data.audio);
-          }
+        if (data.question_required) {
+          // Same question flow as text messages — the model paused to ask
+          // while processing the transcribed speech. The turn is still
+          // running behind the card, so the Stop button moves onto this
+          // message's meta row now that the bubble exists (the draft bar
+          // it's currently in gets cleared by clearVoiceDraft above).
+          if (voiceEntry) addStopButton(voiceEntry, requestTier);
+          addQuestionEntry(data, requestTier);
+          return;
         }
+        renderReplyResult(data, requestTier);
         statusDot.className = "status-dot ok";
         setStatusText("connected");
       } catch (e) {
@@ -8142,6 +8819,7 @@
         }
       } finally {
         hideThinking(requestTier);
+        voiceDraftInterrupt.disabled = false;
       }
     }
 

@@ -25,8 +25,13 @@
     whisper_model = "tiny";
     whisper_lang = "en";
 
-    opencode_model = "opencode/mimo-v2.5-free";
+    opencode_model = "opencode/space-bunny-free";
     ollama_model = "qwen2.5:3b";
+
+    # Hard cap on how long a single message turn may run before the daemon
+    # gives up (guards against a stuck turn tying up the session). Perla
+    # tasks legitimately need more than the old flat 5 minutes.
+    turn_timeout_seconds = 900;
 
     session_idle_timeout_minutes = 10;
     memory_prune_days = 14;

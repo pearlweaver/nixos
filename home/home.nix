@@ -13,5 +13,9 @@
   home.homeDirectory = "/home/thedreamdev";
   home.stateVersion = "25.11";
 
+  xdg.configFile.niri-config.force = true;
+  xdg.configFile."gtk-4.0/gtk.css".force = true;
+  home.file."${config.xdg.configHome}/starship.toml".force = true;
+
   programs.home-manager.enable = true;
 }

@@ -278,20 +278,121 @@ class SessionManager:
         except Exception:
             return False
 
+    def _session_title(self, tier):
+        """The title this tier's sessions are created with.
+
+        Both tiers' OpenCode servers share ONE session store — the two
+        /session listings come back byte-identical, same ids, same
+        directory, no field marking which tier made them. So a single shared
+        title would make both tiers resume the SAME session and silently
+        merge their conversations, leaking Tier 1's restricted context into
+        Full Mode (and vice versa). Distinct per-tier titles keep them apart.
+        """
+        return "perla" if tier == 1 else "perla-full"
+
+    def _newest_perla_session(self, tier):
+        """The most recently created live session belonging to THIS tier, or
+        None. Scoped by title because the store is shared across tiers."""
+        port = self._server_port(tier)
+        want = self._session_title(tier)
+        try:
+            result = subprocess.run(
+                ["curl", "-sf", "--connect-timeout", "3", "-m", "10",
+                 f"http://127.0.0.1:{port}/session"],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode != 0:
+                return None
+            data = json.loads(result.stdout)
+        except Exception as e:
+            print(f"WARNING: session resume scan failed (tier {tier}): {e}", flush=True)
+            return None
+        items = data if isinstance(data, list) else (data.get("data") or data.get("sessions") or [])
+        best_id, best_created = None, -1
+        for s in items:
+            if not isinstance(s, dict):
+                continue
+            if str(s.get("title") or "").strip().lower() != want.lower():
+                continue
+            sid = s.get("id")
+            if not sid:
+                continue
+            t = s.get("time")
+            created = t.get("created") if isinstance(t, dict) else t
+            try:
+                created = int(created or 0)
+            except (TypeError, ValueError):
+                created = 0
+            if created > best_created:
+                best_created, best_id = created, sid
+        return best_id
+
+    def _clear_pending_questions(self, tier, sid):
+        """Reject any question a resumed session is still blocked on.
+
+        The daemon may have died while the model was waiting for an answer
+        that never came. Resuming into that state would stall every later turn
+        behind a question nobody is going to see, so drop it on the way in."""
+        port = self._server_port(tier)
+        try:
+            result = subprocess.run(
+                ["curl", "-sf", "--connect-timeout", "3", "-m", "8",
+                 f"http://127.0.0.1:{port}/question"],
+                capture_output=True, text=True, timeout=12
+            )
+            if result.returncode != 0:
+                return
+            for q in json.loads(result.stdout):
+                if not isinstance(q, dict) or q.get("sessionID") != sid:
+                    continue
+                rid = q.get("id")
+                if not rid:
+                    continue
+                subprocess.run(
+                    ["curl", "-sf", "-m", "10", "-X", "POST",
+                     f"http://127.0.0.1:{port}/question/{rid}/reject"],
+                    capture_output=True, timeout=15
+                )
+                print(f"INFO: rejected stale question {rid} left on resumed session", flush=True)
+        except Exception as e:
+            print(f"WARNING: could not clear stale questions on resume: {e}", flush=True)
+
+    def _resume_session(self, tier):
+        """Reattach to the previous conversation instead of starting a new one.
+
+        OpenCode persists every session to disk, so the whole conversation is
+        still there after a daemon restart — the daemon was just throwing away
+        the id, which silently stranded it and made Perla forget everything
+        said minutes earlier. The id is durable state, so it should be
+        recovered, not discarded."""
+        sid = self._newest_perla_session(tier)
+        if not sid:
+            return None
+        if not self._session_alive(tier, sid):
+            return None
+        self._clear_pending_questions(tier, sid)
+        print(f"INFO: resumed tier {tier} session {sid} (conversation kept across restart)", flush=True)
+        return sid
+
     def _create_session(self, tier):
         port = self._server_port(tier)
         if not self._server_alive(tier):
             if not self._start_server(tier):
                 return None
+        resumed = self._resume_session(tier)
+        if resumed:
+            return resumed
+        title = self._session_title(tier)
         try:
             result = subprocess.run(
                 ["curl", "-sf", "--connect-timeout", "3", "-m", "10",
                  "-X", "POST", f"http://127.0.0.1:{port}/session",
                  "-H", "Content-Type: application/json",
-                 "-d", '{"title":"perla"}'],
+                 "-d", json.dumps({"title": title})],
                 capture_output=True, text=True, timeout=15
             )
             data = json.loads(result.stdout)
+            print(f"INFO: started new tier {tier} session {data['id']} ({title})", flush=True)
             return data["id"]
         except Exception as e:
             print(f"ERROR: failed to create session (tier {tier}): {e}", flush=True)
@@ -307,6 +408,406 @@ class SessionManager:
 
 
 session_mgr = SessionManager()
+
+
+# ---------------------------------------------------------------------------
+# Interactive questions.
+#
+# OpenCode's models occasionally decide to ask the user a multiple-choice /
+# confirmation question via their built-in `question` tool. That tool BLOCKS
+# the session's message loop until someone answers, and a session answered
+# against an unanswered question stays "busy" forever — every later message
+# queued behind it, so perla turned those into a 5-minute hang then
+# "OpenCode server error". This machinery makes the question flow over HTTP
+# so the phone can answer it:
+#
+#   1. A message turn runs as a background thread; while it runs, the daemon
+#      polls GET /question to detect any question the model asks.
+#   2. When a question appears it's returned to the phone as
+#      {"question_required": true, "request_id": "que_...", "questions": [...]}
+#      and the turn keeps running (the model is blocked waiting on it).
+#   3. The phone answers via POST /api/question; the daemon forwards the
+#      reply (or reject) to the OpenCode question endpoint, then keeps
+#      waiting on the same turn for the model's final reply (or another
+#      question), so one user turn can span several question round-trips.
+#   4. If nobody answers within AUTO_DISMISS_SECONDS the question is
+#      auto-rejected so the session un-sticks instead of staying busy.
+#
+# One turn is active per tier at a time. A message that arrives while the
+# previous turn is still running simply waits its turn (it never posts into
+# a busy session, which would just block silently).
+# ---------------------------------------------------------------------------
+QUESTION_POLL_SECONDS = 1.0
+IDLE_WAIT_SECONDS = 2.0
+IDLE_WAIT_TIMEOUT = 120
+# How long a single message turn may run before the daemon gives up on it
+# (guarding against a genuinely stuck turn tying up the whole tier — a busy
+# session silently queues everything on that tier). Perla tasks legitimately
+# run longer than the old flat 5 minutes, so this is configurable via
+# PERLA_TURN_TIMEOUT (seconds) — default 15 minutes.
+TURN_TIMEOUT_SECONDS = int(os.environ.get("PERLA_TURN_TIMEOUT", "900"))
+# Unanswered questions are auto-rejected after this long so the session
+# un-sticks. Kept strictly BELOW TURN_TIMEOUT_SECONDS with a safety margin:
+# an unanswered question should end its turn via the graceful auto-dismiss,
+# not by tripping the turn timeout into a "request timed out" error.
+AUTO_DISMISS_SECONDS = min(600, max(60, TURN_TIMEOUT_SECONDS - 120))
+
+_turns = {}
+_turns_lock = threading.Lock()
+
+
+class _Turn:
+    def __init__(self, tier, sid, port, body):
+        self.tier = tier
+        self.sid = sid
+        self.port = port
+        self.body = body
+        self.began = False
+        self.finished = False
+        self.result = None          # the parsed (response_text, tool_used,
+                                    # obsidian_write, view_screen_used,
+                                    # sent_file_ref) tuple
+        self.question = None  # type: dict | None
+        self.answered_request_ids = set()
+        self.dismiss_timer = None
+        self.cleanup_paths = None   # deferred temp uploads (stale-question case)
+        # Message-turn metadata needed to finalize logging on the /api/question
+        # path, where the final reply arrives on a later HTTP request than the
+        # message that triggered it.
+        self.message = None     # type: str | None
+        self.tier = tier
+        self.source = None      # type: str | None
+        self.voice_filename = None  # type: str | None
+        self.has_user_images = False
+        self.interrupted = False
+        self.cond = threading.Condition()
+
+
+def _worker_run_turn(turn):
+    """Runs one message POST to completion in the background and records the
+    parsed outcome on the turn. Question events are not consumed here — the
+    waiting handler discovers them by polling GET /question."""
+    try:
+        with turn.cond:
+            if turn.interrupted:
+                turn.result = (INTERRUPTED_REPLY, False, False, False, None)
+        if not turn.interrupted:
+            result = subprocess.run(
+                ["curl", "-sf", "--connect-timeout", "5", "-m", str(TURN_TIMEOUT_SECONDS),
+                 "-X", "POST", f"http://127.0.0.1:{turn.port}/session/{turn.sid}/message",
+                 "-H", "Content-Type: application/json",
+                 "-d", "@-"],
+                input=turn.body, capture_output=True, text=True, timeout=TURN_TIMEOUT_SECONDS + 10
+            )
+            with turn.cond:
+                interrupted = turn.interrupted
+            if interrupted:
+                turn.result = (INTERRUPTED_REPLY, False, False, False, None)
+            elif result.returncode != 0:
+                turn.result = ("OpenCode server error — try again.", False, False, False, None)
+            else:
+                data = json.loads(result.stdout)
+                turn.result = _parse_message_response(data, turn.tier)
+    except subprocess.TimeoutExpired:
+        turn.result = ("Request timed out — the AI took too long to respond.", False, False, False, None)
+    except Exception as e:
+        print(f"ERROR: message turn failed: {e}", flush=True)
+        if turn.result is None:
+            turn.result = ("Failed to reach Perla's brain.", False, False, False, None)
+    _finalize_turn(turn)
+    with turn.cond:
+        turn.finished = True
+        turn.cond.notify_all()
+
+
+def _finalize_turn(turn):
+    """Removes temp files deferred because the message turn was delayed
+    (stale-question recovery) — safe to call once the turn object is done."""
+    if turn.cleanup_paths:
+        for p in turn.cleanup_paths:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+        turn.cleanup_paths = None
+
+
+def _get_turn(tier):
+    with _turns_lock:
+        return _turns.get(tier)
+
+
+def _clear_turn(tier, turn):
+    _finalize_turn(turn)
+    with _turns_lock:
+        if _turns.get(tier) is turn:
+            _turns.pop(tier, None)
+
+
+def _delete_paths(paths):
+    if not paths:
+        return
+    for p in paths:
+        try:
+            os.unlink(p)
+        except OSError:
+            pass
+
+
+def _poll_pending_question(turn):
+    """Returns {"request_id":..., "questions":[...]} for THIS session's first
+    pending question, or None."""
+    try:
+        result = subprocess.run(
+            ["curl", "-sf", "--connect-timeout", "3", "-m", "8",
+             f"http://127.0.0.1:{turn.port}/question"],
+            capture_output=True, text=True, timeout=12
+        )
+        if result.returncode != 0:
+            return None
+        for q in json.loads(result.stdout):
+            if q.get("sessionID") == turn.sid and q.get("id") and q.get("questions"):
+                return {"request_id": q["id"], "questions": q["questions"]}
+    except Exception as e:
+        print(f"WARNING: question poll failed: {e}", flush=True)
+    return None
+
+
+def _schedule_autodismiss(turn):
+    with turn.cond:
+        if turn.dismiss_timer is not None:
+            return
+        turn.dismiss_timer = threading.Timer(AUTO_DISMISS_SECONDS, _autodismiss, args=(turn,))
+        turn.dismiss_timer.daemon = True
+        turn.dismiss_timer.start()
+
+
+def _autodismiss(turn):
+    with turn.cond:
+        if turn.question is None or turn.question["request_id"] in turn.answered_request_ids:
+            return
+        request_id = turn.question["request_id"]
+    try:
+        subprocess.run(
+            ["curl", "-sf", "-m", "10", "-X", "POST",
+             f"http://127.0.0.1:{turn.port}/question/{request_id}/reject"],
+            capture_output=True, timeout=15
+        )
+        print(f"INFO: auto-dismissed unanswered question {request_id}", flush=True)
+    except Exception as e:
+        print(f"WARNING: auto-dismiss failed: {e}", flush=True)
+    with turn.cond:
+        turn.question = None
+        turn.answered_request_ids.add(request_id)
+        turn.cond.notify_all()
+    if not turn.began:
+        # A never-started (stale) turn evaporates once its question is gone.
+        _clear_turn(turn.tier, turn)
+
+
+def _begin_turn(turn):
+    with turn.cond:
+        if turn.began:
+            return
+        turn.began = True
+        threading.Thread(target=_worker_run_turn, args=(turn,), daemon=True).start()
+        turn.cond.notify_all()
+
+
+def _wait_session_idle(turn, timeout=IDLE_WAIT_TIMEOUT):
+    """Waits until the session is no longer busy, so the message turn can be
+    started without queueing silently behind whatever is still running."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            result = subprocess.run(
+                ["curl", "-sf", "--connect-timeout", "3", "-m", "5",
+                 f"http://127.0.0.1:{turn.port}/session/status"],
+                capture_output=True, text=True, timeout=8
+            )
+            if result.returncode == 0:
+                status_map = json.loads(result.stdout)
+                if turn.sid not in status_map:
+                    return True
+        except Exception:
+            pass
+        time.sleep(IDLE_WAIT_SECONDS)
+    return False
+
+
+def _wait_for_turn_outcome(turn):
+    """Blocks until the turn yields either a question or its final reply.
+    Returns {"kind": "question", "request_id":..., "questions":[...]} or
+    {"kind": "reply", "reply": 5-tuple}."""
+    while True:
+        with turn.cond:
+            if turn.question is not None and turn.question["request_id"] not in turn.answered_request_ids:
+                return {"kind": "question",
+                        "request_id": turn.question["request_id"],
+                        "questions": turn.question["questions"]}
+            if turn.finished and turn.result is not None:
+                return {"kind": "reply", "reply": turn.result,
+                        "interrupted": turn.interrupted}
+            turn.cond.wait(QUESTION_POLL_SECONDS)
+        if turn.question is None:
+            q = _poll_pending_question(turn)
+            if q is not None:
+                with turn.cond:
+                    if turn.question is None:
+                        turn.question = q
+                        turn.cond.notify_all()
+                _schedule_autodismiss(turn)
+
+
+def _wait_previous_turn(tier):
+    """Waits for any still-active turn on the tier to fully finish, then
+    removes it. Callers MUST NOT post a message while it is unanswered (a
+    busy session silently queues the request), so new turns always start
+    behind whatever came before them."""
+    while True:
+        prev = _get_turn(tier)
+        if prev is None:
+            return
+        with prev.cond:
+            if _get_turn(tier) is not prev:
+                # The turn was cleared out from under us (e.g. auto-dismissed
+                # while never started) — nothing left to wait for.
+                return
+            if prev.finished:
+                if _get_turn(tier) is prev:
+                    _clear_turn(tier, prev)
+                return
+            prev.cond.wait(QUESTION_POLL_SECONDS)
+
+
+def _resolve_question(turn, request_id, answers=None, dismiss=False):
+    """Forwards an answer (or a rejection) to the OpenCode question endpoint.
+    Returns True on a successful forward (question now resolved)."""
+    command = ["curl", "-sf", "-m", "15", "-X", "POST",
+               f"http://127.0.0.1:{turn.port}/question/{request_id}/" + ("reject" if dismiss else "reply")]
+    if dismiss:
+        pass
+    else:
+        command += ["-H", "Content-Type: application/json",
+                    "-d", json.dumps({"answers": answers})]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+        if result.returncode != 0:
+            print(f"WARNING: question {request_id} resolve failed: {result.stderr[:200]}", flush=True)
+            return False
+        return True
+    except Exception as e:
+        print(f"WARNING: question resolve failed: {e}", flush=True)
+        return False
+
+
+INTERRUPTED_REPLY = "Stopped."
+
+
+def _dismiss_turn_question(turn):
+    """Rejects this turn's pending question, if any, so the blocked session
+    un-sticks. Returns the dismissed request_id, or None if there wasn't one.
+    Marks the question answered FIRST so the auto-dismiss timer can't reject it
+    a moment later."""
+    with turn.cond:
+        if turn.question is None or turn.question["request_id"] in turn.answered_request_ids:
+            return None
+        request_id = turn.question["request_id"]
+        turn.question = None
+        turn.answered_request_ids.add(request_id)
+        if turn.dismiss_timer is not None:
+            turn.dismiss_timer.cancel()
+            turn.dismiss_timer = None
+        turn.cond.notify_all()
+    _resolve_question(turn, request_id, dismiss=True)
+    return request_id
+
+
+def _abort_session(turn):
+    """Tells the OpenCode server to stop the generation this turn started.
+    The server aborts its in-flight message POST, which makes the turn's
+    worker thread return (usually with a non-zero curl status, since the
+    response is cut short) — _worker_run_turn records the interruption."""
+    try:
+        subprocess.run(
+            ["curl", "-sf", "--connect-timeout", "3", "-m", "10", "-X", "POST",
+             f"http://127.0.0.1:{turn.port}/session/{turn.sid}/abort"],
+            capture_output=True, timeout=15
+        )
+    except Exception as e:
+        print(f"WARNING: session abort failed: {e}", flush=True)
+
+
+def _interrupt_turn(tier):
+    """Stops whatever this tier is currently doing — an in-flight generation
+    (aborted server-side) and/or a question the model is blocked on (rejected)
+    — and releases whoever is waiting on it. Returns True if something was
+    actually interrupted.
+
+    This is what makes "send another message" an interrupt: the previous turn
+    is stopped rather than waited out, and the session is free for the new
+    message instead of queueing silently behind the abandoned one."""
+    turn = _get_turn(tier)
+    if turn is None:
+        return False
+    with turn.cond:
+        if turn.finished:
+            return False
+        turn.interrupted = True
+        running = turn.began
+    _dismiss_turn_question(turn)
+    if running:
+        _abort_session(turn)
+    else:
+        # A never-started (stale-question) turn: nobody is blocked on the
+        # server, just on this turn object — release those waiters directly.
+        with turn.cond:
+            turn.result = (INTERRUPTED_REPLY, False, False, False, None)
+            turn.finished = True
+            turn.cond.notify_all()
+        _clear_turn(tier, turn)
+    print(f"INFO: interrupted tier {tier} turn", flush=True)
+    return True
+
+
+def run_opencode_turn(sid, port, text, tier, image_path=None, cleanup_paths=None):
+    """Turns a message (already formatted into an OpenCode body) into a
+    background message turn, waiting its turn behind any previous one on this
+    tier, then waiting for either a question or the final reply. Returns the
+    same shape as _wait_for_turn_outcome with the turn attached so the caller
+    can defer temp-file cleanup when a stale question postponed the start."""
+    body = build_opencode_body(text, tier, image_path)
+    turn = _Turn(tier, sid, port, body)
+    if cleanup_paths:
+        turn.cleanup_paths = cleanup_paths
+    # A new message supersedes whatever this tier is doing: interrupt the
+    # in-flight turn (or the question it's blocked on) rather than queueing
+    # behind it, so the answer the user actually wants arrives now.
+    interrupted = _interrupt_turn(tier)
+    _wait_previous_turn(tier)
+    with _turns_lock:
+        _turns[tier] = turn
+    if interrupted:
+        # The server may still be winding the aborted run down; don't post
+        # into a busy session (that queues silently).
+        _wait_session_idle(turn)
+    with _turns_lock:
+        _turns[tier] = turn
+    stale = _poll_pending_question(turn)
+    if stale is not None:
+        # The session already has an unanswered question from an earlier
+        # (abandoned) turn. Surface it instead of posting into the busy
+        # session; the phone re-answers it via /api/question, which then
+        # starts THIS message's turn once the session has drained.
+        with turn.cond:
+            turn.question = stale
+        _schedule_autodismiss(turn)
+        return {"kind": "question", "turn": turn,
+                "request_id": stale["request_id"], "questions": stale["questions"]}
+    _begin_turn(turn)
+    outcome = _wait_for_turn_outcome(turn)
+    outcome["turn"] = turn
+    return outcome
 
 
 # ---------------------------------------------------------------------------
@@ -1693,7 +2194,7 @@ def decode_upload_images(data_urls):
 
 
 # ---------------------------------------------------------------------------
-# Text/code file uploads — mimo-v2.5-free (like most models) has no document
+# Text/code file uploads — mimo-v2.6-flash-free (like most models) has no document
 # ingestion channel, only vision (images). For plain-text files (markdown,
 # source code, config, etc.) there's nothing to "attach" at the model level:
 # instead the daemon reads the file itself and inlines its content into the
@@ -1760,7 +2261,7 @@ def _text_upload_extension_ok(filename):
 # perla_textify.convert() rather than decoded as plain text. Two possible
 # outcomes per file, same "images vs text" split perla_textify itself
 # uses: PDF/PPTX come back as page-image PNGs and are merged into the
-# same attach_paths list as any other user-uploaded image (mimo-v2.5 sees
+# same attach_paths list as any other user-uploaded image (mimo-v2.6 sees
 # them exactly like a photo the user attached); DOCX/XLSX/etc come back
 # as text and are merged into the same text_attachments list as a plain
 # .py/.md upload, using the same format_text_attachments() fencing.
@@ -2059,18 +2560,19 @@ def format_text_attachments(files):
     return "\n\n".join(blocks)
 
 
-def call_opencode(sid, port, text, tier, image_path=None):
-    """Send a message to OpenCode. If image_path is given, attaches it as
-    one or more file parts alongside the text part — mimo-v2.5-free (the
-    deployed model per perla-config.nix) accepts multi-image input
-    natively; the model tokenizes each image into its context window
-    like any other input, so there's no fixed per-message image count to
-    enforce here beyond MAX_IMAGES_PER_MESSAGE (checked earlier, at
-    upload time). image_path may be a single path string (backward
-    compatible with existing callers) or a list of paths. The request
-    body is piped over stdin rather than passed as a curl argv string,
-    since inlined base64 images can be large enough to risk hitting OS
-    argument-length limits as a single -d argument.
+def build_opencode_body(text, tier, image_path=None):
+    """Build the JSON request body for an OpenCode message turn. If
+    image_path is given, attaches it as one or more file parts alongside the
+    text part — mimo-v2.6-flash-free (the deployed model per
+    perla-config.nix) accepts multi-image input natively; the model tokenizes
+    each image into its context window like any other input, so there's no
+    fixed per-message image count to enforce here beyond
+    MAX_IMAGES_PER_MESSAGE (checked earlier, at upload time). image_path may
+    be a single path string (backward compatible with existing callers) or a
+    list of paths. The body is built here as a JSON string; it is piped over
+    stdin to curl rather than passed as a -d argv string because inlined
+    base64 images can be large enough to risk hitting OS argument-length
+    limits.
     """
     if session_mgr.should_inject_persona(tier):
         persona = read_persona()
@@ -2142,26 +2644,41 @@ def call_opencode(sid, port, text, tier, image_path=None):
                 # request — Perla will just not have that particular
                 # image to look at, but still sees the rest plus the text.
 
-    body = json.dumps({
+    return json.dumps({
         "parts": parts,
         "model": model_part()
     })
 
-    try:
-        result = subprocess.run(
-            ["curl", "-sf", "--connect-timeout", "5", "-m", "300",
-             "-X", "POST", f"http://127.0.0.1:{port}/session/{sid}/message",
-             "-H", "Content-Type: application/json",
-             "-d", "@-"],
-            input=body, capture_output=True, text=True, timeout=310
-        )
-        if result.returncode != 0:
-            return "OpenCode server error — try again.", False, False, False, None
 
-        data = json.loads(result.stdout)
+def _parse_message_response(data, tier):
+        """Turn a completed OpenCode message response into the parsed 5-tuple
+        (response_text, tool_used, obsidian_write, view_screen_used,
+        sent_file_ref) that process_message and the web UI consume. Also
+        surfaces OpenCode's embedded provider-error envelope so the real
+        reason reaches the user instead of a silent "(no response)"
+        placeholder."""
         response_text = " ".join(
             p.get("text", "") for p in data.get("parts", []) if p.get("type") == "text"
         )
+
+        # If the server answered but produced no response text AND carried an
+        # embedded provider error (e.g. OpenCode's zen-gate 403 FreeTierError,
+        # which comes back as info.error with empty parts), surface that error
+        # to the user instead of the silent "(no response)" fallback — the
+        # daemon previously swallowed the real reason and left the phone
+        # staring at a placeholder. A real (partial) reply always wins over
+        # the error, so we only fill the gap when there is no text at all.
+        if not response_text:
+            error = (data.get("info") or {}).get("error") or data.get("error")
+            if isinstance(error, dict):
+                err_data = error.get("data")
+                detail = (err_data or {}).get("message") or error.get("message") or ""
+                status = err_data.get("statusCode") if isinstance(err_data, dict) else None
+                if isinstance(detail, str) and detail.strip():
+                    response_text = f"Model error: {detail.strip()}"
+                    if status is not None:
+                        response_text += f" (HTTP {status})"
+
         tool_used = any(p.get("type") == "tool" for p in data.get("parts", []))
 
         obsidian_writes = {
@@ -2289,15 +2806,144 @@ def call_opencode(sid, port, text, tier, image_path=None):
 
         return response_text or "(no response)", tool_used, obsidian_write, view_screen_used, sent_file_ref
 
-    except subprocess.TimeoutExpired:
-        return "Request timed out — the AI took too long to respond.", False, False, False, None
-    except Exception as e:
-        print(f"ERROR: call_opencode failed: {e}", flush=True)
-        return "Failed to reach Perla's brain.", False, False, False, None
+
+def _describe_code_block(body, lang):
+    """One spoken description of a code block, in place of reading it."""
+    lines = body.split("\n")
+    count = len(lines)
+    while lines and not lines[-1].strip():
+        lines.pop()
+        count -= 1
+    if count <= 0:
+        return ""
+    noun = "line" if count == 1 else "lines"
+    if lang:
+        return f"code block, {count} {noun}, {lang}"
+    return f"code block, {count} {noun}"
+
+
+def _speak_code_span(text):
+    """Say an inline code span as words.
+
+    Piper mangles the raw form badly: PERLA_TURN_TIMEOUT comes out as
+    "P E R L A underscore T U R N...", and slash-heavy paths trip odd
+    pronunciations. So separators become words — / is "slash", the extension
+    dot is "dot", and _/- between word characters are plain spaces.
+    """
+    # Trailing extension: perla-companion.html -> perla-companion dot html
+    s = text.strip()
+    if not s:
+        return ""
+    # A dot between word characters becomes "dot", which covers both a file
+    # extension (.html) and a dotted identifier (CONFIG.ENDPOINT). Requiring a
+    # LETTER after the dot keeps decimals like 3.14 intact.
+    s = re.sub(r"(?<=[A-Za-z0-9])\.(?=[A-Za-z])", " dot ", s)
+    # snake_case and kebab-case: split between word characters only, so a
+    # leading/trailing _ or a negative number like _1 keeps its shape.
+    s = re.sub(r"(?<=[A-Za-z0-9])[_-](?=[A-Za-z0-9])", " ", s)
+    s = s.replace("/", " slash ")
+    s = re.sub(r"[_-]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def speech_text(md):
+    """Turn a markdown reply into prose fit for TTS.
+
+    Code is described rather than read — piper saying code aloud character by
+    character is unusable, and a reply that is mostly code would otherwise
+    sound truncated. Inline code is kept but spoken as words. Everything else
+    is flattened to what a person would say out loud: link URLs collapse to
+    their label, images to their alt text, and emphasis/heading/quote markers
+    are dropped rather than vocalised.
+    """
+    if not md:
+        return ""
+    text = str(md).replace("\r\n", "\n").replace("\r", "\n")
+    lines = text.split("\n")
+    out = []
+    i = 0
+
+    # Pass 1: pull out block-level code (fenced ``` / ~~~ and 4-space or tab
+    # indented) before any inline rule can touch it. Mirrors the renderer's
+    # own block handling so speech and screen agree on what code is.
+    while i < len(lines):
+        line = lines[i]
+        fence = re.match(r"^[ \t]{0,3}(`{3,}|~{3,})[ \t]*([^\s`]*)[^\n]*$", line)
+        if fence:
+            marker, lang = fence.group(1), fence.group(2) or ""
+            body = []
+            i += 1
+            closed = re.compile(
+                r"^[ \t]{0,3}" + re.escape(marker[0]) + "{" + str(len(marker)) + r",}[ \t]*$"
+            )
+            while i < len(lines) and not closed.match(lines[i]):
+                body.append(lines[i])
+                i += 1
+            i += 1
+            described = _describe_code_block("\n".join(body), lang)
+            if described:
+                out.append(described)
+            continue
+        if re.match(r"^(?: {4}|\t)", line) and line.strip():
+            body = []
+            while i < len(lines) and (re.match(r"^(?: {4}|\t)", lines[i]) or not lines[i].strip()):
+                if not lines[i].strip():
+                    j = i
+                    while j < len(lines) and not lines[j].strip():
+                        j += 1
+                    if j >= len(lines) or not re.match(r"^(?: {4}|\t)", lines[j]):
+                        break
+                    for _ in range(j - i):
+                        body.append("")
+                    i = j
+                    continue
+                body.append(re.sub(r"^(?: {4}|\t)", "", lines[i]))
+                i += 1
+            described = _describe_code_block("\n".join(body), "")
+            if described:
+                out.append(described)
+            continue
+        out.append(line)
+        i += 1
+
+    s = "\n".join(out)
+
+    # Pass 2: inline spans, then the rest of the markdown noise. Spans are
+    # matched per line — a span that runs across a newline would swallow a
+    # whole code fence when the source is malformed.
+    s = re.sub(r"(`+)([^\n]*?[^`\n])\1(?!`)", lambda m: _speak_code_span(m.group(2)), s)
+    s = re.sub(r"!\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)",
+               lambda m: (m.group(1).strip() or "image"), s)
+    s = re.sub(r"\[([^\]]+)\]\((?:[^()]|\([^()]*\))*\)", r"\1", s)
+    s = re.sub(r"<((?:https?|mailto):)[^>]*>", r"\1", s)
+    s = re.sub(r"<[^>]{1,200}>", " ", s)  # leftover html tags
+    # A bare URL in prose (not a markdown link) would otherwise be read out
+    # character by character. Keep only the host, spoken as words: the path and
+    # query are noise for someone listening.
+    s = re.sub(r"\b(?:https?://|www\.)([^\s/?#]+)[^\s]*",
+               lambda m: _speak_code_span(m.group(1)), s)
+    s = re.sub(r"^[ \t]{0,3}#{1,6}[ \t]*", "", s, flags=re.M)      # headings
+    s = re.sub(r"^[ \t]{0,3}>[ \t]?", "", s, flags=re.M)           # blockquotes
+    s = re.sub(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+", "", s, flags=re.M)  # list bullets
+    s = re.sub(r"^[ \t]*(?:[-*_][ \t]*){3,}$", "", s, flags=re.M)  # rules
+    s = re.sub(r"\|?[ \t]*:?-{2,}:?[ \t]*(\|[ \t]*:?-{2,}:?[ \t]*)*\|?", " ", s, flags=re.M)
+    s = s.replace("**", "").replace("__", "")
+    s = re.sub(r"(?<![\w*])\*(?!\s)|(?<!\s)\*(?![\w*])", "", s)  # emphasis
+    s = s.replace("~~", "")
+    # Any backtick left is an unbalanced fence or a stray tick from malformed
+    # source. It has no spoken value, so drop it rather than let piper say it.
+    s = s.replace("`", "")
+    s = re.sub(r"[ \t]{2,}", " ", s)
+    s = re.sub(r"\n{2,}", "\n", s)
+    s = re.sub(r"[ \t]+\n", "\n", s)
+    return s.strip()
 
 
 def generate_tts(text):
     """Generate TTS audio file, return path or None."""
+    spoken = speech_text(text)
+    if not spoken:
+        return None
     voice_dir = os.path.expanduser("~/.local/share/piper-tts/voices")
     voice_file = os.path.join(voice_dir, f"{PERLA_VOICE}.onnx")
     if not os.path.exists(voice_file):
@@ -2311,7 +2957,7 @@ def generate_tts(text):
     try:
         proc = subprocess.run(
             ["bash", "-c",
-             f"echo {shlex.quote(text)} | "
+             f"echo {shlex.quote(spoken)} | "
              f"piper --model {shlex.quote(voice_file)} --output-raw --length-scale 1.1 | "
              f"ffmpeg -y -f s16le -ar 22050 -ac 1 -i - {shlex.quote(audio_path)} 2>/dev/null"],
             capture_output=True, timeout=30
@@ -2326,6 +2972,9 @@ def generate_tts(text):
 def speak_locally(text):
     """Play TTS directly through local speakers — used for local hotkey/
     voice callers so audio doesn't need to round-trip as a file URL."""
+    spoken = speech_text(text)
+    if not spoken:
+        return False
     voice_dir = os.path.expanduser("~/.local/share/piper-tts/voices")
     voice_file = os.path.join(voice_dir, f"{PERLA_VOICE}.onnx")
     if not os.path.exists(voice_file):
@@ -2334,7 +2983,7 @@ def speak_locally(text):
     try:
         subprocess.run(
             ["bash", "-c",
-             f"echo {shlex.quote(text)} | "
+             f"echo {shlex.quote(spoken)} | "
              f"piper --model {shlex.quote(voice_file)} --output-raw --length-scale 1.1 | "
              f"pw-play --rate=22050 --channels=1 --format=s16 --raw -"],
             timeout=60
@@ -2808,7 +3457,10 @@ def process_message(message, tier, source, confirm=False, user_image_paths=None,
                      text_attachments=None, voice_filename=None):
     """The single entrypoint every surface funnels through: OpenCode, then
     logging. Returns (response_text, tool_used, confirm_required,
-    confirm_action, image_path). image_path is None except for two cases —
+    confirm_action, image_path, sent_file_ref) plus a 7th element: None for a
+    normal reply, or a {"question_required": True, "request_id": ...,
+    "questions": [...]} payload when the model paused for input. image_path is
+    None except for two cases —
     a screen-vision request (captured screenshot sent alongside the model's
     description), or when the model used the view_screen MCP tool (whose
     screenshot only reaches the model, so a fresh one is captured to show
@@ -2818,6 +3470,11 @@ def process_message(message, tier, source, confirm=False, user_image_paths=None,
     not matched by keywords in the text — the model triggers them
     explicitly via the system_action MCP tool, so there is no accidental
     keyword self-triggering.
+
+    When a question outcome is returned, the reply (and this message's
+    logging) resolve later via POST /api/question — the turn stays alive in
+    the background holding the interaction open, and user-uploaded temp
+    images are kept until the question is resolved rather than deleted.
 
     `text_attachments` is a list of (filename, content) tuples from
     decode_upload_text_files — unlike images, these were never sent as
@@ -2851,57 +3508,85 @@ def process_message(message, tier, source, confirm=False, user_image_paths=None,
             vision_image_path, capture_error = capture_screenshot()
             if capture_error:
                 log_request(message, capture_error, tier, False, source=source)
-                return capture_error, False, False, None, None, None
+                _delete_paths(user_image_paths)
+                return capture_error, False, False, None, None, None, None
 
     attach_paths = user_image_paths if user_image_paths else ([vision_image_path] if vision_image_path else None)
 
-    try:
-        if tier == 2 and is_destructive(message) and not confirm:
-            return (
-                "About to execute a potentially destructive action. Confirm?",
-                False, True, message, None, None
-            )
-
-        sid = session_mgr.get_session(tier)
-        if not sid:
-            return "OpenCode server unavailable.", False, False, None, None, None
-
-        port = SERVER_PORT_T1 if tier == 1 else SERVER_PORT_T2
-        response_text, tool_used, obsidian_write, view_screen_used, sent_file_ref = call_opencode(
-            sid, port, message, tier, image_path=attach_paths
+    if tier == 2 and is_destructive(message) and not confirm:
+        _delete_paths(user_image_paths)
+        return (
+            "About to execute a potentially destructive action. Confirm?",
+            False, True, message, None, None, None
         )
 
-        log_request(message, response_text, tier, tool_used, source=source,
-                     sent_file=sent_file_ref, voice_filename=voice_filename)
+    sid = session_mgr.get_session(tier)
+    if not sid:
+        _delete_paths(user_image_paths)
+        return "OpenCode server unavailable.", False, False, None, None, None, None
 
-        if is_memory_worthy(message) and not obsidian_write:
-            log_memory_mismatch(message, response_text, tier, source=source)
-            print("WARNING: memory-worthy input with no Obsidian write detected", flush=True)
+    port = SERVER_PORT_T1 if tier == 1 else SERVER_PORT_T2
+    outcome = run_opencode_turn(
+        sid, port, message, tier,
+        image_path=attach_paths,
+        cleanup_paths=user_image_paths,
+    )
 
-        # When the model used the view_screen MCP tool, it saw the screenshot
-        # but the user didn't — that tool returns the image to the model only,
-        # consumed inside the OpenCode session. Capture a matching screenshot
-        # so the UI can show the user the actual picture (same serving path as
-        # the fixed-phrase vision path below). The model already got its own
-        # copy from the MCP tool, so this one is only for display, not re-sent
-        # to OpenCode.
-        display_image_path = vision_image_path
-        if display_image_path is None and view_screen_used and not user_image_paths:
-            display_image_path, capture_error = capture_screenshot()
-            if capture_error:
-                print(f"WARNING: view_screen display capture failed: {capture_error}", flush=True)
+    turn = outcome.get("turn")
+    if turn is not None:
+        # Metadata the /api/question resolution path needs to log THIS message
+        # once the model's final reply arrives on that later request.
+        turn.message = message
+        turn.source = source
+        turn.voice_filename = voice_filename
+        turn.has_user_images = bool(user_image_paths)
 
-        # image_path returned to the caller is the CAPTURED screenshot (which
-        # the web UI re-serves via /api/screenshot); user uploads are instead
-        # echoed client-side from their data URLs, so nothing to re-serve.
-        return response_text, tool_used, False, None, display_image_path, sent_file_ref
-    finally:
-        if user_image_paths:
-            for p in user_image_paths:
-                try:
-                    os.unlink(p)
-                except OSError:
-                    pass
+    if outcome["kind"] == "question":
+        # The model paused for input. Surface the question to the UI now; the
+        # final reply and this turn's logging resolve on /api/question. Uploaded
+        # temp images stay on the turn (deferred cleanup) until resolution, so
+        # the image the model had in front of it when it paused is still present
+        # once it answers — deleted in _finalize_turn when the turn completes.
+        return (
+            None, False, False, None, None, None,
+            {"question_required": True,
+             "request_id": outcome["request_id"],
+             "questions": outcome["questions"]},
+        )
+
+    response_text, tool_used, obsidian_write, view_screen_used, sent_file_ref = outcome["reply"]
+
+    if outcome.get("interrupted"):
+        # The turn was stopped (by the Stop button, or superseded by a newer
+        # message) before the model produced a reply. INTERRUPTED_REPLY is
+        # synthetic, not the model speaking, so it is returned as-is and never
+        # logged, written to memory, or treated as a real response.
+        return response_text, False, False, None, None, None, None
+
+    log_request(message, response_text, tier, tool_used, source=source,
+                 sent_file=sent_file_ref, voice_filename=voice_filename)
+
+    if is_memory_worthy(message) and not obsidian_write:
+        log_memory_mismatch(message, response_text, tier, source=source)
+        print("WARNING: memory-worthy input with no Obsidian write detected", flush=True)
+
+    # When the model used the view_screen MCP tool, it saw the screenshot
+    # but the user didn't — that tool returns the image to the model only,
+    # consumed inside the OpenCode session. Capture a matching screenshot
+    # so the UI can show the user the actual picture (same serving path as
+    # the fixed-phrase vision path below). The model already got its own
+    # copy from the MCP tool, so this one is only for display, not re-sent
+    # to OpenCode.
+    display_image_path = vision_image_path
+    if display_image_path is None and view_screen_used and not user_image_paths:
+        display_image_path, capture_error = capture_screenshot()
+        if capture_error:
+            print(f"WARNING: view_screen display capture failed: {capture_error}", flush=True)
+
+    # image_path returned to the caller is the CAPTURED screenshot (which
+    # the web UI re-serves via /api/screenshot); user uploads are instead
+    # echoed client-side from their data URLs, so nothing to re-serve.
+    return response_text, tool_used, False, None, display_image_path, sent_file_ref, None
 
 
 # ---------------------------------------------------------------------------
@@ -3309,6 +3994,14 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.handle_quick_action()
             return
 
+        if path == "/api/question":
+            self.handle_question()
+            return
+
+        if path == "/api/interrupt":
+            self.handle_interrupt()
+            return
+
         if path == "/api/scoped-command":
             self.handle_scoped_command()
             return
@@ -3329,6 +4022,146 @@ class CompanionHandler(BaseHTTPRequestHandler):
 
         token = session_tokens.create()
         self.send_json(200, {"token": token, "expires_in": SESSION_TTL})
+
+    def _reply_media(self, response_text, image_path, sent_file, tier, source):
+        """Shared shaping of a final assistant reply into the media URLs the
+        web UI expects: TTS audio for remote callers, the (optional) screenshot
+        to re-serve, and the staged-file download payload."""
+        audio_url = None
+        if source == "remote" and response_text:
+            audio_path = generate_tts(response_text)
+            audio_url = f"/api/audio/{os.path.basename(audio_path)}" if audio_path else None
+        image_url = f"/api/screenshot/{os.path.basename(image_path)}" if image_path else None
+        file_payload = (
+            {"url": f"/api/files/{sent_file['id']}/{sent_file['filename']}", "filename": sent_file["filename"]}
+            if sent_file else None
+        )
+        return audio_url, image_url, file_payload
+
+    def handle_interrupt(self):
+        """Stops whatever this tier is doing right now — the in-flight
+        generation (aborted server-side) and/or a question the model is blocked
+        on (rejected). Whoever was waiting on that turn gets the
+        INTERRUPTED_REPLY, and the session is left free for the next message.
+
+        This is the explicit "stop" button; sending a new message interrupts
+        too (see run_opencode_turn), so the button is only needed when you
+        want to stop without sending anything."""
+        try:
+            body = json.loads(self.read_body() or "{}")
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(400, {"error": "invalid JSON"})
+            return
+        tier = body.get("tier", 1)
+        try:
+            tier = int(tier)
+        except (TypeError, ValueError):
+            self.send_json(400, {"error": "invalid tier"})
+            return
+        interrupted = _interrupt_turn(tier)
+        self.send_json(200, {"ok": True, "interrupted": interrupted, "tier": tier})
+
+    def handle_question(self):
+        """The phone's answer to a question the model asked. Forwards the
+        reply/reject to the blocked OpenCode session, then waits on the SAME
+        turn for the model's final reply (or another question) and returns it
+        in the same success shape as handle_text — so one user message can
+        span several question round-trips before its reply lands.
+
+        Also resolves stale questions: when the question came from an earlier
+        (abandoned) turn, the message turn never started; resolving the
+        question un-sticks the busy session, then this message's turn begins
+        once the session drains. All bookkeeping the originating message turn
+        deferred — temp-image cleanup and request logging — is finalized here.
+        """
+        try:
+            body = json.loads(self.read_body())
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(400, {"error": "invalid JSON"})
+            return
+
+        tier = body.get("tier")
+        request_id = body.get("request_id", "")
+        answers = body.get("answers")
+        dismiss = bool(body.get("dismiss", False))
+
+        turn = _get_turn(tier)
+        if turn is None or turn.question is None or turn.question["request_id"] != request_id:
+            self.send_json(404, {"error": "question not found", "request_id": request_id})
+            return
+
+        # Mark the question answered BEFORE forwarding it, so the auto-dismiss
+        # timer can't race us and reject it a moment after the user answered.
+        with turn.cond:
+            turn.answered_request_ids.add(request_id)
+            if turn.dismiss_timer is not None:
+                turn.dismiss_timer.cancel()
+                turn.dismiss_timer = None
+            turn.question = None
+            turn.cond.notify_all()
+
+        if not dismiss and not answers:
+            answers = [[]]
+        if not _resolve_question(turn, request_id, answers, dismiss=dismiss):
+            self.send_json(502, {"error": "failed to forward answer to OpenCode"})
+            return
+
+        if not turn.began:
+            # Stale-question case: the message turn never started. Resolving
+            # the question un-stuck the session; wait for it to drain before
+            # sending the actual message so it doesn't queue silently.
+            if not _wait_session_idle(turn):
+                _clear_turn(tier, turn)
+                self.send_json(504, {"error": "session still busy after question was resolved"})
+                return
+            _begin_turn(turn)
+
+        source = turn.source or "remote"
+        outcome = _wait_for_turn_outcome(turn)
+        if outcome["kind"] == "question":
+            self.send_json(200, {
+                "question_required": True,
+                "request_id": outcome["request_id"],
+                "questions": outcome["questions"],
+                "tier": tier,
+            })
+            return
+
+        response_text, tool_used, obsidian_write, view_screen_used, sent_file_ref = outcome["reply"]
+
+        if outcome.get("interrupted"):
+            # The turn was stopped while we waited on it — INTERRUPTED_REPLY is
+            # synthetic, so it skips logging/memory/display-capture entirely and
+            # is returned as a plain reply. Deferred temp files still go.
+            _clear_turn(tier, turn)
+            self.send_json(200, {"text": response_text, "tier": tier, "interrupted": True})
+            return
+
+        # The reply to the original message finally landed — log it exactly as
+        # process_message would have if there'd been no question in between.
+        message = turn.message or ""
+        log_request(message, response_text, tier, tool_used, source=source,
+                     sent_file=sent_file_ref, voice_filename=turn.voice_filename)
+        if is_memory_worthy(message) and not obsidian_write:
+            log_memory_mismatch(message, response_text, tier, source=source)
+            print("WARNING: memory-worthy input with no Obsidian write detected", flush=True)
+
+        display_image_path = None
+        if view_screen_used and not turn.has_user_images:
+            display_image_path, capture_error = capture_screenshot()
+            if capture_error:
+                print(f"WARNING: view_screen display capture failed: {capture_error}", flush=True)
+
+        audio_url, image_url, file_payload = self._reply_media(
+            response_text, display_image_path, sent_file_ref, tier, source
+        )
+
+        _clear_turn(tier, turn)
+
+        self.send_json(200, {
+            "text": response_text, "audio": audio_url, "tier": tier, "image": image_url,
+            "file": file_payload, "question_required": False,
+        })
 
     def handle_text(self):
         try:
@@ -3450,7 +4283,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(403, {"error": tier_error})
             return
 
-        response_text, tool_used, confirm_required, action, image_path, sent_file = process_message(
+        response_text, tool_used, confirm_required, action, image_path, sent_file, question_payload = process_message(
             message, tier, source, confirm=confirm, user_image_paths=user_image_paths,
             text_attachments=text_attachments,
         )
@@ -3464,19 +4297,16 @@ class CompanionHandler(BaseHTTPRequestHandler):
             })
             return
 
-        audio_url = None
-        # Only generate a downloadable audio file for REMOTE callers (phone
-        # plays it through the browser). Local callers (perla.sh) get audio
-        # played directly through /api/speak-local instead, so we don't
-        # burn TTS twice for the same response.
-        if source == "remote":
-            audio_path = generate_tts(response_text)
-            audio_url = f"/api/audio/{os.path.basename(audio_path)}" if audio_path else None
+        if question_payload:
+            self.send_json(200, {
+                **question_payload,
+                "tier": tier,
+                "file_warnings": text_file_warnings or None,
+            })
+            return
 
-        image_url = f"/api/screenshot/{os.path.basename(image_path)}" if image_path else None
-        file_payload = (
-            {"url": f"/api/files/{sent_file['id']}/{sent_file['filename']}", "filename": sent_file["filename"]}
-            if sent_file else None
+        audio_url, image_url, file_payload = self._reply_media(
+            response_text, image_path, sent_file, tier, source
         )
 
         self.send_json(200, {
@@ -3569,19 +4399,23 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(403, {"error": tier_error, "transcript": transcript})
             return
 
-        response_text, tool_used, confirm_required, action, image_path, sent_file = process_message(
+        response_text, tool_used, confirm_required, action, image_path, sent_file, question_payload = process_message(
             transcript, tier, source, confirm=False, voice_filename=voice_filename
         )
 
-        audio_url = None
-        if source == "remote":
-            audio_path = generate_tts(response_text)
-            audio_url = f"/api/audio/{os.path.basename(audio_path)}" if audio_path else None
+        if question_payload:
+            self.send_json(200, {
+                **question_payload,
+                "transcript": transcript,
+                "voice": f"/api/voice/{voice_filename}" if voice_filename else None,
+                "tier": tier,
+                "confirm_required": False,
+                "action": None,
+            })
+            return
 
-        image_url = f"/api/screenshot/{os.path.basename(image_path)}" if image_path else None
-        file_payload = (
-            {"url": f"/api/files/{sent_file['id']}/{sent_file['filename']}", "filename": sent_file["filename"]}
-            if sent_file else None
+        audio_url, image_url, file_payload = self._reply_media(
+            response_text, image_path, sent_file, tier, source
         )
 
         self.send_json(200, {
@@ -3895,7 +4729,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(403, {"ok": False, "error": tier_error})
             return
 
-        response_text, tool_used, confirm_required, action, image_path, sent_file = process_message(
+        response_text, tool_used, confirm_required, action, image_path, sent_file, question_payload = process_message(
             message, tier, source, confirm=False, user_image_paths=user_image_paths,
             text_attachments=text_attachments,
         )
@@ -3904,14 +4738,15 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.send_json(200, {"ok": True, "confirm_required": True, "action": action, "text": response_text, "tier": tier})
             return
 
-        audio_url = None
-        if source == "remote":
-            audio_path = generate_tts(response_text)
-            audio_url = f"/api/audio/{os.path.basename(audio_path)}" if audio_path else None
-        image_url = f"/api/screenshot/{os.path.basename(image_path)}" if image_path else None
-        file_payload = (
-            {"url": f"/api/files/{sent_file['id']}/{sent_file['filename']}", "filename": sent_file["filename"]}
-            if sent_file else None
+        if question_payload:
+            self.send_json(200, {
+                **question_payload,
+                "ok": True, "tier": tier, "filename": filename,
+            })
+            return
+
+        audio_url, image_url, file_payload = self._reply_media(
+            response_text, image_path, sent_file, tier, source
         )
 
         self.send_json(200, {

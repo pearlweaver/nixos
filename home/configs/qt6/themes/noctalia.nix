@@ -12,7 +12,7 @@
     "qt6ct/qt6ct.conf".text = ''
       [Appearance]
       custom_palette=true
-      color_scheme_path=~/.config/qt6ct/colors/noctalia.conf
+      color_scheme_path=/home/thedreamdev/.config/qt6ct/colors/noctalia.conf
       icon_theme=Papirus-Dark
       standard_dialogs=default
       style=Fusion

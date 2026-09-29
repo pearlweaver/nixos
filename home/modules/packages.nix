@@ -26,10 +26,42 @@
     nocturne
     proton-vpn
     protontricks
-    krita
     nautilus
-    kdePackages.dolphin
-    kdePackages.ark
+    # KDE apps take their QPalette from KColorScheme via the KDE platform theme
+    # (plasma-integration); without it they fall back to BreezeLight and ignore
+    # both qt6ct and kdeglobals. Route the KDE apps to that platform theme so
+    # they read the noctalia scheme, and keep qt6ct for the non-KDE Qt apps.
+    kdePackages.plasma-integration
+    (pkgs.symlinkJoin {
+      name = "dolphin";
+      paths = [ kdePackages.dolphin ];
+      nativeBuildInputs = [ pkgs.makeWrapper ];
+      postBuild = ''
+        wrapProgram $out/bin/dolphin \
+          --unset QT_STYLE_OVERRIDE \
+          --set QT_QPA_PLATFORMTHEME kde
+      '';
+    })
+    (pkgs.symlinkJoin {
+      name = "ark";
+      paths = [ kdePackages.ark ];
+      nativeBuildInputs = [ pkgs.makeWrapper ];
+      postBuild = ''
+        wrapProgram $out/bin/ark \
+          --unset QT_STYLE_OVERRIDE \
+          --set QT_QPA_PLATFORMTHEME kde
+      '';
+    })
+    (pkgs.symlinkJoin {
+      name = "krita";
+      paths = [ krita ];
+      nativeBuildInputs = [ pkgs.makeWrapper ];
+      postBuild = ''
+        wrapProgram $out/bin/krita \
+          --unset QT_STYLE_OVERRIDE \
+          --set QT_QPA_PLATFORMTHEME kde
+      '';
+    })
     stoat-desktop
     lsfg-vk
     lsfg-vk-ui
@@ -78,6 +110,8 @@
     mpvpaper
     vulkan-tools
     qpdf
+    papirus-folders
+    papirus-icon-theme
   ];
 
   xdg.dataFile."vulkan/implicit_layer.d/VkLayer_LS_frame_generation.json".source =
