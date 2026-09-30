@@ -277,6 +277,18 @@ send_permission_answer() {
         "$tier" "$request_id" "$reply" "$message")"
 }
 
+# Throw away a pending question instead of answering it. Rejecting is the only
+# way OpenCode will let a blocked question go, and the daemon's reply is a bare
+# "(no response)" that no caller should show or speak.
+dismiss_question() {
+  local tier="$1" request_id="$2"
+  curl -sf --connect-timeout 5 -m 30 -X POST "$DAEMON/api/question" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $LOCAL_TOKEN" \
+    -d "$(python3 -c "import json,sys; print(json.dumps({'tier': int(sys.argv[1]), 'request_id': sys.argv[2], 'dismiss': True}))" \
+        "$tier" "$request_id")"
+}
+
 # Normalize a tier selection into 1 or 2, whatever spelling it arrives as
 # (voice argument "1"/"2", noctalia's "Tier 1"/"Tier 2" selection).
 normalize_tier() {
@@ -451,6 +463,41 @@ main() {
     explain_failure "$rc" "text"
     exit 1
   }
+
+  # A text turn is non-interactive — `perla text 2 '<task>'` is how the nightly
+  # jobs run — so there is nobody here to answer a prompt. The old code just
+  # printed the (empty) text field and walked away, which also left the prompt
+  # PENDING: a question then blocks this tier's session until the 10-minute
+  # auto-dismiss, and a permission has no timer at all and stalls every later
+  # turn. So report what Perla wanted to ask, then clear it.
+  #
+  # Nothing is decided on the user's behalf. A question is simply thrown away.
+  # A permission has no neutral dismiss — rejecting is the only way to release
+  # it, and deny is the safe direction — so it is rejected, never allowed.
+  local blocked
+  blocked="$(echo "$result" | blocked_kind)"
+  if [ -n "$blocked" ]; then
+    local request_id prompt
+    request_id="$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('request_id',''))")"
+    prompt="$(echo "$result" | voice_prompt)"
+
+    if [ "$blocked" = "question" ]; then
+      printf '%s needs input, which a text turn cannot ask for:\n' "$PERLA_NAME"
+      printf '  %s\n' "$prompt"
+      dismiss_question "$tier" "$request_id" >/dev/null || \
+        log "WARNING: could not dismiss question $request_id"
+      printf '(thrown away, so the session is not left blocked)\n'
+    else
+      printf '%s asked for permission, which a text turn cannot grant — nothing was allowed:\n' "$PERLA_NAME"
+      printf '  %s\n' "$prompt"
+      send_permission_answer "reject" "$tier" "$request_id" \
+        "No user was present to answer this: it came from a non-interactive text turn. The user neither approved nor refused it, and the action must not be retried. Acknowledge briefly." >/dev/null || \
+        log "WARNING: could not clear permission $request_id"
+      printf '(rejected, so the session is not left blocked)\n'
+    fi
+    return 0
+  fi
+
   response="$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('text',''))")"
 
   echo "$response"

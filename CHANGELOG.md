@@ -1,4 +1,3 @@
-# Version 26.9.30.5
+# Version 26.9.30.6
 
-- Tier 1 Perla can now use the `question` tool. The old "No Interactive Prompts" rule told her she had no way to ask and must never use it, which made the question card and the voice answer loop unreachable in Tier 1. Replaced with guidance that still defaults to deciding rather than asking, and asks only when a wrong guess would actually cost something.
-- Voice mode: a missed answer no longer dead-ends the turn. An unanswered *question* is answered with a nudge so Perla proceeds on her own best guess (once only, so a question-asking model can't loop). A missed *permission* is still never auto-decided — silence must never mean allow — and now says a permission is waiting.
+- Fixed `perla text` silently dropping questions and permissions. The non-interactive path (used by the nightly `perla-promote` job) printed the empty `text` field, tried to speak an empty string, and left the prompt PENDING — which blocks that tier's session until the 10-minute auto-dismiss, and a permission has no timer at all and stalls every later turn. It now reports what Perla wanted to ask and clears the prompt so the session is never left blocked. Nothing is decided on your behalf: a question is thrown away, and a permission is rejected (never allowed), matching what the daemon already does on interrupt and session resume.
