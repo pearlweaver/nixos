@@ -258,6 +258,13 @@ in {
       PERLA_WHISPER_LANG="${cfg.whisper_lang}"
       PERLA_IDLE_MINUTES=${toString cfg.session_idle_timeout_minutes}
       PERLA_AUDIO_INPUT="${cfg.audio_input}"
+      # Client-side twin of the daemon's turn cap. perla.sh sources this same
+      # file, so both sides now derive their timeout from the one
+      # `turn_timeout_seconds` setting. It used to be hardcoded as 300 in the
+      # script while the daemon allowed 900 — so a long voice/hotkey request
+      # hit the SHORTER client cap, curl bailed, and Perla wrongly reported
+      # "offline" while the daemon finished the turn into the void.
+      PERLA_TURN_TIMEOUT=${toString cfg.turn_timeout_seconds}
     '';
   };
 

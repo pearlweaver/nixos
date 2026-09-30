@@ -4289,6 +4289,10 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.handle_permission()
             return
 
+        if path == "/api/transcribe":
+            self.handle_transcribe()
+            return
+
         if path == "/api/interrupt":
             self.handle_interrupt()
             return
@@ -4835,6 +4839,77 @@ class CompanionHandler(BaseHTTPRequestHandler):
             "image": image_url,
             "file": file_payload,
         })
+
+    def handle_transcribe(self):
+        """Local-only: transcribe an audio file and return just the text.
+
+        perla.sh needs this to turn a spoken ANSWER to a question or
+        permission prompt into text without spending a whole model turn on
+        it — /api/voice would transcribe and then run the model, which is
+        exactly what we're trying to avoid mid-prompt.
+
+        Local-only like speak-local: it ingests raw microphone audio, so it
+        is not exposed to remote (phone) callers.
+        """
+        if self.get_source() != "local":
+            self.send_json(403, {"error": "local only"})
+            return
+        content_type = self.headers.get("Content-Type", "")
+        if "multipart/form-data" not in content_type:
+            self.send_json(400, {"error": "expected multipart/form-data"})
+            return
+        boundary = None
+        for part in content_type.split(";"):
+            part = part.strip()
+            if part.startswith("boundary="):
+                boundary = part[9:].strip('"')
+        if not boundary:
+            self.send_json(400, {"error": "no boundary in Content-Type"})
+            return
+        raw = self.read_body()
+        audio_data = self._parse_multipart_audio(raw, boundary)
+        if not audio_data:
+            self.send_json(400, {"error": "no audio field in form data"})
+            return
+        tmp = tempfile.NamedTemporaryFile(suffix=".webm", delete=False)
+        try:
+            tmp.write(audio_data)
+            tmp.close()
+            text = (transcribe_audio(tmp.name) or "").strip()
+            # whisper prefixes every segment with a timestamp ("option two"
+            # arrives as "[00:00:00.000 --> 00:00:03.000]   option two") and
+            # reports silence as a BLANK_AUDIO marker rather than returning
+            # nothing. /api/voice has always passed that through and the model
+            # copes with it fine, so it is left alone. This endpoint is
+            # different: its output is POSTed back as the user's spoken
+            # ANSWER, so the markers have to come off or an option reply would
+            # match nothing and silence would be answered verbatim. Stripping
+            # them also reduces silence to "", which the caller reads as
+            # "I didn't catch that".
+            #
+            # Only segment markers go: a bare "14:30" in a spoken answer is
+            # real content, so the pattern requires the "-->" arrow instead of
+            # removing every timestamp-looking token. whisper is inconsistent
+            # about brackets and time format (HH:MM:SS.mmm in some segments,
+            # MM:SS.mmm in others), so the "[" / "]" and seconds field are
+            # both optional.
+            text = re.sub(
+                r"\[?\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\s*-->\s*"
+                r"\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\]?",
+                " ", text,
+            )
+            text = text.replace("BLANK_AUDIO", " ")
+            text = re.sub(r"[\[\]]", " ", text)
+            text = re.sub(r"\s+", " ", text).strip()
+            self.send_json(200, {"text": text})
+        except Exception as e:
+            print(f"ERROR: transcription failed: {e}", flush=True)
+            self.send_json(500, {"error": "transcription failed"})
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
 
     def handle_speak_local(self):
         """Local-only: speak text directly through this machine's speakers.
