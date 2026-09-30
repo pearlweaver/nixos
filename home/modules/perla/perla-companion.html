@@ -5097,6 +5097,7 @@
       TEXT_PATH: "/api/text",
       VOICE_PATH: "/api/voice",
       QUESTION_PATH: "/api/question",
+      PERMISSION_PATH: "/api/permission",
       INTERRUPT_PATH: "/api/interrupt",
       HEALTH_PATH: "/api/health",
       GATE_PATH: "/api/gate",
@@ -5772,7 +5773,15 @@
           note.textContent = "Confirmed.";
           bubble.appendChild(note);
 
-          renderReplyResult(data, targetTier);
+          // A confirm re-send can itself hit a permission prompt or a
+          // question, so route all three shapes rather than assuming a reply.
+          if (data.question_required) {
+            addQuestionEntry(data, targetTier);
+          } else if (data.permission_required) {
+            addPermissionEntry(data, targetTier);
+          } else {
+            renderReplyResult(data, targetTier);
+          }
         } catch (e) {
           notify("error", "Couldn't confirm — try again.");
           confirmBtn.disabled = false;
@@ -6062,6 +6071,181 @@
 
       actions.appendChild(answerBtn);
       actions.appendChild(dismissBtn);
+      bubble.appendChild(actions);
+      bubble.appendChild(statusNote);
+      entry.appendChild(bubble);
+
+      const meta = document.createElement("div");
+      meta.className = "entry-meta";
+      meta.innerHTML = `<span class="entry-time">${time}</span>`;
+      entry.appendChild(meta);
+
+      output.appendChild(entry);
+      setChatLog(targetTier, output.innerHTML);
+      output.scrollIntoView({ block: "end" });
+      entry.scrollIntoView({ behavior: "smooth", block: "end" });
+      return entry;
+    }
+
+    // Renders an OpenCode permission prompt as a card with the same three
+    // choices the opencode TUI offers. These appear when a tool wants to act
+    // outside the session's working directory (most often writing to /tmp) —
+    // headless `opencode serve` has no UI to answer them, so the tool parks
+    // forever and the turn hangs until the daemon's timeout. Surfacing them
+    // here is what keeps the user in control instead of just blocked.
+    //
+    // Answering POSTs to /api/permission, which unblocks the tool and then
+    // holds the request open until the turn's real reply lands — so the same
+    // helper that renders a question card renders this one.
+    function addPermissionEntry(payload, forTier) {
+      const targetTier = forTier !== undefined ? forTier : activeTier;
+      const requestId = payload.request_id;
+      if (requestId) {
+        const existing = document.querySelector('[data-perm-request="' + CSS.escape(requestId) + '"]');
+        if (existing) return existing;
+      }
+      if (!isViewingTierChat(targetTier)) {
+        notify("error", "Perla needs your approval to continue", "check the chat");
+        markTierUnread(targetTier);
+        return null;
+      }
+      output.querySelectorAll(".welcome").forEach((w) => w.remove());
+
+      const entry = document.createElement("div");
+      entry.className = "entry entry-perla entry-permission";
+      if (requestId) entry.dataset.permRequest = requestId;
+      const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+      const bubble = document.createElement("div");
+      bubble.className = "entry-bubble";
+
+      const heading = document.createElement("p");
+      heading.textContent = "Permission needed";
+      heading.style.fontWeight = "600";
+      bubble.appendChild(heading);
+
+      // The exact command is the thing being approved — show it verbatim so
+      // the choice is informed rather than a blind trust click.
+      const dirs = (payload.directories || []).join(", ");
+      const patterns = (payload.patterns || []).join(", ");
+      const scope = dirs || patterns || "";
+      const detail = document.createElement("p");
+      detail.style.marginTop = "8px";
+      detail.style.fontSize = "0.8rem";
+      detail.style.color = "var(--ink-faint)";
+      detail.textContent = payload.permission === "external_directory"
+        ? "Wants to use " + (scope || "a path outside the working directory")
+        : "Needs approval: " + (payload.permission || "unknown action");
+      bubble.appendChild(detail);
+
+      if (payload.command) {
+        const cmd = document.createElement("div");
+        cmd.style.marginTop = "8px";
+        cmd.style.padding = "8px 10px";
+        cmd.style.borderRadius = "8px";
+        cmd.style.border = "1px solid var(--rule-faint)";
+        cmd.style.background = "rgba(0,0,0,0.22)";
+        cmd.style.fontFamily = "var(--mono, monospace)";
+        cmd.style.fontSize = "0.74rem";
+        cmd.style.whiteSpace = "pre-wrap";
+        cmd.style.wordBreak = "break-all";
+        cmd.textContent = payload.command;
+        bubble.appendChild(cmd);
+      }
+
+      const statusNote = document.createElement("div");
+      statusNote.style.marginTop = "6px";
+      statusNote.style.fontSize = "12px";
+      statusNote.style.color = "var(--ink-faint)";
+      statusNote.style.fontStyle = "italic";
+
+      const actions = document.createElement("div");
+      actions.style.display = "flex";
+      actions.style.gap = "8px";
+      actions.style.marginTop = "12px";
+      actions.style.flexWrap = "wrap";
+
+      const onceBtn = document.createElement("button");
+      onceBtn.className = "elevate-submit";
+      onceBtn.textContent = "Allow once";
+      onceBtn.style.padding = "7px 14px";
+      onceBtn.style.fontSize = "0.78rem";
+
+      const alwaysBtn = document.createElement("button");
+      alwaysBtn.className = "qa-input-cancel";
+      alwaysBtn.textContent = "Always allow";
+      alwaysBtn.style.padding = "7px 14px";
+      alwaysBtn.title = "Remember this choice for " + (scope || "this path");
+
+      const rejectBtn = document.createElement("button");
+      rejectBtn.className = "qa-input-cancel";
+      rejectBtn.textContent = "Reject";
+      rejectBtn.style.padding = "7px 14px";
+
+      function disableAll() {
+        onceBtn.disabled = true;
+        alwaysBtn.disabled = true;
+        rejectBtn.disabled = true;
+      }
+
+      function rearm(label) {
+        onceBtn.disabled = false;
+        onceBtn.textContent = "Allow once";
+        if (label) statusNote.textContent = label;
+      }
+
+      function submitPermission(reply) {
+        // A reject is forwarded with an explanatory message: OpenCode hands
+        // it to the model, which then acknowledges in its own voice instead
+        // of the turn ending on a bare "(no response)". Without it the user
+        // just sees silence after choosing Reject, which reads as a bug.
+        const body = { tier: targetTier, request_id: requestId, reply: reply };
+        if (reply === "reject") {
+          body.message = "The user rejected this action. Do not retry it. " +
+            "Acknowledge briefly and move on.";
+        }
+        return fetch(CONFIG.ENDPOINT + CONFIG.PERMISSION_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + authToken },
+          body: JSON.stringify(body),
+        }).then((res) => res.json().then((d) => ({ res, d })));
+      }
+
+      // Shared by all three buttons: POST the answer, then render whatever
+      // comes back — the turn's final reply, or another prompt if the model
+      // hits another one right after.
+      async function answer(reply, label) {
+        disableAll();
+        onceBtn.textContent = label + "…";
+        try {
+          const { res, d } = await submitPermission(reply);
+          if (res.status === 401) { relockSession(); return; }
+          if (!res.ok) {
+            notify("error", (d && d.error) || "Couldn't send that decision.");
+            rearm();
+            return;
+          }
+          entry.remove();
+          if (d.question_required) {
+            addQuestionEntry(d, targetTier);
+          } else if (d.permission_required) {
+            addPermissionEntry(d, targetTier);
+          } else {
+            renderReplyResult(d, targetTier);
+          }
+        } catch (e) {
+          notify("error", "Couldn't send that decision — try again.");
+          rearm();
+        }
+      }
+
+      onceBtn.addEventListener("click", () => answer("once", "Allowing"));
+      alwaysBtn.addEventListener("click", () => answer("always", "Allowing"));
+      rejectBtn.addEventListener("click", () => answer("reject", "Rejecting"));
+
+      actions.appendChild(onceBtn);
+      actions.appendChild(alwaysBtn);
+      actions.appendChild(rejectBtn);
       bubble.appendChild(actions);
       bubble.appendChild(statusNote);
       entry.appendChild(bubble);
@@ -8373,7 +8557,16 @@
           // via its own button, or the whole thing stopped with this one).
           addQuestionEntry(data, requestTier);
           keepStop = true;
-          return { ok: false, pending: true };
+          return;
+        }
+        if (data.permission_required) {
+          // A tool wants approval (typically to touch a path outside the
+          // working directory). Same shape as a question: the turn stays open
+          // behind the card and the real reply comes back on /api/permission,
+          // so the Stop button stays too.
+          addPermissionEntry(data, requestTier);
+          keepStop = true;
+          return;
         }
         if (data.file_warnings && data.file_warnings.length > 0) {
           // Non-fatal: some attached files were dropped, but the rest of
@@ -8803,6 +8996,11 @@
           // it's currently in gets cleared by clearVoiceDraft above).
           if (voiceEntry) addStopButton(voiceEntry, requestTier);
           addQuestionEntry(data, requestTier);
+          return;
+        }
+        if (data.permission_required) {
+          if (voiceEntry) addStopButton(voiceEntry, requestTier);
+          addPermissionEntry(data, requestTier);
           return;
         }
         renderReplyResult(data, requestTier);

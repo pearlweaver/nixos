@@ -22,6 +22,7 @@ Tailscale) go through the gate-password -> session-token flow as before.
 import base64
 import fcntl
 import getpass
+import hashlib
 import importlib.util
 import json
 import mimetypes
@@ -34,6 +35,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -80,6 +82,12 @@ PERLA_MODEL = os.environ.get("PERLA_MODEL", "opencode/deepseek-v4-flash-free")
 PERLA_VOICE = os.environ.get("PERLA_VOICE", "en_US-libritts_r-medium")
 PERLA_VAULT = os.environ.get("PERLA_VAULT", os.path.expanduser("~/Documents/Obsidian/PerlaNew"))
 PERLA_PERSONA = os.environ.get("PERLA_PERSONA", os.path.expanduser("~/.config/perla/persona.md"))
+# Persona delivery. The persona is a system prompt now (see each tier's
+# opencode `instructions`), so this paste is OFF by default and only exists
+# as a rollback lever — "1"/"true"/"yes" restores the old first-message paste.
+PASTE_PERSONA = os.environ.get("PERLA_PASTE_PERSONA", "0").strip().lower() in (
+    "1", "true", "yes", "on",
+)
 PERLA_AVATAR = os.environ.get("PERLA_AVATAR", os.path.expanduser("~/.config/perla/profile.jpg"))
 PERLA_WHISPER_MODEL = os.environ.get("PERLA_WHISPER_MODEL", "tiny")
 PERLA_WHISPER_LANG = os.environ.get("PERLA_WHISPER_LANG", "en")
@@ -211,7 +219,8 @@ session_tokens = SessionTokenStore()
 class SessionManager:
     def __init__(self):
         self._sessions = {}         # tier -> session_id
-        self._persona_injected = set()
+        self._persona_pending = set()   # tiers whose current session still needs the persona
+        self._persona_probe = {}        # tier -> (session_id, marker) already checked
         self._lock = threading.Lock()
 
     def _server_port(self, tier):
@@ -256,15 +265,17 @@ class SessionManager:
         return False
 
     def get_session(self, tier):
+        # NOTE: note_persona_for_session acquires self._lock itself, so it must
+        # be called with the lock RELEASED. Calling it inside the `with` below
+        # self-deadlocks on the cached-session path (Lock is not reentrant) and
+        # hangs every request.
         with self._lock:
-            if tier in self._sessions:
-                sid = self._sessions[tier]
-                if self._session_alive(tier, sid):
-                    return sid
-            sid = self._create_session(tier)
-            self._sessions[tier] = sid
-            self._persona_injected.discard(tier)
-            return sid
+            sid = self._sessions.get(tier)
+            if not (sid and self._session_alive(tier, sid)):
+                sid = self._create_session(tier)
+                self._sessions[tier] = sid
+        self.note_persona_for_session(tier, sid)
+        return sid
 
     def _session_alive(self, tier, sid):
         port = self._server_port(tier)
@@ -357,6 +368,66 @@ class SessionManager:
         except Exception as e:
             print(f"WARNING: could not clear stale questions on resume: {e}", flush=True)
 
+    def _clear_pending_permissions(self, tier, sid):
+        """Reject permission prompts left blocking on a session being resumed.
+
+        Same hazard as a stale question, but worse: a question has an
+        auto-dismiss timer, a permission prompt has nothing. One left pending
+        keeps its tool parked forever and stalls every later turn, so clear it
+        on the way back in.
+        """
+        port = self._server_port(tier)
+        try:
+            result = subprocess.run(
+                ["curl", "-sf", "--connect-timeout", "3", "-m", "8",
+                 f"http://127.0.0.1:{port}/permission"],
+                capture_output=True, text=True, timeout=12
+            )
+            if result.returncode != 0:
+                return
+            pending = json.loads(result.stdout)
+        except Exception as e:
+            print(f"WARNING: could not scan for stale permissions: {e}", flush=True)
+            return
+        if not isinstance(pending, list):
+            return
+        directory = None
+        for entry in pending:
+            if not isinstance(entry, dict) or entry.get("sessionID") != sid:
+                continue
+            request_id = entry.get("id")
+            if not request_id:
+                continue
+            if not directory:
+                directory = self._session_directory(tier, sid)
+            url = f"http://127.0.0.1:{port}/permission/{request_id}/reply"
+            if directory:
+                url += "?directory=" + urllib.parse.quote(directory, safe="")
+            try:
+                subprocess.run(
+                    ["curl", "-sf", "-m", "10", "-X", "POST",
+                     "-H", "Content-Type: application/json",
+                     "-d", json.dumps({"reply": "reject", "message": "stale after restart"}),
+                     url],
+                    capture_output=True, timeout=15
+                )
+                print(f"INFO: rejected stale permission {request_id} on resumed session", flush=True)
+            except Exception as e:
+                print(f"WARNING: stale permission {request_id} reject failed: {e}", flush=True)
+
+    def _session_directory(self, tier, sid):
+        try:
+            result = subprocess.run(
+                ["curl", "-sf", "--connect-timeout", "3", "-m", "8",
+                 f"http://127.0.0.1:{self._server_port(tier)}/session/{sid}"],
+                capture_output=True, text=True, timeout=12
+            )
+            if result.returncode == 0:
+                return (json.loads(result.stdout) or {}).get("directory")
+        except Exception:
+            pass
+        return None
+
     def _resume_session(self, tier):
         """Reattach to the previous conversation instead of starting a new one.
 
@@ -371,6 +442,7 @@ class SessionManager:
         if not self._session_alive(tier, sid):
             return None
         self._clear_pending_questions(tier, sid)
+        self._clear_pending_permissions(tier, sid)
         print(f"INFO: resumed tier {tier} session {sid} (conversation kept across restart)", flush=True)
         return sid
 
@@ -400,11 +472,69 @@ class SessionManager:
 
     def should_inject_persona(self, tier):
         with self._lock:
-            return tier not in self._persona_injected
+            return tier in self._persona_pending
 
     def mark_persona_injected(self, tier):
         with self._lock:
-            self._persona_injected.add(tier)
+            self._persona_pending.discard(tier)
+
+    def note_persona_for_session(self, tier, sid):
+        """Decide whether THIS session still needs the persona pasted in.
+
+        The persona is ~17KB and used to be re-pasted on every daemon
+        restart, because the "already injected" flag lived in memory and a
+        restart wiped it. Once sessions started being resumed across
+        restarts (rather than replaced), those pastes piled up in the same
+        conversation — six copies, 223k tokens of mostly-duplicated context.
+
+        The right question isn't "has this process injected it?" but "does
+        this session already contain it?". A brand-new session has never
+        had it, so it always gets the persona; the check only suppresses
+        redundant re-pastes. Answered by asking the session itself, so it
+        self-corrects: edit persona.md and the new text reaches even a
+        long-lived session on its next turn, and nothing extra is stored
+        that could drift from reality.
+        """
+        if not sid:
+            return
+        marker = _persona_marker()
+        with self._lock:
+            cached = self._persona_probe.get(tier)
+            if cached == (sid, marker):
+                return
+        try:
+            has = self._session_has_persona(tier, sid, marker)
+        except Exception as e:
+            # If we can't tell, inject. A duplicate persona is recoverable
+            # noise; a session with no persona at all is a broken assistant.
+            print(f"WARNING: persona probe failed (tier {tier}); injecting anyway: {e}", flush=True)
+            has = False
+        with self._lock:
+            self._persona_probe[tier] = (sid, marker)
+            if has:
+                self._persona_pending.discard(tier)
+            else:
+                self._persona_pending.add(tier)
+
+    def _session_has_persona(self, tier, sid, marker):
+        port = self._server_port(tier)
+        result = subprocess.run(
+            ["curl", "-sf", "--connect-timeout", "3", "-m", "10",
+             f"http://127.0.0.1:{port}/session/{sid}/message"],
+            capture_output=True, text=True, timeout=15
+        )
+        if result.returncode != 0:
+            return False
+        data = json.loads(result.stdout)
+        items = data if isinstance(data, list) else (data.get("data") or data.get("messages") or [])
+        for m in items:
+            if not isinstance(m, dict):
+                continue
+            for part in (m.get("parts") or []):
+                if isinstance(part, dict) and part.get("type") == "text" \
+                        and marker in (part.get("text") or ""):
+                    return True
+        return False
 
 
 session_mgr = SessionManager()
@@ -468,7 +598,9 @@ class _Turn:
                                     # obsidian_write, view_screen_used,
                                     # sent_file_ref) tuple
         self.question = None  # type: dict | None
+        self.permission = None  # type: dict | None
         self.answered_request_ids = set()
+        self.permission_directory = None  # workspace dir, needed to answer a permission
         self.dismiss_timer = None
         self.cleanup_paths = None   # deferred temp uploads (stale-question case)
         # Message-turn metadata needed to finalize logging on the /api/question
@@ -573,6 +705,113 @@ def _poll_pending_question(turn):
     return None
 
 
+def _session_directory(turn):
+    """The session's working directory. Needed as ?directory= when answering
+    a permission request — without it the reply 200s but silently does
+    nothing, leaving the tool blocked forever. Cached on the turn."""
+    if turn.permission_directory:
+        return turn.permission_directory
+    try:
+        result = subprocess.run(
+            ["curl", "-sf", "--connect-timeout", "3", "-m", "8",
+             f"http://127.0.0.1:{turn.port}/session/{turn.sid}"],
+            capture_output=True, text=True, timeout=12
+        )
+        if result.returncode == 0:
+            directory = (json.loads(result.stdout) or {}).get("directory")
+            if directory:
+                turn.permission_directory = directory
+                return directory
+    except Exception:
+        pass
+    return None
+
+
+def _poll_pending_permission(turn):
+    """Returns the first permission request OpenCode is blocked on for THIS
+    session, or None.
+
+    OpenCode raises these for things like a tool touching a path outside the
+    session's working directory. In the interactive TUI it renders an
+    "Allow once / Always / Reject" prompt; driven headlessly over HTTP there
+    is nothing to answer it, so the tool sits at status=running forever and
+    the user's turn hangs until the 900s timeout. Polling here is what turns
+    that silent hang into a card the user can actually answer.
+    """
+    try:
+        result = subprocess.run(
+            ["curl", "-sf", "--connect-timeout", "3", "-m", "8",
+             f"http://127.0.0.1:{turn.port}/permission"],
+            capture_output=True, text=True, timeout=12
+        )
+        if result.returncode != 0:
+            return None
+        pending = json.loads(result.stdout)
+    except Exception as e:
+        print(f"WARNING: permission poll failed: {e}", flush=True)
+        return None
+    if not isinstance(pending, list):
+        return None
+    for entry in pending:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("sessionID") != turn.sid:
+            continue
+        request_id = entry.get("id")
+        if not request_id or request_id in turn.answered_request_ids:
+            continue
+        return entry
+    return None
+
+
+def _resolve_permission(turn, request_id, reply, message=None):
+    """Answers a pending permission request: "once" | "always" | "reject".
+
+    The ?directory= query param is required — OpenCode replies 200 without
+    acting on it, so the tool would stay blocked. Returns True when the
+    request was actually resolved.
+    """
+    directory = _session_directory(turn)
+    if not directory:
+        print("WARNING: could not resolve permission — no session directory", flush=True)
+        return False
+    command = [
+        "curl", "-sf", "--connect-timeout", "3", "-m", "12", "-X", "POST",
+        "-H", "Content-Type: application/json",
+        "-d", json.dumps({"reply": reply, "message": message or ""}),
+        f"http://127.0.0.1:{turn.port}/permission/{request_id}/reply"
+        f"?directory={urllib.parse.quote(directory, safe='')}",
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=18)
+        if result.returncode != 0:
+            print(f"WARNING: permission {request_id} reply failed: {result.stderr[:200]}", flush=True)
+            return False
+        print(f"INFO: permission {request_id} answered ({reply})", flush=True)
+        return True
+    except Exception as e:
+        print(f"WARNING: permission {request_id} reply failed: {e}", flush=True)
+        return False
+
+
+def _clear_pending_permissions(turn):
+    """Rejects anything still blocked on this session. Used when resuming a
+    session after a restart and when interrupting: an unanswered prompt left
+    behind would stall every later turn in that session."""
+    count = 0
+    while True:
+        entry = _poll_pending_permission(turn)
+        if entry is None:
+            return count
+        request_id = entry["id"]
+        turn.answered_request_ids.add(request_id)
+        if not _resolve_permission(turn, request_id, "reject", "no longer waiting"):
+            return count
+        count += 1
+        if count > 20:  # pathological; don't spin
+            return count
+
+
 def _schedule_autodismiss(turn):
     with turn.cond:
         if turn.dismiss_timer is not None:
@@ -636,11 +875,12 @@ def _wait_session_idle(turn, timeout=IDLE_WAIT_TIMEOUT):
 
 
 def _wait_for_turn_outcome(turn):
-    """Blocks until the turn yields either a question or its final reply.
-    Returns {"kind": "question", "request_id":..., "questions":[...]} or
-    {"kind": "reply", "reply": 5-tuple}."""
+    """Blocks until the turn yields a question, a permission request, or its
+    final reply. Returns {"kind": "question"|"permission"|"reply", ...}."""
     while True:
         with turn.cond:
+            if turn.permission is not None and turn.permission["id"] not in turn.answered_request_ids:
+                return {"kind": "permission", "permission": turn.permission}
             if turn.question is not None and turn.question["request_id"] not in turn.answered_request_ids:
                 return {"kind": "question",
                         "request_id": turn.question["request_id"],
@@ -649,6 +889,13 @@ def _wait_for_turn_outcome(turn):
                 return {"kind": "reply", "reply": turn.result,
                         "interrupted": turn.interrupted}
             turn.cond.wait(QUESTION_POLL_SECONDS)
+        if turn.permission is None:
+            p = _poll_pending_permission(turn)
+            if p is not None:
+                with turn.cond:
+                    if turn.permission is None:
+                        turn.permission = p
+                        turn.cond.notify_all()
         if turn.question is None:
             q = _poll_pending_question(turn)
             if q is not None:
@@ -756,6 +1003,9 @@ def _interrupt_turn(tier):
         turn.interrupted = True
         running = turn.began
     _dismiss_turn_question(turn)
+    # A permission prompt is answered by rejecting it: leaving it pending
+    # would keep the tool blocked and stall the next turn on this session.
+    _clear_pending_permissions(turn)
     if running:
         _abort_session(turn)
     else:
@@ -804,6 +1054,9 @@ def run_opencode_turn(sid, port, text, tier, image_path=None, cleanup_paths=None
         _schedule_autodismiss(turn)
         return {"kind": "question", "turn": turn,
                 "request_id": stale["request_id"], "questions": stale["questions"]}
+    # A permission prompt left blocking by a dead turn would stall this one
+    # too, and unlike a question it has no timer of its own — reject it.
+    _clear_pending_permissions(turn)
     _begin_turn(turn)
     outcome = _wait_for_turn_outcome(turn)
     outcome["turn"] = turn
@@ -2124,6 +2377,16 @@ def read_persona():
         return f"IMPORTANT — Your name is {PERLA_NAME}. You are NOT opencode."
 
 
+def _persona_marker():
+    """A short fingerprint of the persona, stamped into the message it gets
+    pasted into so the session itself records which version it received.
+    Editing persona.md changes the hash, which is how a long-lived session
+    learns about the edit on its next turn."""
+    return "[perla-persona sha256:%s]" % hashlib.sha256(
+        read_persona().encode("utf-8", "replace")
+    ).hexdigest()[:12]
+
+
 def model_part():
     provider, model = PERLA_MODEL.split("/", 1)
     return {"providerID": provider, "modelID": model}
@@ -2574,7 +2837,13 @@ def build_opencode_body(text, tier, image_path=None):
     base64 images can be large enough to risk hitting OS argument-length
     limits.
     """
-    if session_mgr.should_inject_persona(tier):
+    # The persona now lives in each tier's opencode `instructions` (a system
+    # prompt re-sent on every request), which is the only placement that
+    # survives a long conversation. This paste path is retained purely as a
+    # rollback lever: set PERLA_PASTE_PERSONA=1 to restore the old behaviour
+    # without a code change. Left off, the model is never handed a duplicate
+    # 17KB persona mid-conversation.
+    if PASTE_PERSONA and session_mgr.should_inject_persona(tier):
         persona = read_persona()
         addendum = ""
         if tier == 2:
@@ -2617,6 +2886,7 @@ def build_opencode_body(text, tier, image_path=None):
         text = (
             f"ATTENTION — Read and follow these rules for your identity and behavior:\n\n"
             f"{persona}{addendum}\n\n"
+            f"{_persona_marker()}\n\n"
             f"Now respond to the user:\n\n"
             f"{text}"
         )
@@ -3541,6 +3811,23 @@ def process_message(message, tier, source, confirm=False, user_image_paths=None,
         turn.voice_filename = voice_filename
         turn.has_user_images = bool(user_image_paths)
 
+    if outcome["kind"] == "permission":
+        # OpenCode is blocked on a permission prompt (e.g. a tool touching a
+        # path outside the session's working directory). Headless `serve` has
+        # no UI to answer it, so without this the tool stays parked until the
+        # 900s timeout. Surface it as a card; /api/permission answers it and
+        # the same turn then continues on to its final reply.
+        _perm_meta = outcome["permission"].get("metadata") or {}
+        return (
+            None, False, False, None, None, None,
+            {"permission_required": True,
+             "request_id": outcome["permission"]["id"],
+             "permission": outcome["permission"].get("permission"),
+             "patterns": outcome["permission"].get("patterns") or [],
+             "command": _perm_meta.get("command"),
+             "directories": _perm_meta.get("directories") or []},
+        )
+
     if outcome["kind"] == "question":
         # The model paused for input. Surface the question to the UI now; the
         # final reply and this turn's logging resolve on /api/question. Uploaded
@@ -3998,6 +4285,10 @@ class CompanionHandler(BaseHTTPRequestHandler):
             self.handle_question()
             return
 
+        if path == "/api/permission":
+            self.handle_permission()
+            return
+
         if path == "/api/interrupt":
             self.handle_interrupt()
             return
@@ -4037,6 +4328,109 @@ class CompanionHandler(BaseHTTPRequestHandler):
             if sent_file else None
         )
         return audio_url, image_url, file_payload
+
+    def handle_permission(self):
+        """The user's answer to an OpenCode permission prompt.
+
+        OpenCode raises these for actions that need explicit approval — most
+        often a tool reaching outside the session's working directory. The
+        interactive TUI renders Allow once / Always / Reject; driven headlessly
+        there is nothing to answer it, so the tool parks forever and the turn
+        hangs. This forwards the choice, then waits on the SAME turn for the
+        final reply (or another prompt) and returns it in the same success
+        shape as handle_text, so one user message can span several
+        permission round-trips before its reply lands.
+        """
+        try:
+            body = json.loads(self.read_body())
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(400, {"error": "invalid JSON"})
+            return
+
+        tier = body.get("tier")
+        request_id = body.get("request_id", "")
+        reply = body.get("reply", "once")
+        if reply not in ("once", "always", "reject"):
+            self.send_json(400, {"error": "reply must be once, always or reject"})
+            return
+
+        turn = _get_turn(tier)
+        if turn is None or turn.permission is None or turn.permission["id"] != request_id:
+            self.send_json(404, {"error": "permission not found", "request_id": request_id})
+            return
+
+        # Mark it answered BEFORE forwarding, so nothing re-surfaces it while
+        # the reply is in flight.
+        with turn.cond:
+            turn.answered_request_ids.add(request_id)
+            turn.permission = None
+            turn.cond.notify_all()
+
+        if not _resolve_permission(turn, request_id, reply, body.get("message")):
+            self.send_json(502, {"error": "failed to forward permission reply to OpenCode"})
+            return
+
+        source = turn.source or "remote"
+        outcome = _wait_for_turn_outcome(turn)
+        if outcome["kind"] == "permission":
+            self.send_json(200, {
+                "permission_required": True,
+                "request_id": outcome["permission"]["id"],
+                "permission": outcome["permission"].get("permission"),
+                "patterns": outcome["permission"].get("patterns") or [],
+                "command": (outcome["permission"].get("metadata") or {}).get("command"),
+                "directories": (outcome["permission"].get("metadata") or {}).get("directories") or [],
+                "tier": tier,
+            })
+            return
+
+        if outcome["kind"] == "question":
+            self.send_json(200, {
+                "question_required": True,
+                "request_id": outcome["request_id"],
+                "questions": outcome["questions"],
+                "tier": tier,
+            })
+            return
+
+        response_text, tool_used, obsidian_write, view_screen_used, sent_file_ref = outcome["reply"]
+
+        if outcome.get("interrupted"):
+            _clear_turn(tier, turn)
+            self.send_json(200, {"text": response_text, "tier": tier, "interrupted": True})
+            return
+
+        if not response_text.strip() and reply == "reject":
+            # The turn is over and the model had nothing to say after the
+            # refusal (the reject message usually gets it talking, but a
+            # truncated/aborted turn can still land empty). "You rejected
+            # that" beats a bare "(no response)" — the user gets told what
+            # happened instead of staring at a placeholder.
+            response_text = "You rejected that, so I didn't do it."
+
+        message = turn.message or ""
+        log_request(message, response_text, tier, tool_used, source=source,
+                     sent_file=sent_file_ref, voice_filename=turn.voice_filename)
+        if is_memory_worthy(message) and not obsidian_write:
+            log_memory_mismatch(message, response_text, tier, source=source)
+            print("WARNING: memory-worthy input with no Obsidian write detected", flush=True)
+
+        display_image_path = None
+        if view_screen_used and not turn.has_user_images:
+            display_image_path, capture_error = capture_screenshot()
+            if capture_error:
+                print(f"WARNING: view_screen display capture failed: {capture_error}", flush=True)
+
+        audio_url, image_url, file_payload = self._reply_media(
+            response_text, display_image_path, sent_file_ref, tier, source)
+        self.send_json(200, {
+            "text": response_text,
+            "tier": tier,
+            "image": image_url,
+            "audio": audio_url,
+            "file": file_payload,
+            "question_required": False,
+        })
 
     def handle_interrupt(self):
         """Stops whatever this tier is doing right now — the in-flight
@@ -4118,6 +4512,18 @@ class CompanionHandler(BaseHTTPRequestHandler):
 
         source = turn.source or "remote"
         outcome = _wait_for_turn_outcome(turn)
+        if outcome["kind"] == "permission":
+            self.send_json(200, {
+                "permission_required": True,
+                "request_id": outcome["permission"]["id"],
+                "permission": outcome["permission"].get("permission"),
+                "patterns": outcome["permission"].get("patterns") or [],
+                "command": (outcome["permission"].get("metadata") or {}).get("command"),
+                "directories": (outcome["permission"].get("metadata") or {}).get("directories") or [],
+                "tier": tier,
+            })
+            return
+
         if outcome["kind"] == "question":
             self.send_json(200, {
                 "question_required": True,

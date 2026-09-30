@@ -70,13 +70,47 @@ in {
     text = builtins.toJSON {
       "$schema" = "https://opencode.ai/config.json";
       model = cfg.opencode_model;
-      # NOTE: a top-level `permission` map must NOT be added here. Empirically,
-      # when tier-1's opencode serve sessions (agent=build) carry a permission
-      # map, every request to opencode's zen free-tier model trips a server-side
-      # 403 "OpenCode's free tier can only be used from within OpenCode", and the
-      # daemon turns the empty result into "(no response)". Scoping the denies to
-      # agent.perla below avoids the gate while keeping tier-1 tool restrictions.
-      instructions = [ (builtins.readFile ./perla/AGENTS.md) ];
+      # Tier 1 must deny these AT THE TOP LEVEL, not just on agent.perla.
+      #
+      # Tier-1 `opencode serve` sessions actually run as agent=build, so the
+      # denies scoped to agent.perla never applied to a single real turn —
+      # Tier 1 was restricted by instruction alone. Two consequences, both
+      # observed live:
+      #   1. It would happily write files inside the workspace, straight
+      #      through the boundary AGENTS.md draws.
+      #   2. Asked to write OUTSIDE the workspace (/tmp, /var/tmp), the tool
+      #      never returned at all — it sat at status=running forever,
+      #      because the un-answered permission request has no UI to prompt
+      #      in headless serve mode. The user waited out the full 900s turn
+      #      timeout with no reply and no error.
+      # An explicit top-level deny makes the tool error immediately, so the
+      # model reports the boundary in ~3s instead of hanging.
+      #
+      # The old comment here claimed a top-level permission map trips a
+      # free-tier 403 ("can only be used from within OpenCode"). Re-tested
+      # against the currently deployed model: chat, refusal, and turn
+      # completion are all unaffected, so that warning no longer applies.
+      permission = {
+        edit = "deny";
+        bash = "deny";
+        webfetch = "deny";
+        websearch = "deny";
+        task = "deny";
+        todowrite = "deny";
+        lsp = "deny";
+        skill = "deny";
+      };
+      # Identity and personality are a SYSTEM prompt, not a message. They used
+      # to be pasted into the first user turn, which put them at position #1
+      # of a conversation that can run to hundreds of messages — models weight
+      # recent context and system-level instruction far above something buried
+      # mid-history, so Perla's voice faded the longer a chat went on. A
+      # system prompt is re-sent every request and can't drift. Tier 1 then
+      # layers its operational rules (AGENTS.md) on top.
+      instructions = [
+        (builtins.readFile ./perla/persona.md)
+        (builtins.readFile ./perla/AGENTS.md)
+      ];
       agent = {
         perla = {
           description = "${cfg.assistant_name} — personal AI assistant";
@@ -163,6 +197,7 @@ in {
     text = (import ./perla/opencode-t2-config.nix) {
       homeDirectory = config.home.homeDirectory;
       model = cfg.opencode_model;
+      filesDir = cfg.files_dir;
     };
   };
 
