@@ -138,6 +138,18 @@ print(" ".join(p for p in parts if p).strip())
 '
 }
 
+# Which prompt (if any) a turn payload is blocked on: "question",
+# "permission", or "" for a finished turn. The voice loop re-reads this after
+# every answer, including the nudge, so it has to be a single definition —
+# deriving it from a stale value makes the loop ask a second time.
+blocked_kind() {
+  python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print('question' if d.get('question_required') else ('permission' if d.get('permission_required') else ''))
+"
+}
+
 # Decide the answer to POST. Shortcut only when the user clearly picked one of
 # the offered options; anything else is treated as free text, which the
 # question card already accepts.
@@ -312,12 +324,10 @@ main() {
     # would die silently. Questions and permission prompts both come back on the
     # same turn, so speak the prompt, listen again, and post the answer. Loops
     # so a question that begets another question keeps going.
-    local blocked
-    blocked="$(echo "$result" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-print('question' if d.get('question_required') else ('permission' if d.get('permission_required') else ''))
-")"
+    # `nudged` caps how many times a missed answer may be papered over with a
+    # "just guess" nudge, so a question-asking model can't loop forever.
+    local blocked nudged=0
+    blocked="$(echo "$result" | blocked_kind)"
 
     while [ -n "$blocked" ]; do
       local request_id
@@ -333,33 +343,63 @@ print('question' if d.get('question_required') else ('permission' if d.get('perm
       local reply_file="/tmp/$PERLA_NAME-reply.wav"
       capture_reply "$reply_file" 12
 
+      # "Missed" covers both ways an answer can fail to arrive: nothing was
+      # recorded at all, or it recorded but wouldn't transcribe.
+      local answer_text missed=0
       if [ ! -s "$reply_file" ]; then
-        local miss="I didn't catch that."
         log "No answer recorded."
-        speak_via_daemon "$miss"
-        notify -u low "$PERLA_NAME" "$miss"
-        echo "$miss"
-        rm -f "$reply_file"
-        return 0
+        missed=1
+      else
+        # Transcribing the answer by re-posting it as a voice turn would cost a
+        # whole model call; instead ask the daemon for the transcript alone.
+        answer_text="$(transcribe_file "$reply_file")" || answer_text=""
+        if [ -z "$answer_text" ]; then
+          log "Answer didn't transcribe."
+          missed=1
+        else
+          log "Heard answer: $answer_text"
+        fi
       fi
 
-      # Transcribe the answer by re-posting it as a voice turn would cost a
-      # whole model call; instead the daemon already returns whatever it
-      # understood for the ORIGINAL turn, so ask for the answer transcript
-      # via a dedicated short call.
-      local answer_text
-      answer_text="$(transcribe_file "$reply_file")" || answer_text=""
-
-      if [ -z "$answer_text" ]; then
-        local miss="I didn't catch that."
-        log "Answer didn't transcribe."
-        speak_via_daemon "$miss"
-        notify -u low "$PERLA_NAME" "$miss"
-        echo "$miss"
+      if [ "$missed" = 1 ]; then
         rm -f "$reply_file"
-        return 0
+
+        # A permission is a decision only the user can make. Answering it out
+        # of silence would mean silently ALLOWING it — the one outcome that
+        # must never happen by accident — so end the turn and say so.
+        if [ "$blocked" != "question" ]; then
+          local held="That was a permission prompt, and I'm not deciding that for you. Nothing was allowed."
+          log "Missed answer on a permission prompt - leaving it undecided."
+          speak_via_daemon "$held"
+          notify -u low "$PERLA_NAME" "$held"
+          echo "$held"
+          return 0
+        fi
+
+        # A question is recoverable: answer it with a nudge so the model stops
+        # waiting and carries on with its own best guess. This is why Perla can
+        # be allowed to ask in the first place — an over-ask costs an
+        # interruption, not a dead turn. Only nudge once, or a model that keeps
+        # asking would loop (and pay another 12s recording every round).
+        if [ "$nudged" = 1 ]; then
+          local miss="I didn't catch that."
+          log "Already nudged once - ending the turn rather than asking again."
+          speak_via_daemon "$miss"
+          notify -u low "$PERLA_NAME" "$miss"
+          echo "$miss"
+          return 0
+        fi
+        nudged=1
+        local nudge="I didn't catch an answer. Go ahead with your best guess, and tell me what you assumed."
+        log "Missed answer - nudging the model to decide instead of waiting."
+        result="$(send_question_answer "$(python3 -c "import json,sys; print(json.dumps([[sys.argv[1]]]))" "$nudge")" \
+                  "$tier" "$request_id")" || {
+          local rc=$?; explain_failure "$rc" "answer"; exit 1; }
+        # Re-read the prompt kind before looping: the nudge usually finishes the
+        # turn, and continuing on the old value would ask the user a second time.
+        blocked="$(echo "$result" | blocked_kind)"
+        continue
       fi
-      log "Heard answer: $answer_text"
 
       if [ "$blocked" = "question" ]; then
         local answers
@@ -386,11 +426,7 @@ print('question' if d.get('question_required') else ('permission' if d.get('perm
       fi
       rm -f "$reply_file"
 
-      blocked="$(echo "$result" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-print('question' if d.get('question_required') else ('permission' if d.get('permission_required') else ''))
-")"
+      blocked="$(echo "$result" | blocked_kind)"
     done
 
     response="$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('text',''))")"
