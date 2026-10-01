@@ -58,6 +58,16 @@
       --radius-2xl: calc(var(--radius) * 1.8);
       --radius-3xl: calc(var(--radius) * 2.2);
 
+      /* Motion. Two durations cover 65 of the 78 transition timings in this
+         file, so naming them buys most of the coherence for zero visual
+         change - the values are exactly what was already there. The oddballs
+         (0.05/0.12/0.16/0.18/0.22/0.25/0.3s) are deliberately left literal:
+         they sit in hand-tuned multi-speed animations, and re-timing one is a
+         judgement best made by someone who can watch it happen. */
+      --duration: 0.15s;
+      --duration-slow: 0.2s;
+      --ease: ease;
+
       --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -127,7 +137,7 @@
       text-align: center;
       padding: 40px 32px 32px;
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: var(--radius-2xl);
       background: linear-gradient(180deg, var(--card), var(--popover));
       box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
     }
@@ -173,7 +183,7 @@
       padding: 10px 4px;
       letter-spacing: 0.15em;
       outline: none;
-      transition: border-color 0.2s ease;
+      transition: border-color var(--duration-slow) var(--ease);
     }
 
     .gate-card input[type="password"]:focus {
@@ -184,14 +194,14 @@
       margin-top: 22px;
       width: 100%;
       padding: 12px;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       border: 1px solid var(--primary-dim);
       background: linear-gradient(180deg, rgba(201, 123, 141, 0.14), rgba(201, 123, 141, 0.04));
       color: var(--ring);
       font-size: 15px;
       letter-spacing: 0.06em;
       cursor: pointer;
-      transition: transform 0.15s ease, background 0.2s ease;
+      transition: transform var(--duration) var(--ease), background var(--duration-slow) var(--ease);
     }
 
     .gate-card button:hover {
@@ -364,7 +374,7 @@
       background: var(--accent-foreground);
       margin-left: 6px;
       flex-shrink: 0;
-      transition: background 0.3s ease, box-shadow 0.3s ease;
+      transition: background 0.3s var(--ease), box-shadow 0.3s var(--ease);
     }
 
     .status-dot.ok {
@@ -416,20 +426,20 @@
       text-align: left;
       background: linear-gradient(180deg, rgba(201, 123, 141, 0.16), rgba(201, 123, 141, 0.07));
       border: 1px solid rgba(201, 123, 141, 0.28);
-      border-radius: 16px 16px 4px 16px;
+      border-radius: var(--radius-2xl) var(--radius-2xl) 4px var(--radius-2xl);
     }
 
     .entry-perla .entry-bubble {
       background: linear-gradient(180deg, var(--popover), var(--card));
       border: 1px solid var(--input);
-      border-radius: 16px 16px 16px 4px;
+      border-radius: var(--radius-2xl) var(--radius-2xl) var(--radius-2xl) 4px;
     }
 
     .entry-system .entry-bubble {
       text-align: center;
       background: rgba(0, 0, 0, 0.22);
       border: 1px solid var(--input);
-      border-radius: 20px;
+      border-radius: var(--radius-3xl);
       padding: 6px 14px;
     }
 
@@ -515,7 +525,7 @@
       padding: 10px 12px;
       background: rgba(0, 0, 0, 0.35);
       border: 1px solid var(--input);
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       overflow-x: auto;
       white-space: pre;
       font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -632,7 +642,7 @@
       height: 18px;
       opacity: 0;
       visibility: hidden;
-      transition: opacity 0.15s ease;
+      transition: opacity var(--duration) var(--ease);
     }
 
     .entry-user .entry-meta {
@@ -657,7 +667,7 @@
 
     .entry-image-wrap {
       margin-top: 6px;
-      border-radius: 10px;
+      border-radius: var(--radius-xl);
       overflow: hidden;
       border: 1px solid var(--border);
       background: var(--background);
@@ -674,7 +684,7 @@
       object-fit: contain;
       cursor: zoom-in;
       background: var(--background);
-      border-radius: 10px;
+      border-radius: var(--radius-xl);
     }
 
     .entry-image-grid {
@@ -779,14 +789,14 @@
       justify-content: center;
       width: 24px;
       height: 24px;
-      border-radius: 6px;
+      border-radius: var(--radius-md);
       border: 1px solid var(--input);
       background: rgba(23, 19, 26, 0.75);
       color: var(--accent-foreground);
       cursor: pointer;
       padding: 0;
       opacity: 0;
-      transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+      transition: opacity var(--duration) var(--ease), color var(--duration) var(--ease), background var(--duration) var(--ease);
     }
 
     pre.code-block-wrap:hover .code-copy-btn,
@@ -818,7 +828,7 @@
       padding: 10px 14px;
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 18px;
+      border-radius: var(--radius-3xl);
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -838,7 +848,7 @@
       padding: 12px 14px;
       background: var(--card);
       border: 1px solid var(--destructive);
-      border-radius: 18px;
+      border-radius: var(--radius-3xl);
       display: flex;
       flex-direction: column;
       gap: 4px;
@@ -881,7 +891,7 @@
       font-size: 15px;
       padding: 8px 2px;
       outline: none;
-      transition: border-color 0.2s ease;
+      transition: border-color var(--duration-slow) var(--ease);
     }
 
     .elevate-composer input[type="password"]::placeholder {
@@ -905,7 +915,7 @@
       color: var(--accent-foreground);
       font-size: 20px;
       cursor: pointer;
-      transition: color 0.2s ease, background 0.2s ease;
+      transition: color var(--duration-slow) var(--ease), background var(--duration-slow) var(--ease);
     }
 
     .attach-btn:hover {
@@ -931,7 +941,7 @@
       height: 64px;
       flex-shrink: 0;
       border: 1px solid var(--primary-dim);
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       overflow: hidden;
       background: rgba(201, 123, 141, 0.06);
     }
@@ -982,7 +992,7 @@
       justify-content: center;
       gap: 4px;
       padding: 6px 4px;
-      border-radius: 10px;
+      border-radius: var(--radius-xl);
       border: 1px solid var(--border);
       background: rgba(201, 123, 141, 0.06);
       cursor: pointer;
@@ -1081,7 +1091,7 @@
       width: 64px;
       height: 64px;
       flex-shrink: 0;
-      border-radius: 10px;
+      border-radius: var(--radius-xl);
       object-fit: cover;
     }
 
@@ -1126,7 +1136,7 @@
       align-items: center;
       justify-content: center;
       padding: 0;
-      transition: transform 0.15s ease, background 0.2s ease, opacity 0.2s ease;
+      transition: transform var(--duration) var(--ease), background var(--duration-slow) var(--ease), opacity var(--duration-slow) var(--ease);
     }
 
     .send-btn svg {
@@ -1163,7 +1173,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: opacity 0.2s ease, color 0.2s ease, background 0.2s ease;
+      transition: opacity var(--duration-slow) var(--ease), color var(--duration-slow) var(--ease), background var(--duration-slow) var(--ease);
     }
 
     .mic-btn:hover {
@@ -1176,7 +1186,7 @@
     }
 
     .mic-icon {
-      transition: transform 0.2s ease, opacity 0.2s ease;
+      transition: transform var(--duration-slow) var(--ease), opacity var(--duration-slow) var(--ease);
     }
 
     .mic-stop-square {
@@ -1187,7 +1197,7 @@
       background: var(--destructive-bright);
       opacity: 0;
       transform: scale(0.4);
-      transition: opacity 0.2s ease, transform 0.2s ease;
+      transition: opacity var(--duration-slow) var(--ease), transform var(--duration-slow) var(--ease);
     }
 
     .mic-ring {
@@ -1256,7 +1266,7 @@
       gap: 8px;
       margin-bottom: 8px;
       padding: 6px 8px;
-      border-radius: 12px;
+      border-radius: var(--radius-xl);
       border: 1px solid rgba(201, 123, 141, 0.4);
       background: var(--card);
       animation: panel-drop 0.18s ease;
@@ -1291,7 +1301,7 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+      transition: color var(--duration) var(--ease), background var(--duration) var(--ease), opacity var(--duration) var(--ease);
     }
 
     .voice-draft-btn:hover {
@@ -1373,7 +1383,7 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: color 0.15s ease, background 0.15s ease;
+      transition: color var(--duration) var(--ease), background var(--duration) var(--ease);
     }
 
     .voice-play:hover {
@@ -1422,7 +1432,7 @@
       padding: 12px 16px;
       background: linear-gradient(180deg, var(--popover), var(--card));
       border: 1px solid var(--input);
-      border-radius: 16px 16px 16px 4px;
+      border-radius: var(--radius-2xl) var(--radius-2xl) var(--radius-2xl) 4px;
     }
 
     .think-dot {
@@ -1550,7 +1560,7 @@
       display: block;
       width: 100%;
       height: 100%;
-      border-radius: 10px;
+      border-radius: var(--radius-xl);
       border: 1px solid var(--border);
       box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
       cursor: grab;
@@ -1598,7 +1608,7 @@
       flex-direction: column;
       background: linear-gradient(180deg, var(--popover), var(--card));
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: var(--radius-2xl);
       box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
       overflow: hidden;
     }
@@ -1725,7 +1735,7 @@
       display: block;
       width: 100%;
       height: 100%;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
       touch-action: none;
       cursor: crosshair;
@@ -1781,7 +1791,7 @@
       align-items: center;
       gap: 4px;
       padding: 5px;
-      border-radius: 22px;
+      border-radius: var(--radius-3xl);
       background: rgba(23, 19, 26, 0.82);
       border: 1px solid var(--border);
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
@@ -1854,7 +1864,7 @@
       color: var(--muted-foreground);
       cursor: pointer;
       flex-shrink: 0;
-      transition: background 0.15s ease, color 0.15s ease;
+      transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
     }
 
     .editor-icon-btn:hover {
@@ -1877,7 +1887,7 @@
       gap: 6px;
       height: 34px;
       padding: 0 14px;
-      border-radius: 18px;
+      border-radius: var(--radius-3xl);
       border: none;
       background: transparent;
       color: var(--ring);
@@ -2011,7 +2021,7 @@
       font-weight: 700;
       letter-spacing: 0.04em;
       padding: 2px 7px;
-      border-radius: 20px;
+      border-radius: var(--radius-3xl);
       margin-right: 6px;
       box-shadow: 0 0 10px rgba(184, 69, 47, 0.45);
     }
@@ -2023,7 +2033,7 @@
       border: 1px solid var(--primary-dim);
       background: rgba(201, 123, 141, 0.08);
       padding: 2px 8px;
-      border-radius: 20px;
+      border-radius: var(--radius-3xl);
       margin-right: 6px;
       font-variant-numeric: tabular-nums;
     }
@@ -2036,12 +2046,12 @@
       background: linear-gradient(180deg, rgba(184, 69, 47, 0.22), rgba(184, 69, 47, 0.08));
       color: var(--destructive-bright);
       border: 1px solid var(--destructive);
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       padding: 8px 14px;
       font-size: 0.8rem;
       letter-spacing: 0.04em;
       cursor: pointer;
-      transition: background 0.2s ease, transform 0.15s ease;
+      transition: background var(--duration-slow) var(--ease), transform var(--duration) var(--ease);
       flex-shrink: 0;
     }
 
@@ -2079,7 +2089,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: color 0.2s ease, background 0.2s ease;
+      transition: color var(--duration-slow) var(--ease), background var(--duration-slow) var(--ease);
       flex-shrink: 0;
     }
 
@@ -2116,7 +2126,7 @@
       height: 1.5px;
       background: currentColor;
       border-radius: 1px;
-      transition: transform 0.2s ease, opacity 0.2s ease;
+      transition: transform var(--duration-slow) var(--ease), opacity var(--duration-slow) var(--ease);
     }
 
     .menu-btn.active .hamburger-lines span:nth-child(1) {
@@ -2138,13 +2148,13 @@
       padding: 8px;
       background: linear-gradient(180deg, var(--popover), var(--card));
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: var(--radius-2xl);
       box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
       position: fixed;
       width: 200px;
       max-width: calc(100vw - 40px);
       z-index: 25;
-      transition: opacity 0.16s ease, transform 0.16s ease;
+      transition: opacity 0.16s var(--ease), transform 0.16s var(--ease);
       opacity: 0;
       pointer-events: none;
     }
@@ -2191,14 +2201,14 @@
       width: 100%;
       background: transparent;
       border: none;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       color: var(--foreground);
       font-family: var(--font-serif);
       font-size: 15px;
       text-align: left;
       padding: 12px 12px;
       cursor: pointer;
-      transition: background 0.15s ease;
+      transition: background var(--duration) var(--ease);
     }
 
     .menu-item:hover {
@@ -2284,13 +2294,13 @@
       min-width: 0;
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: var(--radius-xl);
       color: var(--foreground);
       padding: 10px 12px;
       font-size: 0.9rem;
       font-family: var(--font-serif);
       outline: none;
-      transition: border-color 0.2s ease;
+      transition: border-color var(--duration-slow) var(--ease);
     }
 
     .dropdown-row input::placeholder {
@@ -2324,12 +2334,12 @@
       padding: 9px 12px;
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: var(--radius-xl);
       color: var(--foreground);
       font-family: var(--font-serif);
       font-size: 0.88rem;
       cursor: pointer;
-      transition: border-color 0.2s ease, background 0.2s ease;
+      transition: border-color var(--duration-slow) var(--ease), background var(--duration-slow) var(--ease);
     }
     .history-daypicker-btn:hover {
       border-color: var(--primary-dim);
@@ -2357,7 +2367,7 @@
       display: flex;
       align-items: center;
       color: var(--accent-foreground);
-      transition: transform 0.15s ease;
+      transition: transform var(--duration) var(--ease);
     }
     .history-daypicker-btn.open .history-daypicker-caret {
       transform: rotate(180deg);
@@ -2388,7 +2398,7 @@
     }
     .history-day-menu::-webkit-scrollbar-thumb {
       background: var(--primary-dim);
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       border: 2px solid transparent;
       background-clip: padding-box;
     }
@@ -2407,7 +2417,7 @@
       width: 100%;
       background: transparent;
       border: none;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       color: var(--foreground);
       font-family: var(--font-serif);
       text-align: left;
@@ -2440,19 +2450,19 @@
       padding: 3px;
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: var(--radius-xl);
       flex-shrink: 0;
     }
     .history-tier-btn {
       background: transparent;
       border: none;
-      border-radius: 7px;
+      border-radius: var(--radius-md);
       color: var(--muted-foreground);
       font-family: var(--font-serif);
       font-size: 0.82rem;
       padding: 6px 12px;
       cursor: pointer;
-      transition: background 0.15s ease, color 0.15s ease;
+      transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
     }
     .history-tier-btn:hover {
       color: var(--foreground);
@@ -2499,7 +2509,7 @@
       align-items: center;
       gap: 12px;
       padding: 12px 14px;
-      border-radius: 12px;
+      border-radius: var(--radius-xl);
       background: linear-gradient(180deg, rgba(32, 26, 35, 0.96), rgba(41, 33, 44, 0.96));
       border: 1px solid var(--border);
       box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.2);
@@ -2523,7 +2533,7 @@
       flex-shrink: 0;
       width: 32px;
       height: 32px;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -2592,7 +2602,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: background 0.15s ease, color 0.15s ease;
+      transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
     }
 
     .reminder-dismiss:hover {
@@ -2645,7 +2655,7 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: transform 0.18s ease, background 0.15s ease;
+      transition: transform 0.18s var(--ease), background var(--duration) var(--ease);
     }
 
     .reminder-add-toggle:hover {
@@ -2677,13 +2687,13 @@
       min-width: 0;
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       color: var(--foreground);
       padding: 9px 12px;
       font-size: 0.9rem;
       font-family: var(--font-serif);
       outline: none;
-      transition: border-color 0.2s ease;
+      transition: border-color var(--duration-slow) var(--ease);
     }
 
     .reminder-composer input[type="datetime-local"],
@@ -2691,13 +2701,13 @@
       flex: 0 1 auto;
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       color: var(--foreground);
       padding: 8px 10px;
       font-size: 0.85rem;
       font-family: var(--font-serif);
       outline: none;
-      transition: border-color 0.2s ease;
+      transition: border-color var(--duration-slow) var(--ease);
     }
 
     .reminder-composer input[type="datetime-local"] {
@@ -2711,7 +2721,7 @@
 
     #reminderAddBtn {
       flex-shrink: 0;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       border: 1px solid var(--primary-dim);
       background: linear-gradient(180deg, rgba(201, 123, 141, 0.18), rgba(201, 123, 141, 0.06));
       color: var(--ring);
@@ -2797,7 +2807,7 @@
     #quickActionsPanel::-webkit-scrollbar-thumb,
     .md pre::-webkit-scrollbar-thumb {
       background: var(--primary-dim);
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       border: 2px solid transparent;
       background-clip: padding-box;
     }
@@ -2823,7 +2833,7 @@
       padding: 10px 14px;
       margin-bottom: 12px;
       border: 1px solid var(--input);
-      border-radius: 12px;
+      border-radius: var(--radius-xl);
       background: linear-gradient(180deg, var(--card) 0%, var(--popover) 100%);
       position: sticky;
       top: 0;
@@ -2881,7 +2891,7 @@
       flex: 1;
       min-width: 0;
       padding: 4px 10px 4px 8px;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       border: 1px solid var(--primary-dim);
       background: var(--background);
     }
@@ -2922,13 +2932,13 @@
       font-size: 14px;
       font-weight: 500;
       padding: 5px 8px;
-      border-radius: 6px;
+      border-radius: var(--radius-md);
       cursor: pointer;
       white-space: nowrap;
       display: flex;
       align-items: center;
       gap: 6px;
-      transition: color 0.15s ease, background 0.15s ease;
+      transition: color var(--duration) var(--ease), background var(--duration) var(--ease);
     }
 
     .drive-crumb:hover {
@@ -2963,7 +2973,7 @@
     .drive-toolbar-actions .icon-btn {
       width: 32px;
       height: 32px;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       border: 1px solid var(--input);
       background: rgba(201, 123, 141, 0.06);
       color: var(--muted-foreground);
@@ -2971,7 +2981,7 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: all var(--duration) var(--ease);
     }
 
     .drive-toolbar-actions .icon-btn:hover {
@@ -3002,7 +3012,7 @@
       padding: 10px 12px;
       background: linear-gradient(180deg, var(--card) 0%, var(--popover) 100%);
       border: 1px solid var(--primary-dim);
-      border-radius: 12px;
+      border-radius: var(--radius-xl);
       animation: qa-feedback-in 0.18s ease;
     }
 
@@ -3015,7 +3025,7 @@
       min-width: 0;
       background: var(--background);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       color: var(--foreground);
       padding: 9px 12px;
       font-size: 0.9rem;
@@ -3046,7 +3056,7 @@
       padding: 9px 12px;
       background: rgba(201, 123, 141, 0.06);
       border: 1px dashed var(--primary-dim);
-      border-radius: 10px;
+      border-radius: var(--radius-xl);
       font-size: 13px;
       color: var(--muted-foreground);
       animation: qa-feedback-in 0.18s ease;
@@ -3093,13 +3103,13 @@
       justify-content: flex-start;
       gap: 14px;
       padding: 10px 14px;
-      border-radius: 10px;
+      border-radius: var(--radius-xl);
       border: 1px solid var(--input);
       background: linear-gradient(180deg, var(--card) 0%, var(--popover) 100%);
       cursor: pointer;
       user-select: none;
       -webkit-user-select: none;
-      transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+      transition: border-color var(--duration) var(--ease), transform var(--duration) var(--ease), background var(--duration) var(--ease);
     }
 
     .drive-item:hover {
@@ -3166,7 +3176,7 @@
       width: 34px;
       height: 34px;
       flex-shrink: 0;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       background: rgba(201, 123, 141, 0.08);
       color: var(--ring);
     }
@@ -3215,7 +3225,7 @@
       position: static;
       width: 28px;
       height: 28px;
-      border-radius: 6px;
+      border-radius: var(--radius-md);
       border: none;
       background: transparent;
       color: var(--muted-foreground);
@@ -3225,7 +3235,7 @@
       cursor: pointer;
       opacity: 0.6;
       flex-shrink: 0;
-      transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+      transition: opacity var(--duration) var(--ease), color var(--duration) var(--ease), background var(--duration) var(--ease);
     }
 
     .drive-item:hover .drive-item-menu-btn,
@@ -3253,7 +3263,7 @@
       min-width: 170px;
       background: linear-gradient(180deg, var(--popover), var(--card));
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: var(--radius-xl);
       box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
     }
 
@@ -3267,7 +3277,7 @@
       gap: 10px;
       background: transparent;
       border: none;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       color: var(--foreground);
       font-family: var(--font-serif);
       font-size: 13.5px;
@@ -3320,7 +3330,7 @@
       outline: 2px dashed var(--primary);
       outline-offset: -4px;
       background: rgba(201, 123, 141, 0.05);
-      border-radius: 12px;
+      border-radius: var(--radius-xl);
     }
 
     /* Drag-and-drop highlight for the chat shell (see chatDropTarget in
@@ -3340,7 +3350,7 @@
       outline: 2px dashed var(--primary);
       outline-offset: -2px;
       background: rgba(201, 123, 141, 0.04);
-      border-radius: 16px;
+      border-radius: var(--radius-2xl);
       z-index: 15;
     }
 
@@ -3371,7 +3381,7 @@
       flex-direction: column;
       background: linear-gradient(180deg, var(--popover), var(--card));
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: var(--radius-2xl);
       box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
       overflow: hidden;
     }
@@ -3426,7 +3436,7 @@
       display: block;
       max-width: 100%;
       margin: 0 auto;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
     }
 
     .file-viewer-modal-empty,
@@ -3457,7 +3467,7 @@
 
     .reminder-collapsible summary .disclosure-arrow {
       display: inline-block;
-      transition: transform 0.15s ease;
+      transition: transform var(--duration) var(--ease);
       margin-left: auto;
       color: var(--accent-foreground);
     }
@@ -3544,7 +3554,7 @@
       border-top: 1px solid var(--border);
       border-left: 1px solid var(--border);
       border-right: 1px solid var(--border);
-      border-radius: 14px 14px 0 0;
+      border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
       box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.35);
       display: flex;
       flex-direction: column;
@@ -3586,7 +3596,7 @@
       font-weight: 600;
       color: var(--ring);
       background: rgba(201, 123, 141, 0.14);
-      border-radius: 20px;
+      border-radius: var(--radius-3xl);
       padding: 1px 8px;
       min-width: 18px;
       text-align: center;
@@ -3607,7 +3617,7 @@
       color: var(--accent-foreground);
       font-size: 11.5px;
       padding: 4px 8px;
-      border-radius: 6px;
+      border-radius: var(--radius-md);
       cursor: pointer;
     }
 
@@ -3620,7 +3630,7 @@
       display: flex;
       align-items: center;
       color: var(--accent-foreground);
-      transition: transform 0.2s ease;
+      transition: transform var(--duration-slow) var(--ease);
       flex-shrink: 0;
     }
 
@@ -3649,7 +3659,7 @@
 
     .qa-drawer-body::-webkit-scrollbar-thumb {
       background: var(--primary-dim);
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       border: 2px solid transparent;
       background-clip: padding-box;
     }
@@ -3664,7 +3674,7 @@
 
     .qa-drawer-entry {
       border: 1px solid var(--input);
-      border-radius: 10px;
+      border-radius: var(--radius-xl);
       margin-bottom: 10px;
       overflow: hidden;
       background: rgba(0, 0, 0, 0.15);
@@ -3733,7 +3743,7 @@
       display: block;
       max-width: 100%;
       max-height: 260px;
-      border-radius: 6px;
+      border-radius: var(--radius-md);
       cursor: zoom-in;
       margin: 0 auto;
     }
@@ -3783,7 +3793,7 @@
       gap: 8px;
       padding: 14px 6px;
       min-height: 88px;
-      border-radius: 14px;
+      border-radius: var(--radius-2xl);
       border: 1px solid var(--border);
       background: linear-gradient(180deg, var(--card) 0%, var(--popover) 100%);
       color: var(--foreground);
@@ -3795,8 +3805,8 @@
       -webkit-user-select: none;
       overflow: hidden;
       transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
-        background 0.18s ease,
-        border-color 0.18s ease,
+        background 0.18s var(--ease),
+        border-color 0.18s var(--ease),
         box-shadow 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
     }
@@ -3805,10 +3815,10 @@
       content: "";
       position: absolute;
       inset: 0;
-      border-radius: 14px;
+      border-radius: var(--radius-2xl);
       background: radial-gradient(circle at 50% 0%, rgba(201, 123, 141, 0.18), transparent 70%);
       opacity: 0;
-      transition: opacity 0.2s ease;
+      transition: opacity var(--duration-slow) var(--ease);
       pointer-events: none;
     }
 
@@ -3874,10 +3884,10 @@
       justify-content: center;
       width: 38px;
       height: 38px;
-      border-radius: 10px;
+      border-radius: var(--radius-xl);
       background: rgba(201, 123, 141, 0.08);
       color: var(--ring);
-      transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
+      transition: transform var(--duration-slow) var(--ease), background var(--duration-slow) var(--ease), color var(--duration-slow) var(--ease);
     }
 
     .qa-btn:hover .qa-icon {
@@ -3942,7 +3952,7 @@
       padding: 10px 12px;
       background: linear-gradient(180deg, var(--card) 0%, var(--popover) 100%);
       border: 1px solid var(--primary-dim);
-      border-radius: 12px;
+      border-radius: var(--radius-xl);
       box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
       animation: qa-feedback-in 0.18s ease;
     }
@@ -3956,13 +3966,13 @@
       min-width: 0;
       background: var(--background);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       color: var(--foreground);
       padding: 9px 12px;
       font-size: 0.9rem;
       font-family: var(--font-serif);
       outline: none;
-      transition: border-color 0.2s ease;
+      transition: border-color var(--duration-slow) var(--ease);
     }
 
     .qa-input-row input:focus {
@@ -3972,7 +3982,7 @@
     .qa-input-go,
     .qa-input-cancel {
       flex-shrink: 0;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       border: 1px solid var(--primary-dim);
       background: linear-gradient(180deg, rgba(201, 123, 141, 0.18), rgba(201, 123, 141, 0.06));
       color: var(--ring);
@@ -3996,14 +4006,14 @@
       align-items: center;
       gap: 12px;
       padding: 11px 14px;
-      border-radius: 12px;
+      border-radius: var(--radius-xl);
       background: linear-gradient(180deg, rgba(32, 26, 35, 0.96), rgba(41, 33, 44, 0.96));
       backdrop-filter: blur(14px);
       -webkit-backdrop-filter: blur(14px);
       border: 1px solid var(--border);
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3);
       animation: qa-feedback-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
-      transition: opacity 0.25s ease, transform 0.25s ease;
+      transition: opacity 0.25s var(--ease), transform 0.25s var(--ease);
     }
 
     .qa-feedback-card.closing {
@@ -4042,7 +4052,7 @@
       flex-shrink: 0;
       width: 32px;
       height: 32px;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -4092,12 +4102,12 @@
       font-size: 14px;
       width: 24px;
       height: 24px;
-      border-radius: 6px;
+      border-radius: var(--radius-md);
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: background 0.15s ease, color 0.15s ease;
+      transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
     }
 
     .qa-feedback-close:hover {
@@ -4120,7 +4130,7 @@
       flex-shrink: 0;
       height: 28px;
       padding: 0 13px;
-      border-radius: 14px;
+      border-radius: var(--radius-2xl);
       border: 1px solid var(--primary-dim);
       background: rgba(201, 123, 141, 0.12);
       color: var(--ring);
@@ -4128,7 +4138,7 @@
       font-size: 12px;
       letter-spacing: 0.02em;
       cursor: pointer;
-      transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
+      transition: background var(--duration) var(--ease), color var(--duration) var(--ease), transform 0.12s var(--ease);
     }
 
     .qa-feedback-action:hover {
@@ -4149,7 +4159,7 @@
     }
 
     .qa-screenshot-card {
-      border-radius: 12px;
+      border-radius: var(--radius-xl);
       overflow: hidden;
       border: 1px solid var(--border);
       background: var(--card);
@@ -4190,7 +4200,7 @@
       bottom: 8px;
       right: 8px;
       padding: 3px 8px;
-      border-radius: 6px;
+      border-radius: var(--radius-md);
       background: rgba(0, 0, 0, 0.7);
       color: var(--foreground);
       font-size: 10.5px;
@@ -4215,14 +4225,14 @@
       .qa-btn {
         min-height: 78px;
         padding: 10px 4px 8px;
-        border-radius: 12px;
+        border-radius: var(--radius-xl);
         gap: 6px;
       }
 
       .qa-icon {
         width: 32px;
         height: 32px;
-        border-radius: 8px;
+        border-radius: var(--radius-lg);
       }
 
       .qa-icon svg {
