@@ -3,6 +3,38 @@ let
   cfg = (import ./perla/perla-config.nix {
     homeDirectory = config.home.homeDirectory;
   }).perla;
+
+  # === Companion UI assembly ===
+  #
+  # perla-companion.html is the markup; the CSS and JS live in their own files
+  # and are spliced in here at build time. The daemon serves ONE file at "/",
+  # so the browser still gets a single document and the daemon is unchanged.
+  #
+  # The markers are written as a CSS comment and a JS line comment so the
+  # standalone .html source stays syntactically plausible. Each must appear
+  # EXACTLY once: builtins.replaceStrings replaces every occurrence, and
+  # tests/test_html_build.sh enforces the count.
+  #
+  # readFile, NOT an inline ''...'' string: the JS contains ~96 ${ template
+  # literals, which a Nix string literal would try to interpolate. readFile
+  # splices an already-evaluated value, which Nix never rescans.
+  #
+  # Do not strip/trim the two bodies and do not append a newline to them.
+  # The CSS begins with four significant spaces and the JS with a blank
+  # line, and a trailing newline would become a blank line before each
+  # closing tag. Either silently breaks byte-identity with the pre-split
+  # page while still rendering fine — which is why the test checks it.
+  #
+  # All three sources must be committed. readFile on an untracked path inside
+  # a git flake is a hard evaluation error, not a warning, so the flake does
+  # not build at all. `git commit -am` will not stage the two new part files
+  # and lands a commit whose perla.nix references files absent from the tree.
+  # git add them by name.
+  companionHtml = builtins.replaceStrings
+    [ "/* @@PERLA_CSS@@ */" "// @@PERLA_JS@@" ]
+    [ (builtins.readFile ./perla/perla-companion.css)
+      (builtins.readFile ./perla/perla-companion.js) ]
+    (builtins.readFile ./perla/perla-companion.html);
 in {
   home.sessionPath = [ "${config.home.homeDirectory}/.local/bin" ];
 
@@ -543,9 +575,11 @@ in {
     source = ./perla/perla-textify.py;
   };
 
+  # The ASSEMBLED page lands here, not the marker-bearing source: the path is
+  # hardcoded in perla-companion.py (_start_server) and cannot be renamed.
   home.file.".config/perla/perla-companion.html" = {
     force = true;
-    source = ./perla/perla-companion.html;
+    text = companionHtml;
   };
 
   # === Profile picture (avatar shown in the companion UI: gate screen,

@@ -1,3 +1,3 @@
-# Version 26.9.30.6
+# Version 26.10.1.1
 
-- Fixed `perla text` silently dropping questions and permissions. The non-interactive path (used by the nightly `perla-promote` job) printed the empty `text` field, tried to speak an empty string, and left the prompt PENDING — which blocks that tier's session until the 10-minute auto-dismiss, and a permission has no timer at all and stalls every later turn. It now reports what Perla wanted to ask and clears the prompt so the session is never left blocked. Nothing is decided on your behalf: a question is thrown away, and a permission is rejected (never allowed), matching what the daemon already does on interrupt and session resume.
+- Separated the perla-companion.html file into html, cs and js files. 
