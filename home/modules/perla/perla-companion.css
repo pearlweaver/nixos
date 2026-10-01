@@ -66,12 +66,16 @@
       --accent-foreground: #6e5f45;
       --ring: #e4a2b2;
 
-      /* Status. Wax is the destructive red; --wax-bright survives as the
-         hover/active step for destructive controls. */
-      --destructive: #8a3226;
-      --destructive-foreground: #e9dfc7;
-      --destructive-bright: #b8452f;
-      --primary-dim: #8c4f5c;
+        /* Status. Wax is the destructive red; --wax-bright survives as the
+           hover/active step for destructive controls. */
+        --destructive: #8a3226;
+        --destructive-foreground: #e9dfc7;
+        --destructive-bright: #b8452f;
+        /* Success was a bare #7fae6a in exactly one rule (the quick-action
+           button's completed state), so nothing else could refer to it. */
+        --success: #7fae6a;
+        --success-foreground: #17131a;
+        --primary-dim: #8c4f5c;
 
       /* Lines. --border is every 1px rule in the app; --input is the slightly
          stronger one for form controls, which need to read as interactive. */
@@ -4112,7 +4116,7 @@
       min-height: 88px;
       border-radius: var(--radius-2xl);
       border: 1px solid var(--border);
-      background: linear-gradient(180deg, var(--card) 0%, var(--popover) 100%);
+      background: var(--card);
       color: var(--foreground);
       font-family: var(--font-serif);
       font-size: 12px;
@@ -4121,38 +4125,22 @@
       user-select: none;
       -webkit-user-select: none;
       overflow: hidden;
-      transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
-        background 0.18s var(--ease),
-        border-color 0.18s var(--ease),
-        box-shadow 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+      /* No transform and no shadow. Scaling a tile inside a fixed grid makes
+         its neighbours jump, and 38 buttons lifting at once reads as noise
+         rather than feedback; a border step says the same thing and stays put. */
+      transition: background var(--duration) var(--ease),
+        border-color var(--duration) var(--ease);
     }
 
-    .qa-btn::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      border-radius: var(--radius-2xl);
-      background: radial-gradient(circle at 50% 0%, rgba(201, 123, 141, 0.18), transparent 70%);
-      opacity: 0;
-      transition: opacity var(--duration-slow) var(--ease);
-      pointer-events: none;
-    }
 
     .qa-btn:hover {
-      transform: translateY(-3px) scale(1.02);
       border-color: var(--primary);
-      background: linear-gradient(180deg, rgba(201, 123, 141, 0.12) 0%, var(--popover) 100%);
-      box-shadow: 0 6px 18px rgba(201, 123, 141, 0.22), 0 2px 6px rgba(0, 0, 0, 0.4);
+      background: var(--card-selected);
     }
 
-    .qa-btn:hover::before {
-      opacity: 1;
-    }
 
     .qa-btn:active {
-      transform: translateY(1px) scale(0.96);
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+      background: var(--accent);
       border-color: var(--ring);
       transition-duration: 0.06s;
     }
@@ -4160,14 +4148,16 @@
     .qa-btn:disabled {
       opacity: 0.4;
       cursor: default;
-      transform: none !important;
-      box-shadow: none !important;
     }
 
     /* Button dynamic states */
+    /* Status used box-shadow rings with !important, which fought the hover
+       rules above. Specificity already resolves these, so they are plain rules
+       now, and the ring is an outline rather than a shadow. */
     .qa-btn.is-loading {
-      border-color: var(--ring) !important;
-      box-shadow: 0 0 0 2px rgba(201, 123, 141, 0.4) !important;
+      border-color: var(--ring);
+      outline: 2px solid var(--ring);
+      outline-offset: -2px;
       pointer-events: none;
     }
 
@@ -4176,13 +4166,15 @@
     }
 
     .qa-btn.is-success {
-      border-color: #7fae6a !important;
-      box-shadow: 0 0 0 2px rgba(127, 174, 106, 0.45) !important;
+      border-color: var(--success);
+      outline: 2px solid var(--success);
+      outline-offset: -2px;
     }
 
     .qa-btn.is-error {
-      border-color: var(--destructive-bright) !important;
-      box-shadow: 0 0 0 2px rgba(184, 69, 47, 0.45) !important;
+      border-color: var(--destructive-bright);
+      outline: 2px solid var(--destructive-bright);
+      outline-offset: -2px;
     }
 
     @keyframes qa-spin {
@@ -4202,15 +4194,17 @@
       width: 38px;
       height: 38px;
       border-radius: var(--radius-xl);
-      background: rgba(201, 123, 141, 0.08);
+      /* The chip was rgba(201,123,141,.08) — the same tint as
+         --primary-subtle, just hand-written. */
+      background: var(--primary-subtle);
       color: var(--ring);
       transition: transform var(--duration-slow) var(--ease), background var(--duration-slow) var(--ease), color var(--duration-slow) var(--ease);
     }
 
     .qa-btn:hover .qa-icon {
       transform: scale(1.12);
-      background: rgba(201, 123, 141, 0.16);
-      color: #ffd6e0;
+      background: var(--primary-hover);
+      color: var(--ring);
     }
 
     .qa-btn:active .qa-icon {
@@ -4231,34 +4225,29 @@
 
     /* Danger styling */
     .qa-btn-danger {
-      border-color: rgba(184, 69, 47, 0.35);
+      border-color: var(--destructive);
     }
 
     .qa-btn-danger .qa-icon {
       color: var(--destructive-bright);
-      background: rgba(184, 69, 47, 0.1);
+      background: color-mix(in srgb, var(--destructive) 18%, transparent);
     }
 
-    .qa-btn-danger::before {
-      background: radial-gradient(circle at 50% 0%, rgba(184, 69, 47, 0.25), transparent 70%);
-    }
 
     .qa-btn-danger:hover {
       border-color: var(--destructive-bright);
-      background: linear-gradient(180deg, rgba(184, 69, 47, 0.16) 0%, var(--popover) 100%);
-      box-shadow: 0 6px 18px rgba(184, 69, 47, 0.28), 0 2px 6px rgba(0, 0, 0, 0.4);
+      background: color-mix(in srgb, var(--destructive) 14%, var(--card));
     }
 
     .qa-btn-danger:hover .qa-icon {
-      background: rgba(184, 69, 47, 0.22);
-      color: #ff8b73;
+      background: color-mix(in srgb, var(--destructive) 30%, transparent);
+      color: var(--destructive-foreground);
     }
 
     /* Active input row toggle button */
     .qa-btn-input.active {
-      background: linear-gradient(180deg, rgba(201, 123, 141, 0.22) 0%, var(--popover) 100%);
+      background: var(--primary-hover);
       border-color: var(--ring);
-      box-shadow: 0 0 0 2px rgba(201, 123, 141, 0.3);
     }
 
     .qa-input-row {

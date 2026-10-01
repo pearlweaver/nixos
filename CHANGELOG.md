@@ -1,3 +1,6 @@
-# Version 26.10.2.2
+# Version 26.10.2.3
 
-- Changed Perla UI for questionare and permission asking.
+- **Flattened the 23 quick-action buttons** (Media & Audio, Shortcuts & Apps, Power & System, Scoped Commands). They were the largest remaining concentration of the old vocabulary: a gradient fill, a radial glow in a `::before` pseudo-element, a `translateY(-3px) scale(1.02)` hover lift, a drop shadow, and 36 hand-mixed `rgba(201,123,141,…)` tints at five different opacities. That surface is now **0 gradients, 0 raw colour literals, 0 box-shadows, 0 `!important`**.
+- The hover lift is gone on purpose: scaling a tile inside a fixed grid makes its neighbours jump, and 23 tiles moving at once reads as noise rather than feedback. Hover is now a border-and-fill step. The icon glyph inside each tile still scales, since that doesn't move the grid.
+- Status feedback (loading / success / error) used `box-shadow` rings applied with `!important`, which fought the hover rules. They're plain rules with an `outline` ring now, and the success green is a `--success` token rather than a bare `#7fae6a` used in exactly one place.
+- Danger buttons (Restart, Shut Down, Rebuild NixOS, Rebuild Home Manager) are flat `--destructive` with no red gradient and no glow. The icon chip's hover colour was a hardcoded `#ffd6e0` that existed nowhere else in the palette; it's now `--ring`.

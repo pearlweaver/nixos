@@ -606,6 +606,132 @@ else
 fi
 
 echo
+echo "=== 12. the quick-actions surface is flat and tokenised ==="
+# The 38 quick-action buttons were the largest remaining concentration of the
+# pre-Phase-3 vocabulary: 12 gradients, 36 raw colour literals, a radial glow
+# pseudo-element, a translateY(-3px) scale(1.02) hover lift, and three
+# hand-mixed status ring colours applied with !important.
+#
+# Excluded on purpose: .qa-drawer* is the Output panel chrome, not a button, and
+# .qa-input-* is the inline text field inside two buttons. Both are separate
+# surfaces with their own scope.
+qa_scope() {
+  python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+# The button and its parts, not the drawer or the inline input.
+KEEP = re.compile(r"\.qa-btn|\.qa-icon|\.qa-label")
+OUT = re.compile(r"qa-drawer|qa-input")
+for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
+    sel = " ".join(m.group(1).split())
+    if KEEP.search(sel) and not OUT.search(sel):
+        print(sel + "\t" + " ".join(m.group(2).split()))
+PY
+}
+mapfile -t qa_rules < <(qa_scope)
+if [ "${#qa_rules[@]}" -gt 0 ]; then
+  ok "the quick-action buttons have real CSS rules (${#qa_rules[@]} found)"
+else
+  bad "the quick-action buttons have real CSS rules" "no .qa-btn rules found"
+fi
+qscan() {  # qscan <pattern> <name>
+  local pat="$1" name="$2" hits=0
+  if [ "${#qa_rules[@]}" -eq 0 ]; then
+    bad "no $name on the quick-action buttons" "no rules to scan — vacuous pass"
+    return
+  fi
+  for r in "${qa_rules[@]}"; do
+    grep -qE "$pat" <<<"$r" && hits=$((hits + 1))
+  done
+  [ "$hits" = 0 ] && ok "no $name on the quick-action buttons (scanned ${#qa_rules[@]} rules)" \
+    || bad "no $name on the quick-action buttons" "$hits rule(s) still have it"
+}
+qscan '(linear|radial)-gradient' "gradient"
+qscan 'rgba?\(|hsla?\(' "raw colour literal"
+qscan 'box-shadow' "box-shadow"
+# The glow lived in a ::before pseudo-element; a pseudo-element rule is matched
+# here because the selector text carries .qa-btn.
+qscan 'radial-gradient' "glow pseudo-element"
+# The lift. Scaling a tile inside a fixed grid makes its neighbours jump, and
+# 38 buttons moving at once is noise rather than feedback.
+# Checked in python, not grep: the earlier version used a line-based pattern
+# that could only see a transform sitting on the SAME line as the selector, so
+# the ordinary multi-line form of the rule passed vacuously.
+if python3 - "$CSS" <<'PYLIFT'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+# Only rules whose SUBJECT is the tile. `.qa-btn:hover .qa-icon` scales the
+# glyph inside a fixed-size tile, which does not move the grid and is kept on
+# purpose; only a transform on the tile itself is the lift being removed.
+hits = []
+for sel, body in re.findall(r"([^{}]+)\{([^}]*)\}", css):
+    parts = " ".join(sel.split()).split()
+    # A single compound means the rule targets the tile itself. A descendant
+    # selector such as `.qa-btn:hover .qa-icon` scales the glyph inside a
+    # fixed-size tile, which does not move the grid and is kept deliberately.
+    if len(parts) != 1:
+        continue
+    subject = parts[0]
+    if not re.search(r"\.qa-btn\b", subject):
+        continue
+    for d in body.split(";"):
+        if d.strip().startswith("transform"):
+            hits.append("  " + subject + " -> " + d.strip())
+print("\n".join(hits))
+sys.exit(1 if hits else 0)
+PYLIFT
+then
+  ok "no hover lift on the quick-action buttons"
+else
+  bad "no hover lift on the quick-action buttons" "a transform is back on a .qa-btn rule"
+fi
+# Status feedback used box-shadow rings with !important. A ring is still wanted,
+# but as a tokenised outline rather than a shadow override.
+if python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+bad = [s for s in re.findall(r"([^{}]+)\{([^}]*)\}", css)
+       if re.search(r"\.qa-btn", s[0]) and "!important" in s[1]]
+sys.exit(1 if bad else 0)
+PY
+then
+  ok "no !important overrides on the quick-action buttons"
+else
+  bad "no !important overrides on the quick-action buttons" "an !important crept back into a .qa-btn rule"
+fi
+# The success green existed as a bare literal in exactly one rule.
+defines "success" && ok "--success is defined" || bad "--success is defined" "absent"
+if python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+sys.exit(0 if re.search(r"\.qa-btn\.is-success[^{]*\{[^}]*var\(--success\)", css) else 1)
+PY
+then
+  ok "the success state is styled from --success"
+else
+  bad "the success state is styled from --success" ".qa-btn.is-success missing or not using the token"
+fi
+# Danger must read as danger from the token alone, with no red gradient.
+if python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+m = re.search(r"\.qa-btn-danger\s*\{([^}]*)\}", css)
+sys.exit(0 if m and "var(--destructive)" in m.group(1) else 1)
+PY
+then
+  ok "the danger button is styled from --destructive"
+else
+  bad "the danger button is styled from --destructive" ".qa-btn-danger missing or not using the token"
+fi
+# The icon chip's hover text colour was a hardcoded #ffd6e0, a value that
+# existed nowhere else in the palette.
+if grep -q "ffd6e0" "$CSS"; then
+  bad "the icon hover colour is a token" "#ffd6e0 is still hardcoded"
+else
+  ok "the icon hover colour is a token"
+fi
+
+echo
 echo "=================================="
 echo "  $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1
