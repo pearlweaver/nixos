@@ -749,7 +749,7 @@
           const note = document.createElement("div");
           note.style.marginTop = "6px";
           note.style.fontSize = "12px";
-          note.style.color = "var(--ink-faint)";
+          note.style.color = "var(--accent-foreground)";
           note.style.fontStyle = "italic";
           note.textContent = "Confirmed.";
           bubble.appendChild(note);
@@ -781,7 +781,7 @@
         const note = document.createElement("div");
         note.style.marginTop = "6px";
         note.style.fontSize = "12px";
-        note.style.color = "var(--ink-faint)";
+        note.style.color = "var(--accent-foreground)";
         note.style.fontStyle = "italic";
         note.textContent = "Rejected — nothing was run.";
         bubble.appendChild(note);
@@ -890,7 +890,7 @@
           const hdr = document.createElement("div");
           hdr.textContent = q.header;
           hdr.style.fontSize = "0.72rem";
-          hdr.style.color = "var(--ink-faint)";
+          hdr.style.color = "var(--accent-foreground)";
           hdr.style.marginBottom = "3px";
           group.appendChild(hdr);
         }
@@ -970,7 +970,7 @@
       const statusNote = document.createElement("div");
       statusNote.style.marginTop = "6px";
       statusNote.style.fontSize = "12px";
-      statusNote.style.color = "var(--ink-faint)";
+      statusNote.style.color = "var(--accent-foreground)";
       statusNote.style.fontStyle = "italic";
 
       function disableButtons() {
@@ -1113,7 +1113,7 @@
       const detail = document.createElement("p");
       detail.style.marginTop = "8px";
       detail.style.fontSize = "0.8rem";
-      detail.style.color = "var(--ink-faint)";
+      detail.style.color = "var(--accent-foreground)";
       detail.textContent = payload.permission === "external_directory"
         ? "Wants to use " + (scope || "a path outside the working directory")
         : "Needs approval: " + (payload.permission || "unknown action");
@@ -1124,7 +1124,7 @@
         cmd.style.marginTop = "8px";
         cmd.style.padding = "8px 10px";
         cmd.style.borderRadius = "8px";
-        cmd.style.border = "1px solid var(--rule-faint)";
+        cmd.style.border = "1px solid var(--input)";
         cmd.style.background = "rgba(0,0,0,0.22)";
         cmd.style.fontFamily = "var(--mono, monospace)";
         cmd.style.fontSize = "0.74rem";
@@ -1137,7 +1137,7 @@
       const statusNote = document.createElement("div");
       statusNote.style.marginTop = "6px";
       statusNote.style.fontSize = "12px";
-      statusNote.style.color = "var(--ink-faint)";
+      statusNote.style.color = "var(--accent-foreground)";
       statusNote.style.fontStyle = "italic";
 
       const actions = document.createElement("div");
