@@ -506,6 +506,57 @@
       color: var(--ink-dim);
     }
 
+    /* Tables. The wrapper scrolls sideways so a wide table stays readable on a
+       phone instead of stretching the bubble past the screen. */
+    .md-table-wrap {
+      margin: 10px 0;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .md-table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.94em;
+    }
+
+    .md-table th,
+    .md-table td {
+      padding: 6px 10px;
+      border: 1px solid var(--rule-faint);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .md-table th {
+      background: rgba(0, 0, 0, 0.28);
+      color: var(--ink);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .md-table td {
+      background: rgba(0, 0, 0, 0.12);
+    }
+
+    .md-table tbody tr:nth-child(even) td {
+      background: rgba(0, 0, 0, 0.22);
+    }
+
+    .md-align-center {
+      text-align: center;
+    }
+
+    .md-align-right {
+      text-align: right;
+    }
+
+    /* A long unbroken value (a path, a hash) should wrap rather than force the
+       wrapper to scroll for one cell. */
+    .md-table td {
+      overflow-wrap: anywhere;
+    }
+
     .md hr {
       border: none;
       border-top: 1px solid var(--rule-faint);

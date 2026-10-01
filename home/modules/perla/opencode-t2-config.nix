@@ -79,7 +79,10 @@ builtins.toJSON {
     obsidian = {
       type = "local";
       command = [ "${homeDirectory}/.local/bin/perla-obsidian-mcp" ];
-      env = {
+      environment = {
+      # OpenCode's McpLocalConfig type spells this `environment`; a bare
+      # `env` is the lsp key and is silently ignored here, so the
+      # server falls back to its own defaults.
         OBSIDIAN_BASE_URL = "https://127.0.0.1:27124";
         OBSIDIAN_VERIFY_SSL = "false";
       };
@@ -87,14 +90,20 @@ builtins.toJSON {
     view-screen = {
       type = "local";
       command = [ "${homeDirectory}/.local/bin/perla-view-screen-mcp" ];
-      env = {
+      environment = {
+      # OpenCode's McpLocalConfig type spells this `environment`; a bare
+      # `env` is the lsp key and is silently ignored here, so the
+      # server falls back to its own defaults.
         PERLA_COMPANION_PORT = "8443";
       };
     };
     file = {
       type = "local";
       command = [ "${homeDirectory}/.local/bin/perla-file-mcp" ];
-      env = {
+      environment = {
+      # OpenCode's McpLocalConfig type spells this `environment`; a bare
+      # `env` is the lsp key and is silently ignored here, so the
+      # server falls back to its own defaults.
         PERLA_COMPANION_PORT = "8443";
         PERLA_TIER = "2";
       };
@@ -102,14 +111,20 @@ builtins.toJSON {
     reminders = {
       type = "local";
       command = [ "${homeDirectory}/.local/bin/perla-reminders-mcp" ];
-      env = {
+      environment = {
+      # OpenCode's McpLocalConfig type spells this `environment`; a bare
+      # `env` is the lsp key and is silently ignored here, so the
+      # server falls back to its own defaults.
         PERLA_COMPANION_PORT = "8443";
       };
     };
     system-action = {
       type = "local";
       command = [ "${homeDirectory}/.local/bin/perla-system-action-mcp" ];
-      env = {
+      environment = {
+      # OpenCode's McpLocalConfig type spells this `environment`; a bare
+      # `env` is the lsp key and is silently ignored here, so the
+      # server falls back to its own defaults.
         PERLA_COMPANION_PORT = "8443";
       };
     };

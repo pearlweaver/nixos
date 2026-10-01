@@ -3052,19 +3052,27 @@ def _parse_message_response(data, tier):
                     flush=True,
                 )
 
-        # Fallback: if send_file demonstrably ran but its result couldn't be
-        # parsed from OpenCode's response at all (schema mismatch, not a
-        # legitimate empty/ambiguous result), check whether a file was
-        # actually staged during this exact turn via the daemon's own
-        # in-process record (see _record_staged_file /
-        # _pop_recently_staged_file). This works regardless of how
-        # OpenCode shapes tool-result JSON, since it never depends on
-        # parsing that JSON at all.
-        if (
-            sent_file_ref is None
-            and send_file_called
-            and not send_file_parsed_ok_false
-        ):
+        # Fallback: if send_file's result couldn't be recovered from OpenCode's
+        # response, fall back to the daemon's own in-process record of a file
+        # staged during this exact turn (see _record_staged_file /
+        # _pop_recently_staged_file).
+        #
+        # This gate used to require `send_file_called` — i.e. evidence found by
+        # parsing the response for a part named *send_file. That made the
+        # "schema-independent" fallback depend on the very schema it was meant
+        # to be independent of, and it silently never fired: OpenCode's
+        # POST /session/<id>/message returns ONLY the final step's parts
+        # (step-start / text / step-finish), so a tool call made in an earlier
+        # step is absent from the response altogether. The result was that a
+        # file would be staged, the model would report its id, and the reply
+        # carried "file": null — the web UI rendered nothing and the send
+        # looked like a lie.
+        #
+        # The record is sufficient proof on its own: _record_staged_file is
+        # written only after the daemon has actually copied the file, so if one
+        # exists for this tier, a file really was sent this turn. A failed or
+        # ambiguous send_file stages nothing, so this cannot invent a file.
+        if sent_file_ref is None:
             fallback = _pop_recently_staged_file(tier)
             if fallback:
                 sent_file_ref = fallback
@@ -3114,6 +3122,97 @@ def _speak_code_span(text):
     s = s.replace("/", " slash ")
     s = re.sub(r"[_-]+", " ", s)
     return re.sub(r"\s+", " ", s).strip()
+
+
+# How many data rows a table may have before TTS announces it instead of
+# reading it. Past this, reading every cell aloud is tedious rather than
+# useful, and the screen still has the real thing.
+TABLE_SPEAK_MAX_ROWS = 6
+
+
+def _table_cells(row):
+    """Split a pipe-table row into trimmed cells.
+
+    Leading and trailing pipes are optional in GFM, so an empty cell at either
+    edge is dropped. "\\|" is a literal pipe, not a cell break.
+    """
+    cells, cur, i = [], "", 0
+    while i < len(row):
+        ch = row[i]
+        if ch == "\\" and i + 1 < len(row) and row[i + 1] == "|":
+            cur += "|"
+            i += 2
+            continue
+        if ch == "|":
+            cells.append(cur)
+            cur = ""
+            i += 1
+            continue
+        cur += ch
+        i += 1
+    cells.append(cur)
+    if len(cells) > 1 and not cells[0].strip():
+        cells.pop(0)
+    if len(cells) > 1 and not cells[-1].strip():
+        cells.pop()
+    return [c.strip() for c in cells]
+
+
+def _is_delimiter_row(row):
+    """True for the |---|---| row that makes a piped line a table. Every cell
+    must be dashes (optionally colon-wrapped); "a | b" is a header, not this."""
+    if "-" not in row or "|" not in row:
+        return False
+    cells = _table_cells(row)
+    return bool(cells) and all(re.fullmatch(r":?-+:?", c) for c in cells)
+
+
+def _speak_table(head, rows):
+    """Read a small table aloud; announce a large one rather than drone.
+
+    Each cell is flattened on its own, not the joined sentence: a link or
+    emphasis marker must resolve inside its own cell, and the parked result is
+    never passed through _flatten_inline again.
+    """
+    cols = len(head)
+    if rows and len(rows) > TABLE_SPEAK_MAX_ROWS:
+        return "A table with %d rows and %d columns." % (len(rows), cols)
+    parts = []
+    if head:
+        parts.append(", ".join(_flatten_inline(c) for c in head) + ".")
+    for row in rows:
+        parts.append(", ".join(_flatten_inline(c) for c in row) + ".")
+    return " ".join(parts)
+
+
+def _flatten_inline(s):
+    """Strip inline markdown noise so the text reads as prose.
+
+    Spans are matched per line — a span running across a newline would swallow
+    a whole code fence when the source is malformed.
+    """
+    s = re.sub(r"(`+)([^\n]*?[^`\n])\1(?!`)", lambda m: _speak_code_span(m.group(2)), s)
+    s = re.sub(r"!\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)",
+               lambda m: (m.group(1).strip() or "image"), s)
+    s = re.sub(r"\[([^\]]+)\]\((?:[^()]|\([^()]*\))*\)", r"\1", s)
+    s = re.sub(r"<((?:https?|mailto):)[^>]*>", r"\1", s)
+    s = re.sub(r"<[^>]{1,200}>", " ", s)  # leftover html tags
+    # A bare URL in prose (not a markdown link) would otherwise be read out
+    # character by character. Keep only the host, spoken as words: the path and
+    # query are noise for someone listening.
+    s = re.sub(r"\b(?:https?://|www\.)([^\s/?#]+)[^\s]*",
+               lambda m: _speak_code_span(m.group(1)), s)
+    s = re.sub(r"^[ \t]{0,3}#{1,6}[ \t]*", "", s, flags=re.M)      # headings
+    s = re.sub(r"^[ \t]{0,3}>[ \t]?", "", s, flags=re.M)           # blockquotes
+    s = re.sub(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+", "", s, flags=re.M)  # list bullets
+    s = re.sub(r"^[ \t]*(?:[-*_][ \t]*){3,}$", "", s, flags=re.M)  # rules
+    s = s.replace("**", "").replace("__", "")
+    s = re.sub(r"(?<![\w*])\*(?!\s)|(?<!\s)\*(?![\w*])", "", s)  # emphasis
+    s = s.replace("~~", "")
+    # Any backtick left is an unbalanced fence or a stray tick from malformed
+    # source. It has no spoken value, so drop it rather than let piper say it.
+    s = s.replace("`", "")
+    return s
 
 
 def speech_text(md):
@@ -3178,31 +3277,40 @@ def speech_text(md):
 
     s = "\n".join(out)
 
-    # Pass 2: inline spans, then the rest of the markdown noise. Spans are
-    # matched per line — a span that runs across a newline would swallow a
-    # whole code fence when the source is malformed.
-    s = re.sub(r"(`+)([^\n]*?[^`\n])\1(?!`)", lambda m: _speak_code_span(m.group(2)), s)
-    s = re.sub(r"!\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)",
-               lambda m: (m.group(1).strip() or "image"), s)
-    s = re.sub(r"\[([^\]]+)\]\((?:[^()]|\([^()]*\))*\)", r"\1", s)
-    s = re.sub(r"<((?:https?|mailto):)[^>]*>", r"\1", s)
-    s = re.sub(r"<[^>]{1,200}>", " ", s)  # leftover html tags
-    # A bare URL in prose (not a markdown link) would otherwise be read out
-    # character by character. Keep only the host, spoken as words: the path and
-    # query are noise for someone listening.
-    s = re.sub(r"\b(?:https?://|www\.)([^\s/?#]+)[^\s]*",
-               lambda m: _speak_code_span(m.group(1)), s)
-    s = re.sub(r"^[ \t]{0,3}#{1,6}[ \t]*", "", s, flags=re.M)      # headings
-    s = re.sub(r"^[ \t]{0,3}>[ \t]?", "", s, flags=re.M)           # blockquotes
-    s = re.sub(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+", "", s, flags=re.M)  # list bullets
-    s = re.sub(r"^[ \t]*(?:[-*_][ \t]*){3,}$", "", s, flags=re.M)  # rules
-    s = re.sub(r"\|?[ \t]*:?-{2,}:?[ \t]*(\|[ \t]*:?-{2,}:?[ \t]*)*\|?", " ", s, flags=re.M)
-    s = s.replace("**", "").replace("__", "")
-    s = re.sub(r"(?<![\w*])\*(?!\s)|(?<!\s)\*(?![\w*])", "", s)  # emphasis
-    s = s.replace("~~", "")
-    # Any backtick left is an unbalanced fence or a stray tick from malformed
-    # source. It has no spoken value, so drop it rather than let piper say it.
-    s = s.replace("`", "")
+    # Tables. This runs after the code pass above — so a table inside a fence is
+    # already a code description by now — and before the inline rules below,
+    # whose delimiter-row strip would otherwise destroy the very row this needs
+    # to see. The spoken text is parked in a placeholder and restored at the
+    # very end, so it is not flattened a second time.
+    table_bits = []
+
+    def park(spoken):
+        table_bits.append(spoken)
+        return "\x00T%d\x00" % (len(table_bits) - 1)
+
+    tl = s.split("\n")
+    rebuilt = []
+    k = 0
+    while k < len(tl):
+        line = tl[k]
+        if "|" in line and k + 1 < len(tl) and _is_delimiter_row(tl[k + 1]):
+            head = _table_cells(line)
+            k += 2
+            rows = []
+            while (k < len(tl) and tl[k].strip() and "|" in tl[k]
+                   and not _is_delimiter_row(tl[k])):
+                rows.append(_table_cells(tl[k]))
+                k += 1
+            rebuilt.append(park(_speak_table(head, rows)))
+            continue
+        rebuilt.append(line)
+        k += 1
+    s = "\n".join(rebuilt)
+
+    s = _flatten_inline(s)
+    s = re.sub(r"\x00T(\d+)\x00",
+               lambda m: table_bits[int(m.group(1))] if int(m.group(1)) < len(table_bits) else "",
+               s)
     s = re.sub(r"[ \t]{2,}", " ", s)
     s = re.sub(r"\n{2,}", "\n", s)
     s = re.sub(r"[ \t]+\n", "\n", s)

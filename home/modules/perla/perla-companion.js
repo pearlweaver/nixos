@@ -404,6 +404,51 @@
         });
       }
 
+      // Split a pipe-table row into trimmed cells. A leading and/or trailing
+      // pipe is optional GFM, so an empty first or last cell from the edge is
+      // dropped. "\|" is a literal pipe, not a cell break.
+      function splitRow(row) {
+        const cells = [];
+        let cur = "";
+        for (let k = 0; k < row.length; k++) {
+          const ch = row[k];
+          if (ch === "\\" && row[k + 1] === "|") {
+            cur += "|";
+            k++;
+          } else if (ch === "|") {
+            cells.push(cur);
+            cur = "";
+          } else {
+            cur += ch;
+          }
+        }
+        cells.push(cur);
+        if (cells.length > 1 && cells[0].trim() === "") cells.shift();
+        if (cells.length > 1 && cells[cells.length - 1].trim() === "") cells.pop();
+        return cells.map((c) => c.trim());
+      }
+
+      // A delimiter row is the only thing that makes a piped line a table:
+      // cells of dashes, each optionally colon-wrapped for alignment. Returns
+      // the per-cell alignment, or null if this line is not a delimiter row.
+      // Every cell must qualify — "a | b" is a header, not a delimiter.
+      function delimiterRow(row) {
+        if (row.indexOf("-") === -1 || row.indexOf("|") === -1) return null;
+        const cells = splitRow(row);
+        if (!cells.length) return null;
+        const aligns = [];
+        for (const c of cells) {
+          const m = c.match(/^(:)?-{1,}(:)?$/);
+          if (!m) return null;
+          aligns.push(m[1] && m[2] ? "center" : m[2] ? "right" : "left");
+        }
+        return aligns;
+      }
+
+      function alignAttr(align) {
+        return align && align !== "left" ? ' class="md-align-' + align + '"' : "";
+      }
+
       const lines = String(text).replace(/\r\n/g, "\n").split("\n");
       const out = [];
       let i = 0;
@@ -500,6 +545,34 @@
           continue;
         }
 
+        // GFM pipe table: a header row whose next line is a delimiter row
+        // (cells of dashes, optionally colon-aligned). Sits after the fence
+        // and indented-code branches above, so a table inside a code block is
+        // already consumed as code by the time this runs.
+        const delim = i + 1 < lines.length ? delimiterRow(lines[i + 1]) : null;
+        if (delim && line.indexOf("|") !== -1) {
+          const aligns = splitRow(lines[i]).map((_, idx) => delim[idx] || "left");
+          const heads = splitRow(lines[i]);
+          let html = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
+          heads.forEach((h, idx) => {
+            html += "<th" + alignAttr(aligns[idx]) + ">" + inline(esc(h)) + "</th>";
+          });
+          html += "</tr></thead><tbody>";
+          i += 2; // consume the header and the delimiter row
+          while (i < lines.length && lines[i].trim() !== "" && lines[i].indexOf("|") !== -1 && !openFence(lines[i])) {
+            const cells = splitRow(lines[i]);
+            html += "<tr>";
+            heads.forEach((_, idx) => {
+              html += "<td" + alignAttr(aligns[idx]) + ">" + inline(esc(cells[idx] || "")) + "</td>";
+            });
+            html += "</tr>";
+            i++;
+          }
+          html += "</tbody></table></div>";
+          out.push(html);
+          continue;
+        }
+
         if (/^-{3,}$/.test(line) || /^\*{3,}$/.test(line)) {
           out.push("<hr>");
           i++;
@@ -521,7 +594,8 @@
           !/^>\s?/.test(lines[i]) &&
           !/^\d+[.)]\s/.test(lines[i]) &&
           !/^[-*+]\s/.test(lines[i]) &&
-          !/^-{3,}$/.test(lines[i])
+          !/^-{3,}$/.test(lines[i]) &&
+          !(delimiterRow(lines[i]) && lines[i - 1] !== undefined && lines[i - 1].indexOf("|") !== -1)
         ) {
           buf.push(lines[i]);
           i++;
