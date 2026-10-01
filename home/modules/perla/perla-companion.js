@@ -828,11 +828,59 @@
       return entry;
     }
 
+    // ---------------------------------------------------------------------
+    // Question schema helpers.
+    //
+    // OpenCode's question payload declares two OPTIONAL flags
+    // (@opencode-ai/sdk types.gen.d.ts, QuestionInfo):
+    //     multiple?: boolean   "Allow selecting multiple choices"
+    //     custom?:   boolean   "Allow typing a custom answer (default: true)"
+    // Perla used to read NEITHER: every question was multi-select and every
+    // question got a free-text box, so a question the model meant as one-of-three
+    // could be answered with three ticks and the UI gave no hint that was wrong.
+    //
+    // `multiple` defaults to FALSE (absent means the model did not ask for
+    // multi-select). `custom` defaults to TRUE — the schema says so explicitly —
+    // so only an explicit `false` hides the input.
+    // ---------------------------------------------------------------------
+    function questionAllowsMultiple(q) {
+      return !!(q && q.multiple === true);
+    }
+
+    function questionAllowsCustom(q) {
+      return !(q && q.custom === false);
+    }
+
+    // The wire shape is Array<Array<string>> — one inner array per question, in
+    // order — and must not change: the daemon forwards it verbatim to
+    // /question/{id}/reply. Typed text is appended to its own question's answer,
+    // and an unanswered question yields [] rather than a missing entry.
+    function collectQuestionAnswers(groups) {
+      return groups.map((g) => {
+        const picked = Array.from(g._selected);
+        const typed = (g._custom && g._custom.value || "").trim();
+        if (typed) picked.push(typed);
+        return picked;
+      });
+    }
+
+    // Coerce a permission scope to a list rather than trusting its shape. The
+    // SDK types permission metadata as { [key: string]: unknown }, and the
+    // daemon's `or []` only catches a FALSY value, not a string — so a
+    // single-string `directories` reached .join() and threw. That exception
+    // escapes before the card is appended, so the prompt never renders and the
+    // tool stays parked until the 900s turn timeout: exactly the hang this card
+    // exists to prevent.
+    function permissionScopeList(v) {
+      if (v == null) return [];
+      return Array.isArray(v) ? v : [v];
+    }
+
     // Renders an interactive question card for the model's opencode `question`
-    // tool payload: one option-group per question (options toggle as
-    // multi-select, plus a free-text "custom" field per question — typed text
-    // is appended to that question's answers), an Answer button that POSTs to
-    // /api/question, and a Skip/Dismiss button that rejects instead. The
+    // tool payload. One question is shown at a time with Next/Back stepping
+    // through them, honouring each question's `multiple` and `custom` flags
+    // (see the helpers above). Typed text is appended to that question's
+    // answers. Answering POSTs to /api/question; Skip rejects instead. The
     // daemon keeps the message turn open across round-trips: if answering
     // produces ANOTHER question, the card is re-rendered in place with the new
     // request_id; if it produces the final reply, that is rendered exactly as
@@ -871,110 +919,233 @@
       const bubble = document.createElement("div");
       bubble.className = "entry-bubble";
 
-      const heading = document.createElement("p");
-      heading.textContent = payload.questions && payload.questions.length > 1
-        ? "Before I continue, a quick question:" : "Before I continue:";
-      heading.style.fontWeight = "600";
-      bubble.appendChild(heading);
+      const card = document.createElement("div");
+      card.className = "qac";
 
-      // One mutating block per question; selections live in memory (Set of
-      // option labels) plus the custom text input, collected on submit.
-      const answerGroups = payload.questions.map((q, qi) => {
-        const group = document.createElement("div");
-        group.style.marginTop = "10px";
+      const questions = Array.isArray(payload.questions) ? payload.questions : [];
+      // Which question is on screen. One at a time, Next/Back steps through.
+      let currentIndex = 0;
 
-        const qText = document.createElement("p");
-        qText.textContent = q.question || q.header || q.text || ("Question " + (qi + 1));
-        qText.style.marginBottom = "6px";
-        if (q.header && q.header !== qText.textContent) {
+      const progress = document.createElement("div");
+      progress.className = "qac-progress";
+
+      const stage = document.createElement("div");
+      stage.className = "qac-stage";
+
+      const actions = document.createElement("div");
+      actions.className = "qac-actions";
+
+      const backBtn = document.createElement("button");
+      backBtn.type = "button";
+      backBtn.className = "qac-btn";
+      backBtn.textContent = "Back";
+
+      const nextBtn = document.createElement("button");
+      nextBtn.type = "button";
+      nextBtn.className = "qac-btn qac-btn-primary";
+      nextBtn.textContent = "Next";
+
+      const dismissBtn = document.createElement("button");
+      dismissBtn.type = "button";
+      dismissBtn.className = "qac-btn";
+      dismissBtn.textContent = "Skip";
+
+      const spacer = document.createElement("div");
+      spacer.className = "qac-spacer";
+
+      const statusNote = document.createElement("div");
+      statusNote.className = "qac-status";
+
+      // Per-question answer state, kept across Next/Back so stepping back and
+      // forward does not lose what was already picked.
+      const answers = questions.map(() => []);
+      const typed = questions.map(() => "");
+
+      // Rebuilds the visible question from state. Cheap and idempotent, which is
+      // what makes Back safe: there is no separate "restore" path to get wrong.
+      function renderStage() {
+        const q = questions[currentIndex];
+        stage.textContent = "";
+        if (!q) return;
+
+        if (q.header) {
           const hdr = document.createElement("div");
+          hdr.className = "qac-progress";
           hdr.textContent = q.header;
-          hdr.style.fontSize = "0.72rem";
-          hdr.style.color = "var(--accent-foreground)";
-          hdr.style.marginBottom = "3px";
-          group.appendChild(hdr);
+          stage.appendChild(hdr);
         }
-        group.appendChild(qText);
 
-        const selected = new Set();
+        const title = document.createElement("div");
+        title.className = "qac-title";
+        title.textContent = q.question || q.text || ("Question " + (currentIndex + 1));
+        stage.appendChild(title);
+
+        if (q.description) {
+          const sub = document.createElement("div");
+          sub.className = "qac-sub";
+          sub.textContent = q.description;
+          stage.appendChild(sub);
+        }
+
+        const multiple = questionAllowsMultiple(q);
+        const allowCustom = questionAllowsCustom(q);
+        const name = "qac-" + currentIndex + "-" + Math.random().toString(36).slice(2, 8);
         const options = Array.isArray(q.options) ? q.options : [];
+
         if (options.length) {
-          const optionsWrap = document.createElement("div");
-          optionsWrap.style.display = "flex";
-          optionsWrap.style.flexDirection = "column";
-          optionsWrap.style.gap = "6px";
+          const wrap = document.createElement("div");
+          wrap.className = "qac-options";
           options.forEach((opt) => {
             const label = (opt && opt.label) || "";
             if (!label) return;
-            const btn = document.createElement("button");
-            btn.type = "button";
-            btn.textContent = opt.description ? label + " — " + opt.description : label;
-            btn.style.padding = "6px 11px";
-            btn.style.fontSize = "0.8rem";
-            btn.style.borderRadius = "8px";
-            btn.style.cursor = "pointer";
-            btn.style.width = "100%";
-            btn.style.textAlign = "left";
-            btn.style.background = "rgba(201, 123, 141, 0.10)";
-            btn.style.border = "1px solid rgba(201, 123, 141, 0.45)";
-            btn.style.color = "var(--ink-primary, #eee)";
-            btn.addEventListener("click", () => {
-              if (selected.has(label)) {
-                selected.delete(label);
-                btn.style.background = "rgba(201, 123, 141, 0.10)";
+
+            const row = document.createElement("label");
+            row.className = "qac-option";
+
+            const input = document.createElement("input");
+            input.type = multiple ? "checkbox" : "radio";
+            input.name = name;
+            input.className = "qac-input";
+            input.checked = answers[currentIndex].indexOf(label) !== -1;
+            if (input.checked) row.classList.add("is-selected");
+            input.addEventListener("change", () => {
+              if (multiple) {
+                const at = answers[currentIndex].indexOf(label);
+                if (input.checked && at === -1) answers[currentIndex].push(label);
+                if (!input.checked && at !== -1) answers[currentIndex].splice(at, 1);
               } else {
-                selected.add(label);
-                btn.style.background = "rgba(201, 123, 141, 0.45)";
+                answers[currentIndex] = [label];
               }
+              // Re-sync EVERY row from its own input state, not just this one.
+              // In single-select the browser unchecks the previous radio
+              // natively, but `change` fires only on the newly-checked input —
+              // so toggling just this row left the previously selected option
+              // wearing the selected border with an empty radio beside it.
+              // Deriving the class from `checked` cannot drift from the input.
+              wrap.querySelectorAll(".qac-option").forEach((r) => {
+                r.classList.toggle("is-selected", r.querySelector(".qac-input").checked);
+              });
+              statusNote.textContent = "";
+              syncNav();
             });
-            optionsWrap.appendChild(btn);
+
+            const text = document.createElement("span");
+            text.className = "qac-text";
+            const nameEl = document.createElement("span");
+            nameEl.className = "qac-label";
+            nameEl.textContent = label;
+            text.appendChild(nameEl);
+            if (opt && opt.description) {
+              const desc = document.createElement("span");
+              desc.className = "qac-desc";
+              desc.textContent = opt.description;
+              text.appendChild(desc);
+            }
+
+            row.appendChild(input);
+            row.appendChild(text);
+            wrap.appendChild(row);
           });
-          group.appendChild(optionsWrap);
+          stage.appendChild(wrap);
         }
 
-        const custom = document.createElement("input");
-        custom.type = "text";
-        custom.placeholder = "Or type your own answer…";
-        custom.style.marginTop = "8px";
-        custom.style.width = "100%";
-        custom.style.boxSizing = "border-box";
-        custom.style.padding = "7px 10px";
-        custom.style.borderRadius = "8px";
-        custom.style.border = "1px solid rgba(255,255,255,0.22)";
-        custom.style.background = "rgba(255,255,255,0.06)";
-        custom.style.color = "var(--ink-primary, #eee)";
-        group.appendChild(custom);
+        // `custom: false` means the model closed this question to typed answers.
+        if (allowCustom) {
+          const custom = document.createElement("input");
+          custom.type = "text";
+          custom.className = "qac-custom";
+          custom.placeholder = "Or type your own answer…";
+          custom.value = typed[currentIndex];
+          custom.addEventListener("input", () => {
+            typed[currentIndex] = custom.value;
+            statusNote.textContent = "";
+            syncNav();
+          });
+          stage.appendChild(custom);
+        }
+      }
 
-        group._selected = selected;
-        group._custom = custom;
-        return group;
+      // Next is only enabled once the visible question has something in it, so
+      // the "pick something" message is a backstop rather than the main guard.
+      function currentAnswered() {
+        return answers[currentIndex].length > 0 || typed[currentIndex].trim() !== "";
+      }
+
+      function syncNav() {
+        const last = currentIndex >= questions.length - 1;
+        progress.textContent = questions.length > 1
+          ? "Question " + (currentIndex + 1) + " of " + questions.length
+          : "";
+        backBtn.disabled = currentIndex === 0;
+        nextBtn.disabled = !currentAnswered();
+        nextBtn.textContent = last ? "Answer" : "Next";
+      }
+
+      function goTo(index) {
+        currentIndex = Math.max(0, Math.min(index, questions.length - 1));
+        renderStage();
+        syncNav();
+        statusNote.textContent = "";
+      }
+
+      backBtn.addEventListener("click", () => goTo(currentIndex - 1));
+      nextBtn.addEventListener("click", () => {
+        if (currentIndex < questions.length - 1) {
+          goTo(currentIndex + 1);
+          return;
+        }
+        answerAll();
       });
-      answerGroups.forEach((g) => bubble.appendChild(g));
 
-      const actions = document.createElement("div");
-      actions.style.display = "flex";
-      actions.style.gap = "8px";
-      actions.style.marginTop = "12px";
+      // The wire format is unchanged: Array<Array<string>>. The groups are
+      // assembled from the same per-question state the old Set held.
+      function answerAll() {
+        const unanswered = questions
+          .map((q, i) => (answers[i].length > 0 || typed[i].trim() !== "" ? null : i))
+          .filter((i) => i !== null);
+        if (unanswered.length) {
+          statusNote.textContent = "Pick an option (or type an answer) for question " +
+            (unanswered[0] + 1) + ".";
+          goTo(unanswered[0]);
+          return;
+        }
+        const groups = questions.map((q, i) => ({
+          _selected: new Set(answers[i]),
+          _custom: { value: typed[i] },
+        }));
+        const payloadAnswers = collectQuestionAnswers(groups);
 
-      const answerBtn = document.createElement("button");
-      answerBtn.textContent = "Answer";
-      answerBtn.className = "elevate-submit";
-      answerBtn.style.padding = "7px 14px";
-      answerBtn.style.fontSize = "0.78rem";
+        disableButtons();
+        nextBtn.textContent = "Answering…";
+        showThinking(targetTier);
+        submitAnswer({ tier: targetTier, request_id: requestId, answers: payloadAnswers })
+          .then(({ res, d }) => {
+            if (res.status === 401) { relockSession(); return; }
+            if (!res.ok) throw new Error("answer rejected");
+            entry.remove();
+            if (d.question_required) {
+              addQuestionEntry(d, targetTier);
+            } else {
+              renderReplyResult(d, targetTier);
+            }
+          })
+          .catch(() => {
+            notify("error", "Couldn't send your answer — try again.");
+            rearmAnswer();
+          })
+          .finally(() => hideThinking(targetTier));
+      }
 
-      const dismissBtn = document.createElement("button");
-      dismissBtn.textContent = "Skip";
-      dismissBtn.className = "qa-input-cancel";
-      dismissBtn.style.padding = "7px 14px";
-
-      const statusNote = document.createElement("div");
-      statusNote.style.marginTop = "6px";
-      statusNote.style.fontSize = "12px";
-      statusNote.style.color = "var(--accent-foreground)";
-      statusNote.style.fontStyle = "italic";
+      function rearmAnswer() {
+        backBtn.disabled = currentIndex === 0;
+        dismissBtn.disabled = false;
+        nextBtn.disabled = !currentAnswered();
+        nextBtn.textContent = currentIndex >= questions.length - 1 ? "Answer" : "Next";
+      }
 
       function disableButtons() {
-        answerBtn.disabled = true;
+        backBtn.disabled = true;
+        nextBtn.disabled = true;
         dismissBtn.disabled = true;
       }
 
@@ -986,74 +1157,42 @@
         }).then((res) => res.json().then((d) => ({ res, d })));
       }
 
-      answerBtn.addEventListener("click", async () => {
-        const answers = answerGroups.map((g) => {
-          const picked = Array.from(g._selected);
-          const customText = g._custom.value.trim();
-          if (customText) picked.push(customText);
-          return picked;
-        });
-        const allAnswered = answers.every((a) => a.length > 0);
-        if (!allAnswered) {
-          statusNote.textContent = "Pick an option (or type an answer) for every question.";
-          bubble.appendChild(statusNote);
-          return;
-        }
-        disableButtons();
-        answerBtn.textContent = "Answering…";
-        showThinking(targetTier);
-        try {
-          const { res, d } = await submitAnswer({ tier: targetTier, request_id: requestId, answers: answers });
-          if (!res.ok) {
-            if (res.status === 401) { relockSession(); return; }
-            if (!res.ok) throw new Error("answer rejected");
-          }
-          entry.remove();
-          if (d.question_required) {
-            addQuestionEntry(d, targetTier);
-          } else {
-            renderReplyResult(d, targetTier);
-          }
-        } catch (e) {
-          notify("error", "Couldn't send your answer — try again.");
-          answerBtn.disabled = false;
-          dismissBtn.disabled = false;
-          answerBtn.textContent = "Answer";
-        } finally {
-          hideThinking(targetTier);
-        }
-      });
-
-      dismissBtn.addEventListener("click", async () => {
+      dismissBtn.addEventListener("click", () => {
         disableButtons();
         dismissBtn.textContent = "Skipping…";
         showThinking(targetTier);
-        try {
-          const { res, d } = await submitAnswer({ tier: targetTier, request_id: requestId, dismiss: true });
-          if (!res.ok) {
+        submitAnswer({ tier: targetTier, request_id: requestId, dismiss: true })
+          .then(({ res, d }) => {
             if (res.status === 401) { relockSession(); return; }
             if (!res.ok) throw new Error("dismiss rejected");
-          }
-          entry.remove();
-          if (d.question_required) {
-            addQuestionEntry(d, targetTier);
-            return;
-          }
-          renderReplyResult(d, targetTier);
-        } catch (e) {
-          notify("error", "Couldn't skip — try again.");
-          answerBtn.disabled = false;
-          dismissBtn.disabled = false;
-          dismissBtn.textContent = "Skip";
-        } finally {
-          hideThinking(targetTier);
-        }
+            entry.remove();
+            if (d.question_required) {
+              addQuestionEntry(d, targetTier);
+              return;
+            }
+            renderReplyResult(d, targetTier);
+          })
+          .catch(() => {
+            notify("error", "Couldn't skip — try again.");
+            rearmAnswer();
+            dismissBtn.textContent = "Skip";
+          })
+          .finally(() => hideThinking(targetTier));
       });
 
-      actions.appendChild(answerBtn);
+      actions.appendChild(backBtn);
+      actions.appendChild(nextBtn);
+      actions.appendChild(spacer);
       actions.appendChild(dismissBtn);
-      bubble.appendChild(actions);
-      bubble.appendChild(statusNote);
+
+      card.appendChild(progress);
+      card.appendChild(stage);
+      card.appendChild(actions);
+      card.appendChild(statusNote);
+      bubble.appendChild(card);
+
+      goTo(0);
+
       entry.appendChild(bubble);
 
       const meta = document.createElement("div");
@@ -1065,10 +1204,10 @@
       setChatLog(targetTier, output.innerHTML);
       output.scrollIntoView({ block: "end" });
       entry.scrollIntoView({ behavior: "smooth", block: "end" });
-      return entry;
-    }
+        return entry;
+      }
 
-    // Renders an OpenCode permission prompt as a card with the same three
+      // Renders an OpenCode permission prompt as a card with the same three
     // choices the opencode TUI offers. These appear when a tool wants to act
     // outside the session's working directory (most often writing to /tmp) —
     // headless `opencode serve` has no UI to answer them, so the tool parks
@@ -1100,68 +1239,49 @@
       const bubble = document.createElement("div");
       bubble.className = "entry-bubble";
 
-      const heading = document.createElement("p");
+      // Same .qac container as the question card, so the two read as one
+      // surface rather than two designs that happen to share a chat.
+      const card = document.createElement("div");
+      card.className = "qac";
+
+      const heading = document.createElement("div");
+      heading.className = "qac-title";
       heading.textContent = "Permission needed";
-      heading.style.fontWeight = "600";
-      bubble.appendChild(heading);
 
       // The exact command is the thing being approved — show it verbatim so
       // the choice is informed rather than a blind trust click.
-      const dirs = (payload.directories || []).join(", ");
-      const patterns = (payload.patterns || []).join(", ");
+      const dirs = permissionScopeList(payload.directories).join(", ");
+      const patterns = permissionScopeList(payload.patterns).join(", ");
       const scope = dirs || patterns || "";
-      const detail = document.createElement("p");
-      detail.style.marginTop = "8px";
-      detail.style.fontSize = "0.8rem";
-      detail.style.color = "var(--accent-foreground)";
+      const detail = document.createElement("div");
+      detail.className = "qac-sub";
       detail.textContent = payload.permission === "external_directory"
         ? "Wants to use " + (scope || "a path outside the working directory")
         : "Needs approval: " + (payload.permission || "unknown action");
-      bubble.appendChild(detail);
-
-      if (payload.command) {
-        const cmd = document.createElement("div");
-        cmd.style.marginTop = "8px";
-        cmd.style.padding = "8px 10px";
-        cmd.style.borderRadius = "8px";
-        cmd.style.border = "1px solid var(--input)";
-        cmd.style.background = "rgba(0,0,0,0.22)";
-        cmd.style.fontFamily = "var(--mono, monospace)";
-        cmd.style.fontSize = "0.74rem";
-        cmd.style.whiteSpace = "pre-wrap";
-        cmd.style.wordBreak = "break-all";
-        cmd.textContent = payload.command;
-        bubble.appendChild(cmd);
-      }
 
       const statusNote = document.createElement("div");
-      statusNote.style.marginTop = "6px";
-      statusNote.style.fontSize = "12px";
-      statusNote.style.color = "var(--accent-foreground)";
-      statusNote.style.fontStyle = "italic";
+      statusNote.className = "qac-status";
 
       const actions = document.createElement("div");
-      actions.style.display = "flex";
-      actions.style.gap = "8px";
-      actions.style.marginTop = "12px";
-      actions.style.flexWrap = "wrap";
+      actions.className = "qac-actions";
 
       const onceBtn = document.createElement("button");
-      onceBtn.className = "elevate-submit";
+      onceBtn.type = "button";
+      onceBtn.className = "qac-btn qac-btn-primary";
       onceBtn.textContent = "Allow once";
-      onceBtn.style.padding = "7px 14px";
-      onceBtn.style.fontSize = "0.78rem";
 
       const alwaysBtn = document.createElement("button");
-      alwaysBtn.className = "qa-input-cancel";
+      alwaysBtn.type = "button";
+      alwaysBtn.className = "qac-btn";
       alwaysBtn.textContent = "Always allow";
-      alwaysBtn.style.padding = "7px 14px";
       alwaysBtn.title = "Remember this choice for " + (scope || "this path");
 
+      // Destructive, but flat: the token carries the signal, with no gradient or
+      // glow. It should read as "don't" without looking like another product.
       const rejectBtn = document.createElement("button");
-      rejectBtn.className = "qa-input-cancel";
+      rejectBtn.type = "button";
+      rejectBtn.className = "qac-btn qac-btn-destructive";
       rejectBtn.textContent = "Reject";
-      rejectBtn.style.padding = "7px 14px";
 
       function disableAll() {
         onceBtn.disabled = true;
@@ -1227,8 +1347,18 @@
       actions.appendChild(onceBtn);
       actions.appendChild(alwaysBtn);
       actions.appendChild(rejectBtn);
-      bubble.appendChild(actions);
-      bubble.appendChild(statusNote);
+
+      card.appendChild(heading);
+      card.appendChild(detail);
+      if (payload.command) {
+        const cmd = document.createElement("div");
+        cmd.className = "qac-command";
+        cmd.textContent = payload.command;
+        card.appendChild(cmd);
+      }
+      card.appendChild(actions);
+      card.appendChild(statusNote);
+      bubble.appendChild(card);
       entry.appendChild(bubble);
 
       const meta = document.createElement("div");

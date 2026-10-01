@@ -455,6 +455,155 @@ fg=$(value_of primary-foreground)
 [ "$fg" = "#ffffff" ] && ok "--primary-foreground is pure white ($fg)" \
   || bad "--primary-foreground is pure white" "got '$fg'"
 
+echo
+echo "=== 11. the question/permission card surface is flat and tokenised ==="
+# Same treatment section 9 gave the chat, applied to the card. This surface used
+# to be built from ~24 inline style.* assignments in the JS with hand-mixed
+# rgba(201,123,141,...) plum tints, so there was nothing here to assert until
+# the styles were moved into real classes. That move is the point of this
+# section: if it is ever undone, these fail again rather than silently
+# regressing to inline styles.
+card_scope() {
+  python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+CARD = re.compile(r"entry-question|entry-permission|qac-")
+for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
+    sel = " ".join(m.group(1).split())
+    if CARD.search(sel):
+        print(sel + "\t" + " ".join(m.group(2).split()))
+PY
+}
+mapfile -t card_rules < <(card_scope)
+if [ "${#card_rules[@]}" -gt 0 ]; then
+  ok "the card surface has real CSS rules (${#card_rules[@]} found, not inline styles)"
+else
+  bad "the card surface has real CSS rules" "no .entry-question/.entry-permission rules — styles are inline in the JS again"
+fi
+cscan() {  # cscan <pattern> <name>
+  local pat="$1" name="$2" hits=0
+  # Scanning zero rules would vacuously "pass". Report that as the failure it
+  # is, so a surface that loses its stylesheet cannot look clean.
+  if [ "${#card_rules[@]}" -eq 0 ]; then
+    bad "no $name on the card surface" "no card rules exist to scan — vacuous pass"
+    return
+  fi
+  for r in "${card_rules[@]}"; do
+    grep -qE "$pat" <<<"$r" && hits=$((hits + 1))
+  done
+  [ "$hits" = 0 ] && ok "no $name on the card surface (scanned ${#card_rules[@]} rules)" \
+    || bad "no $name on the card surface" "$hits rule(s) still have it"
+}
+cscan '(linear|radial)-gradient' "gradient"
+cscan 'rgba?\(|hsla?\(' "raw colour literal"
+cscan 'box-shadow' "box-shadow"
+cscan 'style=' "inline style attribute"
+
+# The selected state must change BOTH fill and border. Changing only the fill is
+# what the old plum-tint buttons did, and at a 1.09:1 fill step it was invisible.
+# --accent is only 1.09:1 from --card (and --muted is byte-identical to --card),
+# so the stock neutral tokens cannot carry this; --card-selected is the token
+# that does, and --primary on the border is what actually reads.
+defines "card-selected" && ok "--card-selected is defined" || bad "--card-selected is defined" "absent"
+sel_fill=$(value_of card-selected)
+case "$sel_fill" in
+  *"var(--primary)"*|*"var(--card)"*) ok "--card-selected derives from the palette ($sel_fill)" ;;
+  *) bad "--card-selected derives from the palette" "got '$sel_fill'" ;;
+esac
+# The option descriptions sit on the selected fill too, so the tint has to stay
+# light enough for --muted-foreground to clear AA. This is the constraint that
+# stopped the fill matching the reference's 1.34:1 exactly.
+desc_cr=$(python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+tok = dict(re.findall(r"(--[a-z-]+):\s*([^;]+);", css.split("}")[0] + "}"))
+def hx(h):
+    h = h.strip().lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+def chan(c):
+    c /= 255
+    return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+def lum(r):
+    return 0.2126 * chan(r[0]) + 0.7152 * chan(r[1]) + 0.0722 * chan(r[2])
+pct = float(re.search(r"var\(--primary\)\s+([0-9.]+)%", tok["--card-selected"]).group(1)) / 100
+p, c = hx(tok["--primary"]), hx(tok["--card"])
+fill = tuple(pct * p[i] + (1 - pct) * c[i] for i in range(3))
+mf = hx(tok["--muted-foreground"])
+l1, l2 = sorted([lum(fill), lum(mf)], reverse=True)
+print(f"{(l1 + 0.05) / (l2 + 0.05):.2f}")
+PY
+)
+if [ -n "$desc_cr" ] && awk "BEGIN{exit !($desc_cr >= 4.5)}"; then
+  ok "option descriptions clear AA on the selected fill ($desc_cr:1, needs 4.5)"
+else
+  bad "option descriptions clear AA on the selected fill" \
+      "got '${desc_cr:-unknown}:1' — a stronger tint than this is what breaks the description text"
+fi
+
+# The selected border must be a real step up from the resting border, since it
+# is carrying the selection signal that the fill cannot.
+brd_cr=$(python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+tok = dict(re.findall(r"(--[a-z-]+):\s*([^;]+);", css.split("}")[0] + "}"))
+def hx(h):
+    h = h.strip().lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+def chan(c):
+    c /= 255
+    return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+def lum(r):
+    return 0.2126 * chan(r[0]) + 0.7152 * chan(r[1]) + 0.0722 * chan(r[2])
+a, b = hx(tok["--border"]), hx(tok["--primary"])
+l1, l2 = sorted([lum(a), lum(b)], reverse=True)
+print(f"{(l1 + 0.05) / (l2 + 0.05):.2f}")
+PY
+)
+if [ -n "$brd_cr" ] && awk "BEGIN{exit !($brd_cr >= 2.0)}"; then
+  ok "the selected border is a clear step from the resting border ($brd_cr:1, needs 2.0)"
+else
+  bad "the selected border is a clear step from the resting border" \
+      "got '${brd_cr:-unknown}:1' — selection would be carried by the fill alone"
+fi
+
+# Deny/Reject must stay destructive, but flat: a token, not a hand-mixed red.
+# Checked with python rather than grep: these rules span several lines and grep
+# is line-oriented, so a line-based pattern silently fails to match them.
+qac_uses() {  # qac_uses <class> <token>
+  python3 - "$CSS" "$1" "$2" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+m = re.search(r"\." + re.escape(sys.argv[2]) + r"\s*\{([^}]*)\}", css)
+print("yes" if m and re.search(r"var\(--" + re.escape(sys.argv[3]) + r"\)", m.group(1)) else "no")
+PY
+}
+if [ "$(qac_uses qac-btn-destructive destructive)" = "yes" ]; then
+  ok "the destructive option is styled from --destructive"
+else
+  bad "the destructive option is styled from --destructive" ".qac-btn-destructive is missing or does not use the token"
+fi
+# The primary action must NOT be the inverted near-white of the reference: on
+# Perla that would be a second light-on-dark language and would collide with the
+# sender bubble, which is the only such element.
+if [ "$(qac_uses qac-btn-primary primary-solid)" = "yes" ]; then
+  ok "the card's primary action uses --primary-solid, not an inverted white"
+else
+  bad "the card's primary action uses --primary-solid, not an inverted white" ".qac-btn-primary is missing or has the wrong fill"
+fi
+# And nothing on the card may reintroduce a hand-mixed near-white.
+if python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+CARD = re.compile(r"entry-question|entry-permission|qac-")
+bad = [s for s in re.findall(r"([^{}]+)\{([^}]*)\}", css)
+       if CARD.search(" ".join(s[0].split())) and re.search(r"#e5e5e5|#fafafa|#fff\b", s[1])]
+sys.exit(1 if bad else 0)
+PY
+then
+  ok "no inverted near-white crept onto the card surface"
+else
+  bad "no inverted near-white crept onto the card surface" "a literal #e5e5e5/#fafafa/#fff appeared in a card rule"
+fi
 
 echo
 echo "=================================="
