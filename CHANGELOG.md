@@ -1,4 +1,3 @@
 # Version 26.10.2.2
 
 - Changed Perla UI for questionare and permission asking.
-- **Fixed: moving an option selection left the previous option looking selected.** The card highlighted the option you clicked but never un-highlighted the one before it, so several rows could show the selected border while only one radio was filled. The cause is a DOM subtlety: in a radio group the browser unchecks the previous input itself, but `change` only fires on the newly-checked input, so a handler that re-styles just its own row never clears the old one. The handler now re-derives the highlight from every input's `checked` state, which cannot drift from the inputs.
