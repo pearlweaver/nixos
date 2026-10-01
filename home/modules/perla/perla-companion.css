@@ -27,7 +27,29 @@
          states; --ring is its brighter sibling, reserved for focus so a focus
          ring is always visible against whatever it sits on. */
       --primary: #c97b8d;
-      --primary-foreground: #17131a;
+      --primary-foreground: #ffffff;
+      /* The filled sender bubble. NOT --primary: that pink is a light colour
+         (3.13:1 against white), so white text on it fails AA outright. This is
+         --primary mixed 32% toward --background — the same hue, darkened enough
+         for white to clear AA at 5.46:1. Kept as its own token because
+         --primary is also the send button, focus rings and dashed outlines, and
+         darkening it there would change surfaces nobody asked about. */
+      --primary-solid: color-mix(in srgb, var(--primary) 68%, var(--background));
+      --primary-solid-hover: color-mix(in srgb, var(--primary) 58%, var(--background));
+      /* Tinted steps of --primary, expressed as alpha over whatever sits
+         behind them rather than as new opaque colours. --primary-subtle is a
+         quiet fill (the user's own message bubbles, hover states);
+         --primary-hover is one step stronger, for the pressed/hover edge. Both
+         derive from --primary so re-theming the accent moves them too. */
+      --primary-subtle: color-mix(in srgb, var(--primary) 11%, transparent);
+      --primary-hover: color-mix(in srgb, var(--primary) 22%, transparent);
+      /* Code inside a SOLID sender bubble. The text there is white, so the
+         plate has to be DARKER than the bubble, not lighter — mixing toward
+         --foreground would drop it to 1.1:1 against the fill and stop reading
+         as a chip at all. 26% toward --background gives white code text 7.62:1
+         while staying 1.40:1 distinct from the bubble behind it. */
+      --primary-code-bg: color-mix(in srgb, var(--background) 26%, transparent);
+      --primary-code-border: color-mix(in srgb, var(--background) 40%, transparent);
       --secondary: #29212c;
       --secondary-foreground: #e9dfc7;
       --muted: #201a23;
@@ -56,7 +78,16 @@
       --radius-lg: var(--radius);
       --radius-xl: calc(var(--radius) * 1.4);
       --radius-2xl: calc(var(--radius) * 1.8);
-      --radius-3xl: calc(var(--radius) * 2.2);
+        --radius-3xl: calc(var(--radius) * 2.2);
+        /* Chat bubbles. NOT 9999px: a pill is the right shape only for a
+           single-line bubble. The browser clamps an oversized radius to
+           height/2, so on a tall bubble the left/right edges bow inward far
+           enough that the first and last lines of text fall OUTSIDE the fill
+           and land on the page background. Verified against real wrapped
+           messages: at h=176 the clamp is 88px, and the arc at x=15px from the
+           edge does not begin until 39px down.
+           A large fixed radius rounds hard without that failure, at any height. */
+        --radius-bubble: 20px;
 
       /* Motion. Two durations cover 65 of the 78 transition timings in this
          file, so naming them buys most of the coherence for zero visual
@@ -424,22 +455,57 @@
 
     .entry-user .entry-bubble {
       text-align: left;
-      background: linear-gradient(180deg, rgba(201, 123, 141, 0.16), rgba(201, 123, 141, 0.07));
-      border: 1px solid rgba(201, 123, 141, 0.28);
-      border-radius: var(--radius-2xl) var(--radius-2xl) 4px var(--radius-2xl);
+      background: var(--primary-solid);
+      border: none;
+      border-radius: var(--radius-bubble);
     }
 
     .entry-perla .entry-bubble {
-      background: linear-gradient(180deg, var(--popover), var(--card));
-      border: 1px solid var(--input);
-      border-radius: var(--radius-2xl) var(--radius-2xl) var(--radius-2xl) 4px;
+      background: var(--card);
+      border: none;
+      border-radius: var(--radius-bubble);
+    }
+
+    /* The sender bubble is a solid fill, so it cannot use --foreground: the
+       cream body text is 4.12:1 on --primary-solid, under AA's 4.5 for body
+       copy. --primary-foreground is white, at 5.46:1. */
+    .entry-user p {
+      color: var(--primary-foreground);
+    }
+
+    .entry-user .entry-bubble .md,
+    .entry-user .entry-bubble .md p,
+    .entry-user .entry-bubble .md li,
+    .entry-user .entry-bubble .md h1,
+    .entry-user .entry-bubble .md h2,
+    .entry-user .entry-bubble .md h3,
+    .entry-user .entry-bubble .md h4,
+    .entry-user .entry-bubble .md blockquote,
+    .entry-user .entry-bubble .md td,
+    .entry-user .entry-bubble .md th {
+      color: var(--primary-foreground);
+    }
+
+    .entry-user .entry-bubble .md a {
+      color: var(--primary-foreground);
+      text-decoration: underline;
+    }
+
+    .entry-user .entry-bubble code,
+    .entry-user .entry-bubble pre {
+      background: var(--primary-code-bg);
+      border-color: var(--primary-code-border);
+    }
+
+    .entry-user .entry-time {
+      color: var(--muted-foreground);
     }
 
     .entry-system .entry-bubble {
       text-align: center;
-      background: rgba(0, 0, 0, 0.22);
-      border: 1px solid var(--input);
-      border-radius: var(--radius-3xl);
+      background: var(--muted);
+      border: none;
+      border-radius: var(--radius-bubble);
       padding: 6px 14px;
     }
 
@@ -464,13 +530,9 @@
       line-height: 1.55;
     }
 
-    .entry-user p {
-      color: var(--foreground);
-    }
-
-    .entry-perla p {
-      color: var(--foreground);
-    }
+        .entry-perla p {
+          color: var(--foreground);
+        }
 
     .entry-system p {
       color: var(--accent-foreground);
@@ -538,7 +600,7 @@
       font-size: 0.9em;
       background: rgba(0, 0, 0, 0.3);
       border: 1px solid var(--input);
-      border-radius: 4px;
+      border-radius: var(--radius-sm);
       padding: 1px 5px;
     }
 
@@ -606,7 +668,7 @@
     }
 
     .md-table tbody tr:nth-child(even) td {
-      background: rgba(0, 0, 0, 0.22);
+      background: var(--muted);
     }
 
     .md-align-center {
@@ -943,7 +1005,7 @@
       border: 1px solid var(--primary-dim);
       border-radius: var(--radius-lg);
       overflow: hidden;
-      background: rgba(201, 123, 141, 0.06);
+      background: var(--muted);
     }
 
     .attach-thumb img {
@@ -994,7 +1056,7 @@
       padding: 6px 4px;
       border-radius: var(--radius-xl);
       border: 1px solid var(--border);
-      background: rgba(201, 123, 141, 0.06);
+      background: var(--muted);
       cursor: pointer;
     }
 
@@ -1129,7 +1191,7 @@
       flex-shrink: 0;
       border-radius: 50%;
       border: 1px solid var(--primary-dim);
-      background: linear-gradient(180deg, rgba(201, 123, 141, 0.16), rgba(201, 123, 141, 0.05));
+      background: var(--primary-subtle);
       color: var(--ring);
       cursor: pointer;
       display: flex;
@@ -1146,7 +1208,7 @@
     }
 
     .send-btn:hover {
-      background: rgba(201, 123, 141, 0.22);
+      background: var(--primary-hover);
     }
 
     .send-btn:active {
@@ -1157,7 +1219,7 @@
       opacity: 0.32;
       cursor: default;
       transform: none;
-      background: linear-gradient(180deg, rgba(201, 123, 141, 0.08), rgba(201, 123, 141, 0.02));
+      background: var(--muted);
     }
 
     .mic-btn {
@@ -1178,7 +1240,7 @@
 
     .mic-btn:hover {
       color: var(--ring);
-      background: rgba(201, 123, 141, 0.08);
+      background: var(--primary-subtle);
     }
 
     .mic-btn.typing-hidden {
@@ -1430,9 +1492,9 @@
       align-items: center;
       gap: 5px;
       padding: 12px 16px;
-      background: linear-gradient(180deg, var(--popover), var(--card));
-      border: 1px solid var(--input);
-      border-radius: var(--radius-2xl) var(--radius-2xl) var(--radius-2xl) 4px;
+      background: var(--card);
+      border: none;
+      border-radius: var(--radius-bubble);
     }
 
     .think-dot {
@@ -2343,7 +2405,7 @@
     }
     .history-daypicker-btn:hover {
       border-color: var(--primary-dim);
-      background: rgba(201, 123, 141, 0.06);
+      background: var(--muted);
     }
     .history-daypicker-btn.open {
       border-color: var(--primary);
@@ -2950,11 +3012,11 @@
       color: var(--foreground);
       font-weight: 600;
       cursor: default;
-      background: rgba(201, 123, 141, 0.06);
+      background: var(--muted);
     }
 
     .drive-crumb.current:hover {
-      background: rgba(201, 123, 141, 0.06);
+      background: var(--muted);
     }
 
     .drive-crumb-sep {
@@ -2975,7 +3037,7 @@
       height: 32px;
       border-radius: var(--radius-lg);
       border: 1px solid var(--input);
-      background: rgba(201, 123, 141, 0.06);
+      background: var(--muted);
       color: var(--muted-foreground);
       display: flex;
       align-items: center;
@@ -3043,7 +3105,7 @@
     }
     .drive-toolbar-actions .icon-btn:disabled:hover {
       color: var(--muted-foreground);
-      background: rgba(201, 123, 141, 0.06);
+      background: var(--muted);
       border-color: var(--input);
     }
 
@@ -3054,7 +3116,7 @@
       gap: 8px;
       margin-bottom: 12px;
       padding: 9px 12px;
-      background: rgba(201, 123, 141, 0.06);
+      background: var(--muted);
       border: 1px dashed var(--primary-dim);
       border-radius: var(--radius-xl);
       font-size: 13px;
