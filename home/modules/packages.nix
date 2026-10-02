@@ -27,6 +27,7 @@
     proton-vpn
     protontricks
     nautilus
+    lunar-client
     # KDE apps take their QPalette from KColorScheme via the KDE platform theme
     # (plasma-integration); without it they fall back to BreezeLight and ignore
     # both qt6ct and kdeglobals. Route the KDE apps to that platform theme so

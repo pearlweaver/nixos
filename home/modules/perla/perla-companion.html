@@ -36,7 +36,7 @@
     <header class="app-header">
       <div class="app-header-inner">
         <div class="header-left">
-          <button id="menuBtn" class="icon-btn menu-btn" aria-label="Menu" aria-expanded="false" title="Menu">
+          <button id="menuBtn" class="btn-icon btn-icon-30 menu-btn" aria-label="Menu" aria-expanded="false" title="Menu">
             <span class="hamburger-lines"><span></span><span></span><span></span></span>
           </button>
           <div class="brand">
@@ -44,7 +44,7 @@
             <span class="brand-name">Perla</span>
           </div>
         </div>
-        <div class="status">
+        <div class="status-indicator">
           <span id="tierBadge" class="tier-badge">T1</span>
           <span id="tierTimer" class="tier-timer" hidden></span>
           <span class="status-dot" id="statusDot"></span>
@@ -53,7 +53,7 @@
     </header>
 
     <nav id="appMenu" class="floating-menu app-menu" aria-hidden="true">
-      <button id="tier1Btn" class="menu-item tier-item">
+      <button id="tier1Btn" class="menu-item">
         <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6"
             stroke-linecap="round" stroke-linejoin="round" width="19" height="19">
             <path
@@ -62,7 +62,7 @@
         <span class="menu-item-label">Tier 1 chat</span>
         <span class="menu-item-badge" id="tier1Badge"></span>
       </button>
-      <button id="tier2Btn" class="menu-item tier-item">
+      <button id="tier2Btn" class="menu-item">
         <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6"
             stroke-linecap="round" stroke-linejoin="round" width="19" height="19">
             <polyline points="4 17 10 11 4 5" />
@@ -75,7 +75,7 @@
             <path d="M8 11V7a4 4 0 0 1 8 0v4" />
           </svg></span>
       </button>
-      <div class="menu-divider"></div>
+      <div class="divider"></div>
       <button id="quickActionsBtn" class="menu-item">
         <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6"
             stroke-linecap="round" stroke-linejoin="round" width="19" height="19">
@@ -119,7 +119,7 @@
           </svg></span>
         <span class="menu-item-label">Clear chat</span>
       </button>
-      <div class="menu-divider"></div>
+      <div class="divider"></div>
       <button id="checkSessionBtn" class="menu-item">
         <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6"
             stroke-linecap="round" stroke-linejoin="round" width="19" height="19">
@@ -150,7 +150,7 @@
               <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><polyline points="5 8 11 14 17 8"/></svg>
             </span>
           </button>
-          <div id="historyDayMenu" class="floating-menu history-day-menu" aria-hidden="true" role="listbox"></div>
+          <div id="historyDayMenu" class="floating-menu history-day-menu scroll-area" aria-hidden="true" role="listbox"></div>
         </div>
         <div id="historyTierFilter" class="history-tier-filter" role="group" aria-label="Filter by tier">
           <button class="history-tier-btn active" data-tier="all">All</button>
@@ -158,13 +158,13 @@
           <button class="history-tier-btn" data-tier="2">Tier 2</button>
         </div>
       </div>
-      <span id="historyStatus" class="panel-status"></span>
+      <span id="historyStatus" class="status"></span>
     </div>
 
     <div id="remindersBar" class="dropdown-panel" hidden>
       <div class="reminder-composer">
         <div class="reminder-composer-top">
-          <button id="reminderAddToggle" class="reminder-add-toggle" aria-label="New reminder"
+          <button id="reminderAddToggle" class="btn-icon btn-icon-30 reminder-add-toggle" aria-label="New reminder"
             aria-expanded="false" aria-controls="reminderComposerMenu" title="New reminder">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
               stroke-linejoin="round" width="16" height="16">
@@ -174,9 +174,9 @@
           </button>
         </div>
         <div id="reminderComposerMenu" class="reminder-composer-menu" hidden>
-          <input id="reminderTextInput" type="text" placeholder="Remind me to…" autocomplete="off" />
-          <input id="reminderDueInput" type="datetime-local" aria-label="When" />
-          <select id="reminderRepeatInput" aria-label="Repeat">
+          <input id="reminderTextInput" class="input" type="text" placeholder="Remind me to…" autocomplete="off" />
+          <input id="reminderDueInput" class="input" type="datetime-local" aria-label="When" />
+          <select id="reminderRepeatInput" class="input" aria-label="Repeat">
             <option value="">Once</option>
             <option value="hourly">Hourly</option>
             <option value="daily">Daily</option>
@@ -187,10 +187,10 @@
           <button id="reminderAddBtn">Add</button>
         </div>
       </div>
-      <span id="remindersStatus" class="panel-status"></span>
+      <span id="remindersStatus" class="status"></span>
     </div>
 
-    <div id="drivePanel" class="drive-panel" hidden>
+    <div id="drivePanel" class="drive-panel scroll-area" hidden>
       <div class="drive-toolbar">
         <div id="driveBreadcrumbWrap" class="drive-breadcrumb-wrap">
           <div id="driveBreadcrumbs" class="drive-breadcrumbs"></div>
@@ -200,19 +200,19 @@
             </span>
             <input id="drivePathEditInput" type="text" autocomplete="off" spellcheck="false" placeholder="Path from home, e.g. Documents/Reports" />
           </div>
-          <button id="driveBreadcrumbEditBtn" class="icon-btn drive-breadcrumb-edit-btn" aria-label="Edit path" title="Type a path">
+          <button id="driveBreadcrumbEditBtn" class="btn-icon btn-icon-28" aria-label="Edit path" title="Type a path">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M13.5 3.5l5 5L7 20l-5.5 1.5L3 16z"/></svg>
           </button>
         </div>
         <div class="drive-toolbar-actions">
-          <button id="driveHiddenToggleBtn" class="icon-btn" aria-label="Show hidden files" title="Show hidden files" aria-pressed="false">
+          <button id="driveHiddenToggleBtn" class="btn-icon btn-icon-outline btn-icon-32" aria-label="Show hidden files" title="Show hidden files" aria-pressed="false">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
               stroke-linejoin="round" width="18" height="18">
               <path d="M2 11s3.5-6.5 9-6.5S20 11 20 11s-3.5 6.5-9 6.5S2 11 2 11z" />
               <circle cx="11" cy="11" r="2.5" />
             </svg>
           </button>
-          <button id="driveViewToggleBtn" class="icon-btn" aria-label="Toggle grid view" title="Grid view" aria-pressed="false">
+          <button id="driveViewToggleBtn" class="btn-icon btn-icon-outline btn-icon-32" aria-label="Toggle grid view" title="Grid view" aria-pressed="false">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
               stroke-linejoin="round" width="18" height="18">
               <rect x="3" y="3" width="6.5" height="6.5" rx="1" />
@@ -221,8 +221,8 @@
               <rect x="12.5" y="12.5" width="6.5" height="6.5" rx="1" />
             </svg>
           </button>
-          <div class="drive-toolbar-divider"></div>
-          <button id="driveNewFolderBtn" class="icon-btn" aria-label="New folder" title="New folder">
+          <div class="divider-vertical"></div>
+          <button id="driveNewFolderBtn" class="btn-icon btn-icon-outline btn-icon-32" aria-label="New folder" title="New folder">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
               stroke-linejoin="round" width="18" height="18">
               <path d="M2.5 6a2 2 0 0 1 2-2h4.5l1.6 2H17.5a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />
@@ -230,7 +230,7 @@
               <line x1="9" y1="12.5" x2="13" y2="12.5" />
             </svg>
           </button>
-          <button id="driveUploadBtn" class="icon-btn" aria-label="Upload files" title="Upload">
+          <button id="driveUploadBtn" class="btn-icon btn-icon-outline btn-icon-32" aria-label="Upload files" title="Upload">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
               stroke-linejoin="round" width="18" height="18">
               <path d="M11 14V4" />
@@ -238,7 +238,7 @@
               <path d="M4 14v3a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 18 17v-3" />
             </svg>
           </button>
-          <button id="drivePasteBtn" class="icon-btn" aria-label="Paste" title="Paste" disabled>
+          <button id="drivePasteBtn" class="btn-icon btn-icon-outline btn-icon-32" aria-label="Paste" title="Paste" disabled>
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
               stroke-linejoin="round" width="18" height="18">
               <path d="M8 3.5h6a1 1 0 0 1 1 1V6H7V4.5a1 1 0 0 1 1-1z" />
@@ -253,11 +253,11 @@
       </div>
       <input id="driveUploadInput" type="file" multiple hidden>
       <div id="driveNewFolderRow" class="drive-new-folder-row" hidden>
-        <input id="driveNewFolderInput" type="text" placeholder="Folder name" autocomplete="off" />
+        <input id="driveNewFolderInput" class="input" type="text" placeholder="Folder name" autocomplete="off" />
         <button id="driveNewFolderGo" class="qa-input-go">Create</button>
         <button id="driveNewFolderCancel" class="qa-input-cancel" aria-label="Cancel">✕</button>
       </div>
-      <div id="driveStatus" class="panel-status"></div>
+      <div id="driveStatus" class="status"></div>
       <div id="driveGrid" class="drive-list"></div>
     </div>
 
@@ -266,22 +266,22 @@
         <div class="file-viewer-modal-header">
           <span id="fileViewerModalIcon" class="file-viewer-modal-icon"></span>
           <span id="fileViewerModalName" class="file-viewer-modal-name"></span>
-          <button id="fileViewerModalDownload" class="icon-btn" aria-label="Download" title="Download">
+          <button id="fileViewerModalDownload" class="btn-icon btn-icon-30" aria-label="Download" title="Download">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M11 3v12"/><polyline points="6 10 11 15 16 10"/><path d="M4 18h14"/></svg>
           </button>
-          <button id="fileViewerModalClose" class="icon-btn" aria-label="Close" title="Close">
+          <button id="fileViewerModalClose" class="btn-icon btn-icon-30" aria-label="Close" title="Close">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><line x1="4" y1="4" x2="18" y2="18"/><line x1="18" y1="4" x2="4" y2="18"/></svg>
           </button>
         </div>
-        <div id="fileViewerModalBody" class="file-viewer-modal-body"></div>
+        <div id="fileViewerModalBody" class="file-viewer-modal-body scroll-area"></div>
       </div>
     </div>
 
-    <div id="quickActionsPanel" class="dropdown-panel" hidden>
+    <div id="quickActionsPanel" class="dropdown-panel scroll-area" hidden>
       <!-- Sticky Feedback & Result container at top -->
       <div id="qaResult" class="qa-result"></div>
 
-      <div id="qaDrawer" class="qa-drawer" hidden>
+      <div id="qaDrawer" hidden>
         <div class="qa-drawer-header" id="qaDrawerHeader">
           <span class="qa-drawer-title">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
@@ -318,7 +318,7 @@
       </div>
 
       <div id="qaInputRow" class="qa-input-row" hidden>
-        <input id="qaInputField" type="text" placeholder="" autocomplete="off" />
+        <input id="qaInputField" class="input input-sunken" type="text" placeholder="" autocomplete="off" />
         <button id="qaInputGo" class="qa-input-go">Go</button>
         <button id="qaInputCancel" class="qa-input-cancel" aria-label="Cancel">✕</button>
       </div>
@@ -596,17 +596,17 @@
           </div>
         </div>
       </div>
-      <span id="quickActionsStatus" class="panel-status" hidden></span>
+      <span id="quickActionsStatus" class="status" hidden></span>
     </div>
 
     <div class="content-wrap">
-      <main class="page">
+      <main class="page scroll-area">
         <div id="output" class="output" aria-live="polite"></div>
       </main>
 
       <footer class="composer" id="composerFooter">
         <div id="voiceDraft" class="voice-draft" hidden>
-          <button id="voiceDraftDiscard" class="voice-draft-btn voice-draft-discard" aria-label="Discard"
+          <button id="voiceDraftDiscard" class="btn-icon btn-icon-30 voice-draft-discard" aria-label="Discard"
             title="Discard">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
               width="15" height="15">
@@ -616,18 +616,18 @@
           </button>
           <div id="voiceDraftWave" class="voice-wave" role="img" aria-label="Voice message waveform"></div>
           <span id="voiceDraftTime" class="voice-draft-time">0:00</span>
-          <button id="voiceDraftStop" class="voice-draft-btn voice-draft-stop" aria-label="Stop recording"
+          <button id="voiceDraftStop" class="btn-icon btn-icon-30 voice-draft-stop" aria-label="Stop recording"
             title="Stop" hidden>
             <svg viewBox="0 0 22 22" width="13" height="13">
               <rect x="6" y="6" width="10" height="10" rx="2" fill="currentColor" />
             </svg>
           </button>
-          <button id="voiceDraftPlay" class="voice-draft-btn voice-draft-play" aria-label="Play" title="Play" hidden>
+          <button id="voiceDraftPlay" class="btn-icon btn-icon-30 voice-draft-play" aria-label="Play" title="Play" hidden>
             <svg viewBox="0 0 22 22" width="13" height="13">
               <polygon points="6 3 19 11 6 19" fill="currentColor" />
             </svg>
           </button>
-          <button id="voiceDraftSend" class="voice-draft-btn voice-draft-send" aria-label="Send voice message"
+          <button id="voiceDraftSend" class="btn-icon btn-icon-30 voice-draft-send" aria-label="Send voice message"
             title="Send" hidden>
             <svg viewBox="0 0 22 22" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"
               stroke-linecap="round" stroke-linejoin="round">
@@ -638,7 +638,7 @@
           <!-- Shown only while the voice turn is in flight. The voice bubble
                itself only renders once the server's transcript comes back, so
                the draft bar is the one place a stop control can live here. -->
-          <button id="voiceDraftInterrupt" class="voice-draft-btn voice-draft-interrupt"
+          <button id="voiceDraftInterrupt" class="btn-icon btn-icon-30 voice-draft-interrupt"
             aria-label="Stop generating" title="Stop" hidden>
             <svg viewBox="0 0 22 22" width="13" height="13">
               <rect x="5.5" y="5.5" width="11" height="11" rx="2" fill="currentColor" />
@@ -646,7 +646,7 @@
           </button>
         </div>
         <div id="attachPreview" class="attach-preview" hidden></div>
-        <textarea id="textInput" rows="1" placeholder="Write to Perla…"></textarea>
+        <textarea id="textInput" class="textarea" rows="1" placeholder="Write to Perla…"></textarea>
         <div class="composer-row">
           <button id="attachBtn" class="attach-btn" aria-label="Attach" title="Attach an image" aria-expanded="false">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
@@ -695,7 +695,7 @@
             autocomplete="off" />
           <button id="elevateSubmit" class="elevate-submit">Activate</button>
         </div>
-        <span id="elevateStatus" class="panel-status"></span>
+        <span id="elevateStatus" class="status"></span>
       </footer>
       <nav id="attachMenu" class="floating-menu attach-menu" aria-hidden="true">
         <button id="attachCameraBtn" class="menu-item">
@@ -747,14 +747,14 @@
 
       <!-- Top-center: mode switch, the only control always visible -->
       <div class="editor-float editor-mode-switch">
-        <button class="editor-icon-btn" data-tool="crop" id="toolCrop" aria-label="Crop mode" title="Crop">
+        <button class="btn-icon btn-icon-34" data-tool="crop" id="toolCrop" aria-label="Crop mode" title="Crop">
           <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
             stroke-linejoin="round" width="17" height="17">
             <path d="M6 2v14a2 2 0 0 0 2 2h14" />
             <path d="M18 22V8a2 2 0 0 0-2-2H2" />
           </svg>
         </button>
-        <button class="editor-icon-btn active" data-tool="pen" id="toolPen" aria-label="Pen mode" title="Pen">
+        <button class="btn-icon btn-icon-34 active" data-tool="pen" id="toolPen" aria-label="Pen mode" title="Pen">
           <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
             stroke-linejoin="round" width="17" height="17">
             <path d="M13.5 3.5l5 5L7 20l-5.5 1.5L3 16z" />
@@ -764,15 +764,15 @@
 
       <!-- Top-left: undo/reset -->
       <div class="editor-float editor-history-float">
-        <button class="editor-icon-btn" id="toolUndo" aria-label="Undo" title="Undo">
+        <button class="btn-icon btn-icon-34" id="toolUndo" aria-label="Undo" title="Undo">
           <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
             stroke-linejoin="round" width="16" height="16">
             <polyline points="3 8 3 3 8 3" />
             <path d="M3 3l6.5 6.5a7 7 0 1 1-1.5 7.5" />
           </svg>
         </button>
-        <div class="editor-divider"></div>
-        <button class="editor-icon-btn" id="editorReset" aria-label="Reset image" title="Reset">
+        <div class="divider-vertical"></div>
+        <button class="btn-icon btn-icon-34" id="editorReset" aria-label="Reset image" title="Reset">
           <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
             stroke-linejoin="round" width="16" height="16">
             <path d="M3 12a9 9 0 1 0 3-6.7" />
@@ -783,7 +783,7 @@
 
       <!-- Top-right: close -->
       <div class="editor-float editor-close-float">
-        <button class="editor-icon-btn" id="editorClose" aria-label="Close editor" title="Close">
+        <button class="btn-icon btn-icon-34" id="editorClose" aria-label="Close editor" title="Close">
           <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
             stroke-linejoin="round" width="15" height="15">
             <line x1="4" y1="4" x2="18" y2="18" />
@@ -794,7 +794,7 @@
 
       <!-- Bottom-left: zoom -->
       <div class="editor-float editor-zoom-float">
-        <button class="editor-icon-btn" id="zoomOut" aria-label="Zoom out" title="Zoom out">
+        <button class="btn-icon btn-icon-34" id="zoomOut" aria-label="Zoom out" title="Zoom out">
           <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
             stroke-linejoin="round" width="16" height="16">
             <circle cx="10" cy="10" r="7" />
@@ -803,7 +803,7 @@
           </svg>
         </button>
         <span class="editor-zoom-label" id="zoomLabel">100%</span>
-        <button class="editor-icon-btn" id="zoomIn" aria-label="Zoom in" title="Zoom in">
+        <button class="btn-icon btn-icon-34" id="zoomIn" aria-label="Zoom in" title="Zoom in">
           <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
             stroke-linejoin="round" width="16" height="16">
             <circle cx="10" cy="10" r="7" />
@@ -812,8 +812,8 @@
             <line x1="7" y1="10" x2="13" y2="10" />
           </svg>
         </button>
-        <div class="editor-divider"></div>
-        <button class="editor-icon-btn" id="zoomReset" aria-label="Reset zoom" title="Fit to screen">
+        <div class="divider-vertical"></div>
+        <button class="btn-icon btn-icon-34" id="zoomReset" aria-label="Reset zoom" title="Fit to screen">
           <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
             stroke-linejoin="round" width="15" height="15">
             <path d="M3 8V4h4" />
@@ -835,18 +835,18 @@
           <button class="color-swatch" data-color="#f2f2f2" style="background:#f2f2f2"></button>
           <button class="color-swatch" data-color="#17131a" style="background:#17131a"></button>
         </div>
-        <div class="editor-divider"></div>
+        <div class="divider-vertical"></div>
         <div class="img-editor-size">
           <input type="range" id="penWidth" min="2" max="24" value="6">
           <span class="img-editor-size-label" id="penWidthLabel">6px</span>
         </div>
       </div>
-      <div class="editor-float editor-context-float" id="cropOptionsRow" hidden>
+      <div class="editor-float editor-context-float bare" id="cropOptionsRow" hidden>
         <button class="editor-pill-btn primary" id="applyCrop">Apply crop</button>
       </div>
 
       <!-- Bottom-right: save -->
-      <div class="editor-float editor-save-float">
+      <div class="editor-float editor-save-float bare">
         <button class="editor-pill-btn primary" id="editorSave">Save</button>
       </div>
     </div>
@@ -859,7 +859,7 @@
       </div>
 
       <div class="editor-float editor-close-float">
-        <button class="editor-icon-btn" id="lightboxClose" aria-label="Close image" title="Close">
+        <button class="btn-icon btn-icon-34" id="lightboxClose" aria-label="Close image" title="Close">
           <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
             stroke-linejoin="round" width="15" height="15">
             <line x1="4" y1="4" x2="18" y2="18" />
@@ -869,7 +869,7 @@
       </div>
 
       <div class="editor-float editor-zoom-float">
-        <button class="editor-icon-btn" id="lightboxZoomOut" aria-label="Zoom out" title="Zoom out">
+        <button class="btn-icon btn-icon-34" id="lightboxZoomOut" aria-label="Zoom out" title="Zoom out">
           <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
             stroke-linejoin="round" width="16" height="16">
             <circle cx="10" cy="10" r="7" />
@@ -878,7 +878,7 @@
           </svg>
         </button>
         <span class="editor-zoom-label" id="lightboxZoomLabel">100%</span>
-        <button class="editor-icon-btn" id="lightboxZoomIn" aria-label="Zoom in" title="Zoom in">
+        <button class="btn-icon btn-icon-34" id="lightboxZoomIn" aria-label="Zoom in" title="Zoom in">
           <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
             stroke-linejoin="round" width="16" height="16">
             <circle cx="10" cy="10" r="7" />
@@ -887,8 +887,8 @@
             <line x1="7" y1="10" x2="13" y2="10" />
           </svg>
         </button>
-        <div class="editor-divider"></div>
-        <button class="editor-icon-btn" id="lightboxZoomReset" aria-label="Reset zoom" title="Fit to screen">
+        <div class="divider-vertical"></div>
+        <button class="btn-icon btn-icon-34" id="lightboxZoomReset" aria-label="Reset zoom" title="Fit to screen">
           <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
             stroke-linejoin="round" width="15" height="15">
             <path d="M3 8V4h4" />
@@ -899,8 +899,8 @@
         </button>
       </div>
 
-      <div class="editor-float editor-save-float">
-        <button class="editor-icon-btn" id="lightboxDownload" aria-label="Download image" title="Download">
+      <div class="editor-float editor-save-float bare">
+        <button class="btn-icon btn-icon-34" id="lightboxDownload" aria-label="Download image" title="Download">
           <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
             stroke-linejoin="round" width="17" height="17">
             <path d="M11 3v12" />
@@ -918,7 +918,7 @@
         <span class="file-viewer-icon"></span>
         <span class="file-viewer-name" id="fileViewerName"></span>
         <div class="file-viewer-header-actions">
-          <button class="editor-icon-btn" id="fileViewerMdToggle" aria-label="Toggle rendered markdown"
+          <button class="btn-icon btn-icon-34" id="fileViewerMdToggle" aria-label="Toggle rendered markdown"
             title="Toggle rendered markdown" hidden>
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
               stroke-linejoin="round" width="16" height="16">
@@ -927,14 +927,14 @@
               <path d="M11 14h5" />
             </svg>
           </button>
-          <button class="editor-icon-btn" id="fileViewerCopy" aria-label="Copy file contents" title="Copy contents">
+          <button class="btn-icon btn-icon-34" id="fileViewerCopy" aria-label="Copy file contents" title="Copy contents">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
               stroke-linejoin="round" width="16" height="16">
               <rect x="8" y="8" width="11" height="11" rx="2" />
               <path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3" />
             </svg>
           </button>
-          <button class="editor-icon-btn" id="fileViewerDownload" aria-label="Download file" title="Download">
+          <button class="btn-icon btn-icon-34" id="fileViewerDownload" aria-label="Download file" title="Download">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
               stroke-linejoin="round" width="16" height="16">
               <path d="M11 3v12" />
@@ -942,8 +942,8 @@
               <path d="M4 18h14" />
             </svg>
           </button>
-          <div class="editor-divider"></div>
-          <button class="editor-icon-btn" id="fileViewerClose" aria-label="Close file" title="Close">
+          <div class="divider-vertical"></div>
+          <button class="btn-icon btn-icon-34" id="fileViewerClose" aria-label="Close file" title="Close">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
               stroke-linejoin="round" width="15" height="15">
               <line x1="4" y1="4" x2="18" y2="18" />
@@ -952,7 +952,7 @@
           </button>
         </div>
       </div>
-      <div class="file-viewer-body" id="fileViewerBody"></div>
+      <div class="file-viewer-body scroll-area" id="fileViewerBody"></div>
     </div>
   </div>
 

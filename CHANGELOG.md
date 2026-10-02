@@ -1,3 +1,3 @@
-# Version 26.10.2.5
+# Version 26.10.2.6
 
-- Added an AGENTS.md
+- Improving the code for Perla web companion.

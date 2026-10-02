@@ -486,7 +486,7 @@
       // inline() deliberately NOT applied, so nothing inside can become bold,
       // a link, or anything else.
       function codeBlock(body) {
-        return "<pre><code>" + esc(body) + "</code></pre>";
+        return '<pre class="scroll-area"><code>' + esc(body) + "</code></pre>";
       }
 
       while (i < lines.length) {
@@ -943,8 +943,12 @@
       const progress = document.createElement("div");
       progress.className = "qac-progress";
 
+      // No class: this wrapper was created as .qac-stage and never had a rule,
+      // so the class was a hook nothing read. It works as a plain block
+      // container inside the question card. If the card later needs to style
+      // this region, give it a rule then - as part of the .qac-* migration,
+      // where the card's whole class set is decided at once.
       const stage = document.createElement("div");
-      stage.className = "qac-stage";
 
       const actions = document.createElement("div");
       actions.className = "qac-actions";
@@ -1019,7 +1023,7 @@
             const input = document.createElement("input");
             input.type = multiple ? "checkbox" : "radio";
             input.name = name;
-            input.className = "qac-input";
+            input.className = multiple ? "checkbox" : "radio";
             input.checked = answers[currentIndex].indexOf(label) !== -1;
             if (input.checked) row.classList.add("is-selected");
             input.addEventListener("change", () => {
@@ -1037,7 +1041,7 @@
               // wearing the selected border with an empty radio beside it.
               // Deriving the class from `checked` cannot drift from the input.
               wrap.querySelectorAll(".qac-option").forEach((r) => {
-                r.classList.toggle("is-selected", r.querySelector(".qac-input").checked);
+                r.classList.toggle("is-selected", r.querySelector("input").checked);
               });
               statusNote.textContent = "";
               syncNav();
@@ -1500,7 +1504,7 @@
       entry.innerHTML =
         `<div class="entry-bubble">` +
         (captionText ? `<p></p>` : "") +
-        `<div class="entry-image-wrap"><span class="entry-image-loading">Loading screenshot…</span></div>` +
+        `<div class="entry-image-wrap"><span class="empty entry-image-loading">Loading screenshot…</span></div>` +
         `</div>` +
         `<div class="entry-meta"><span class="entry-time">${time}</span></div>`;
       if (captionText) entry.querySelector("p").textContent = captionText;
@@ -1627,8 +1631,11 @@
     // once and hands them to the same viewer the composer uses; the download
     // button reuses that fetch rather than pulling the file a second time.
     function buildDeliveredFileRow(fileInfo) {
+      // No delivered-state class: the delivered row is styled by the plain
+      // .attach-file-chip rules, and .attach-file-chip-queued is what a row
+      // escapes by NOT having. A "delivered" class that no rule ever matched
+      // was a hook nothing read.
       const row = buildFileChip(fileInfo.filename, null, null, null);
-      row.classList.add("attach-file-chip-delivered");
 
       // Download is its own button so the row itself can mean "view".
       const dl = document.createElement("button");
@@ -1897,7 +1904,7 @@
         // old sessionStorage entry saved before content was captured) have
         // no stored text — say so rather than showing a blank panel.
         const empty = document.createElement("div");
-        empty.className = "file-viewer-empty";
+        empty.className = "empty file-viewer-empty";
         empty.textContent = "This file's content wasn't saved with the message, so it can't be reopened.";
         fileViewerBody.appendChild(empty);
         return;
@@ -2915,7 +2922,7 @@
       // is spinning", which is meaningless; a real spinner sits alongside the
       // icon and the icon is hidden while it is showing.
       const spinner = document.createElement("span");
-      spinner.className = "attach-file-spinner";
+      spinner.className = "spinner";
       spinner.setAttribute("aria-hidden", "true");
 
       const text = document.createElement("span");
@@ -4620,7 +4627,7 @@
       historyDayMenu.innerHTML = "";
       if (!days || days.length === 0) {
         const empty = document.createElement("div");
-        empty.className = "history-day-menu-empty";
+        empty.className = "empty history-day-menu-empty";
         empty.textContent = "No past conversations found.";
         historyDayMenu.appendChild(empty);
         return;
@@ -5401,7 +5408,7 @@
       driveGrid.innerHTML = "";
       if (driveEntriesCache.length === 0) {
         const empty = document.createElement("div");
-        empty.className = "drive-empty";
+        empty.className = "empty drive-empty";
         empty.textContent = "This folder is empty.";
         driveGrid.appendChild(empty);
         return;
@@ -5861,7 +5868,7 @@
       fileViewerModalName.textContent = filename;
       fileViewerModalName.title = filename;
       fileViewerModalIcon.innerHTML = GENERIC_FILE_ICON_SVG;
-      fileViewerModalBody.innerHTML = '<div class="file-viewer-modal-loading">Loading…</div>';
+      fileViewerModalBody.innerHTML = '<div class="empty file-viewer-modal-loading">Loading…</div>';
       fileViewerModal.hidden = false;
 
       const ext = textFileExtension(filename);
@@ -5892,7 +5899,7 @@
         pre.textContent = data.content;
         fileViewerModalBody.appendChild(pre);
       } catch (e) {
-        fileViewerModalBody.innerHTML = '<div class="file-viewer-modal-empty"></div>';
+        fileViewerModalBody.innerHTML = '<div class="empty file-viewer-modal-empty"></div>';
         fileViewerModalBody.querySelector(".file-viewer-modal-empty").textContent =
           "Couldn't view this file: " + (e.message || "unknown error");
       }
@@ -6161,7 +6168,7 @@
       qaDrawer.hidden = false; // once opened for the session, stays available (just empty)
 
       if (qaDrawerEntries.length === 0) {
-        qaDrawerBody.innerHTML = '<div class="qa-drawer-empty">No results yet — run a command to see its output here.</div>';
+        qaDrawerBody.innerHTML = '<div class="empty qa-drawer-empty">No results yet — run a command to see its output here.</div>';
         return;
       }
 
@@ -6195,7 +6202,7 @@
             body.appendChild(img);
           } else {
             const p = document.createElement("div");
-            p.className = "qa-drawer-empty";
+            p.className = "empty qa-drawer-empty";
             p.textContent = "Loading preview…";
             body.appendChild(p);
           }
@@ -6452,7 +6459,7 @@
 
       if (pending.length === 0 && missed.length === 0 && delivered.length === 0) {
         const wrap = document.createElement("div");
-        wrap.className = "reminder-empty";
+        wrap.className = "empty reminder-empty";
         wrap.textContent = "No reminders set.";
         output.appendChild(wrap);
         return;
@@ -6498,7 +6505,7 @@
 
       if (items.length === 0 && emptyText) {
         const empty = document.createElement("div");
-        empty.className = "reminder-empty";
+        empty.className = "empty reminder-empty";
         empty.textContent = emptyText;
         section.appendChild(empty);
         return section;

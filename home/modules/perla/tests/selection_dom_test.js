@@ -37,13 +37,26 @@ function makeEl(tag) {
     },
   };
   // Descendant search, so querySelectorAll(".qac-option") and
-  // querySelector(".qac-input") actually resolve.
+  // querySelector("input") actually resolve.
+  //
+  // Supports a single class (.foo) or a bare tag name (input). That is all the
+  // real code uses here: the option re-sync reaches its control by TAG rather
+  // than by the .radio/.checkbox class, so that renaming those classes again
+  // cannot silently break the selected state. A selector this double cannot
+  // parse resolves to nothing, which is how a rename broke this test once -
+  // it reported "0 steps exercised" rather than failing loudly on the lookup.
+  const matches = (node, sel) => {
+    if (sel.startsWith(".")) {
+      const cls = sel.slice(1);
+      return String(node.className || "").split(/\s+/).includes(cls);
+    }
+    return String(node.tagName || "").toLowerCase() === sel.toLowerCase();
+  };
   el.querySelectorAll = (sel) => {
-    const cls = sel.replace(/^\./, "");
     const out = [];
     (function walk(n) {
       for (const c of n.children) {
-        if (String(c.className || "").split(/\s+/).includes(cls)) out.push(c);
+        if (matches(c, sel)) out.push(c);
         walk(c);
       }
     })(el);
@@ -87,7 +100,7 @@ if (rows.length !== 3) {
   process.stdout.write("FAIL\tshould render 3 option rows (got " + rows.length + ")\n");
   process.exit(0);
 }
-const inputs = rows.map((r) => r.querySelector(".qac-input"));
+const inputs = rows.map((r) => r.querySelector("input"));
 const selected = () => rows.filter((r) => r.classList.contains("is-selected")).length;
 const checked = () => inputs.filter((i) => i.checked).length;
 

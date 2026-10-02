@@ -929,10 +929,42 @@ else
 fi
 
 # (9) A real spinner element, not the file icon rotating.
-if grep -q "attach-file-spinner" "$JS" 2>/dev/null; then
+#
+# Re-baselined when the spinner became the shared .spinner primitive: this used
+# to grep for "attach-file-spinner", which was the attachment chip's private
+# name for it. The INTENT is unchanged - a spinner element must exist in the
+# markup, distinct from the icon - so the assertion was re-pointed at the
+# canonical name rather than deleted. Mutation-verified: delete the
+# `spinner.className = "spinner"` line in perla-companion.js and this goes red.
+if grep -q 'className = "spinner"' "$JS" 2>/dev/null; then
   ok "(9) a spinner element exists in the markup"
 else
   bad "(9) a spinner element exists in the markup" "not found in the JS"
+fi
+# ...and it must be the primitive, not a lookalike. Checked STRUCTURALLY: a
+# bare `grep '\.spinner {'` is satisfied by the prefers-reduced-motion block
+# further down the file, which sets one property and no geometry - so renaming
+# the real rule while that block remained would still pass. The ring's two
+# defining declarations have to appear in the SAME rule body.
+if python3 - "$CSS" <<'PY9'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1], encoding="utf-8").read())
+for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
+    sels = [s.strip() for s in m.group(1).split(",")]
+    if ".spinner" not in sels:
+        continue
+    body = m.group(2)
+    if ("border-radius: var(--radius-full)" in body
+            and "border-top-color" in body
+            and "animation: perla-spin" in body):
+        sys.exit(0)
+sys.exit(1)
+PY9
+then
+  ok "(9) the spinner element resolves to the .spinner primitive"
+else
+  bad "(9) the spinner element resolves to the .spinner primitive" \
+      "no single .spinner rule carries the ring's radius, top-border colour and animation"
 fi
 if grep -qE "\.attach-file-icon[^}]*\{" "$CSS" && python3 - "$CSS" <<'PYS9'
 import re, sys
