@@ -1256,17 +1256,41 @@
       padding: 2px 2px 4px;
     }
 
+    /* ---------- Attachments ----------
+       Labelled image cards and full-width file rows. These were 64x64 squares:
+       a bare thumb with no filename, and a chip with a 10px centred name, so
+       an attachment was unidentifiable once it was that small. */
+    /* A queued image is a fixed-size tile: one border around the thumbnail, the
+       name AND the size together, so the card reads as one object. Previously
+       only the thumbnail had a border and the caption floated outside it. */
     .attach-thumb {
       position: relative;
-      width: 64px;
-      height: 64px;
-      flex-shrink: 0;
-      border: 1px solid var(--primary-dim);
+      width: 104px;
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      padding: 4px;
+      border: 1px solid var(--border);
       border-radius: var(--radius-lg);
+      background: var(--card);
+    }
+
+    .attach-thumb:hover {
+      border-color: var(--primary);
+    }
+
+    .attach-thumb-frame {
+      position: relative;
+      width: 100%;
+      /* Fixed height, so a queue of images is a tidy row regardless of aspect
+         ratio. object-fit crops rather than distorts. */
+      height: 64px;
+      border-radius: var(--radius-sm);
       overflow: hidden;
       background: var(--muted);
     }
 
+    .attach-thumb-frame img,
     .attach-thumb img {
       display: block;
       width: 100%;
@@ -1274,18 +1298,181 @@
       object-fit: cover;
     }
 
-    .attach-thumb-remove {
+    .attach-thumb-caption {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      min-width: 0;
+      padding: 4px 2px 1px;
+    }
+
+    .attach-thumb-name {
+      font-size: 0.7rem;
+      color: var(--foreground);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .attach-thumb-meta {
+      font-size: 0.65rem;
+      color: var(--muted-foreground);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .attach-thumb-remove,
+    .attach-thumb-edit {
       position: absolute;
-      top: 2px;
-      right: 2px;
       width: 18px;
       height: 18px;
       line-height: 1;
       border-radius: 50%;
-      border: 1px solid var(--destructive);
-      background: rgba(23, 19, 26, 0.85);
-      color: var(--destructive-bright);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      color: var(--foreground);
+      background: color-mix(in srgb, var(--background) 82%, transparent);
+      border: 1px solid var(--border);
+    }
+
+    .attach-thumb-remove {
+      top: 4px;
+      right: 4px;
       font-size: 11px;
+    }
+
+    .attach-thumb-edit {
+      bottom: 4px;
+      left: 4px;
+    }
+
+    .attach-thumb-remove:hover,
+    .attach-thumb-edit:hover {
+      border-color: var(--primary);
+      color: var(--ring);
+    }
+
+    /* A ROW, not a 64px square: icon tile left, name over a muted type·size
+       line, dismiss right. Clicking still opens the viewer / download. */
+    /* A DELIVERED file: a full-width row. Queued files use the square variant
+       below instead — in the composer everything is a fixed-size tile, and
+       once sent everything is a row. */
+    .attach-file-chip {
+      position: relative;
+      width: 100%;
+      min-height: 56px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 8px 10px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      background: var(--card);
+      cursor: pointer;
+    }
+
+    /* (1) A queued file: the same square it has always been, and the same fixed
+       size as the image tiles beside it, so a mixed queue is one tidy row
+       rather than a row of squares above a column of full-width bars. */
+    .attach-file-chip-queued {
+      width: 104px;
+      height: 104px;
+      min-height: 0;
+      flex: 0 0 auto;
+      flex-direction: column;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 6px;
+      text-align: center;
+    }
+
+    .attach-file-chip-queued .attach-file-icon {
+      width: 38px;
+      height: 38px;
+    }
+
+    .attach-file-chip-queued .attach-file-text {
+      align-items: center;
+      width: 100%;
+    }
+
+    .attach-file-chip-queued .attach-file-name,
+    .attach-file-chip-queued .attach-file-meta {
+      max-width: 100%;
+      text-align: center;
+    }
+
+    .attach-file-chip-queued .attach-file-remove {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+    }
+
+    .attach-file-chip:hover {
+      border-color: var(--primary);
+      background: var(--card-selected);
+    }
+
+    .attach-file-icon {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-lg);
+      background: var(--accent);
+      color: var(--ring);
+    }
+
+    .attach-file-icon svg {
+      display: block;
+      width: 18px;
+      height: 18px;
+    }
+
+    .attach-file-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .attach-file-name {
+      font-size: 0.78rem;
+      color: var(--foreground);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .attach-file-meta {
+      font-size: 0.7rem;
+      color: var(--muted-foreground);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Neutral ghost, not the red badge the thumbnails use: dismissing a queued
+       file is a routine edit, and red here would compete with Reject on a
+       permission card. */
+    .attach-file-remove {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      line-height: 1;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted-foreground);
+      font-size: 12px;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -1293,72 +1480,91 @@
       padding: 0;
     }
 
-    /* Attached-file chip — a rounded-rectangle card with a generic file
-     icon (same icon regardless of file type — no per-extension SVG set)
-     and a filename. Used in BOTH the composer's attach preview (with a
-     remove button) and inside a sent message bubble (without one) — one
-  /* Square attached-file pill — same footprint as an image thumbnail
-     (.attach-thumb, 64x64) so files and images sit at a consistent size
-     whether queued in the composer or shown above a sent message. Full
-     content only opens in the file viewer on click/tap; the pill itself
-     just needs to be recognizable at a glance (icon + truncated name). */
-    .attach-file-chip {
-      position: relative;
-      width: 64px;
-      height: 64px;
+    .attach-file-remove:hover {
+      color: var(--foreground);
+      border-color: var(--border);
+    }
+
+    /* (7) Download is its own control so the row itself can mean "view". */
+    .attach-file-download {
       flex-shrink: 0;
+      width: 26px;
+      height: 26px;
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      padding: 6px 4px;
-      border-radius: var(--radius-xl);
-      border: 1px solid var(--border);
-      background: var(--muted);
+      padding: 0;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted-foreground);
       cursor: pointer;
     }
 
-    .attach-file-chip:hover {
-      border-color: var(--primary-dim);
+    .attach-file-download:hover {
+      color: var(--foreground);
+      border-color: var(--border);
     }
 
-    .attach-file-icon {
+    .attach-file-download:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    /* (9) A real spinner, not the file icon spinning. Spinning the icon read as
+       "this file is rotating", which says nothing; a spinner sits in the icon's
+       place and the icon comes back the moment the state clears. */
+    .attach-file-spinner {
+      display: none;
       flex-shrink: 0;
-      width: 20px;
-      height: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--ring);
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid color-mix(in srgb, var(--primary) 30%, transparent);
+      border-top-color: var(--primary);
+      animation: attach-spin 0.7s linear infinite;
     }
 
-    .attach-file-icon svg {
+    .attach-file-chip.is-uploading .attach-file-spinner,
+    .attach-file-chip.is-loading .attach-file-spinner {
       display: block;
-      width: 100%;
-      height: 100%;
     }
 
-    .attach-file-name {
-      width: 100%;
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 10px;
-      line-height: 1.2;
-      color: var(--muted-foreground);
-      text-align: center;
+    .attach-file-chip.is-uploading .attach-file-icon,
+    .attach-file-chip.is-loading .attach-file-icon {
+      display: none;
     }
 
-    /* Row of file chips AND image thumbnails together — used both in the
-     composer's attach preview and standalone above a sent message (see
-     .entry-attachments below). Both kinds are the same 64x64 footprint
-     so they line up in one flowing row regardless of mix. */
+    /* A delivered file row is a row; the icon slot is shared with the spinner. */
+    .attach-file-chip .attach-file-icon,
+    .attach-file-chip .attach-file-spinner {
+      /* both occupy the same 40px slot in the row */
+      flex-shrink: 0;
+    }
+
+    .attach-thumb.is-uploading .attach-thumb-frame {
+      opacity: 0.55;
+    }
+
+    @keyframes attach-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .attach-file-spinner {
+        animation-duration: 2s;
+      }
+    }
+
     .attach-file-row {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
+      width: 100%;
+    }
+
+    .attach-image-row {
+      align-items: flex-start;
     }
 
     /* Attachments block for a SENT message — file chips and/or images,
@@ -1373,7 +1579,10 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
-      margin-bottom: 6px;
+      /* (5) A real gap. The bubble and the attachment rows are both bordered,
+         and with no margin between them the two borders touched and read as one
+         box. */
+      margin: 8px 0;
     }
 
     .entry-attachments:empty {
@@ -1396,7 +1605,24 @@
       align-items: flex-start;
     }
 
+    /* (6) A delivered attachment is a FIXED width, not the width of the message
+       it belongs to. Before, the row was width:100% of the bubble, so a short
+       message produced a very wide file card and a long one overflowed the
+       rhythm. */
     .entry-attachments .attach-file-row {
+      width: 320px;
+      max-width: 100%;
+    }
+
+    /* Images you sent keep their thumbnails, so that row sizes to its tiles
+       rather than the fixed 320px a delivered file row uses. */
+    .entry-attachments .attach-image-row {
+      width: auto;
+      max-width: 100%;
+    }
+
+    /* (4) Yours sit to the right of the message, Perla's to the left. */
+    .entry-user .entry-attachments .attach-file-row {
       justify-content: flex-end;
     }
 
@@ -1404,17 +1630,7 @@
       justify-content: flex-start;
     }
 
-    /* Sent-message image pills: same 64x64 square as a file chip, cropped
-     to fill (object-fit: cover) rather than the old up-to-360px full
-     preview. Grid is no longer needed for sizing since every pill is a
-     fixed size — .attach-file-row's flex-wrap handles layout instead. */
-    .entry-attachments .entry-image {
-      width: 64px;
-      height: 64px;
-      flex-shrink: 0;
-      border-radius: var(--radius-xl);
-      object-fit: cover;
-    }
+
 
     .composer-row {
       display: flex;
@@ -2277,27 +2493,6 @@
       width: 26px;
       flex-shrink: 0;
       text-align: right;
-    }
-
-    .attach-thumb-edit {
-      position: absolute;
-      bottom: 2px;
-      left: 2px;
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      border: 1px solid var(--primary-dim);
-      background: rgba(23, 19, 26, 0.85);
-      color: var(--ring);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0;
-    }
-
-    .attach-thumb-edit:hover {
-      background: rgba(201, 123, 141, 0.2);
     }
 
     @media (prefers-reduced-motion: reduce) {

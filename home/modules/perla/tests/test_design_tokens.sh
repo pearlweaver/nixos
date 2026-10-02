@@ -20,6 +20,7 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+JS="$HERE/../perla-companion.js"
 CSS="$HERE/../perla-companion.css"
 JS="$HERE/../perla-companion.js"
 
@@ -729,6 +730,301 @@ if grep -q "ffd6e0" "$CSS"; then
   bad "the icon hover colour is a token" "#ffd6e0 is still hardcoded"
 else
   ok "the icon hover colour is a token"
+fi
+
+echo
+echo "=== 13. the attachment surface is flat and tokenised ==="
+# Attachments were 64x64 squares: a bordered thumb with no filename, and a chip
+# with a 20px icon over a 10px centred truncated name. No type, no size. They are
+# now labelled image cards and full-width file rows.
+att_scope() {
+  python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+# The attachment parts only. .attach-btn is the composer's paperclip trigger and
+# .attach-menu is the popover around it — separate surfaces.
+KEEP = re.compile(r"\.attach-(thumb|file|preview|meta|row|size|uploading)|\.entry-attachments")
+OUT = re.compile(r"\.attach-btn|\.attach-menu")
+for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
+    sel = " ".join(m.group(1).split())
+    if KEEP.search(sel) and not OUT.search(sel):
+        print(sel + "\t" + " ".join(m.group(2).split()))
+PY
+}
+mapfile -t att_rules < <(att_scope)
+if [ "${#att_rules[@]}" -gt 0 ]; then
+  ok "the attachment surface has real CSS rules (${#att_rules[@]} found)"
+else
+  bad "the attachment surface has real CSS rules" "no .attach-* rules found"
+fi
+ascan() {  # ascan <pattern> <name>
+  local pat="$1" name="$2" hits=0
+  if [ "${#att_rules[@]}" -eq 0 ]; then
+    bad "no $name on the attachment surface" "no rules to scan — vacuous pass"
+    return
+  fi
+  for r in "${att_rules[@]}"; do
+    grep -qE "$pat" <<<"$r" && hits=$((hits + 1))
+  done
+  [ "$hits" = 0 ] && ok "no $name on the attachment surface (scanned ${#att_rules[@]} rules)" \
+    || bad "no $name on the attachment surface" "$hits rule(s) still have it"
+}
+ascan '(linear|radial)-gradient' "gradient"
+ascan 'rgba?\(|hsla?\(' "raw colour literal"
+ascan 'box-shadow' "box-shadow"
+
+# A file row is a ROW now, not a 64px square: it must be full width.
+if python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+m = re.search(r"\.attach-file-row\s*\{([^}]*)\}", css)
+b = m.group(1) if m else ""
+ok = bool(m) and "width" in b and "100%" in b
+sys.exit(0 if ok else 1)
+PY
+then
+  ok "the file row is full width, not a 64px square"
+else
+  bad "the file row is full width, not a 64px square" ".attach-file-row has no width: 100%"
+fi
+# The row must not be a fixed square any more.
+if python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+m = re.search(r"\.attach-file-chip\s*\{([^}]*)\}", css)
+b = m.group(1) if m else ""
+sys.exit(1 if re.search(r"(width|height)\s*:\s*64px", b) else 0)
+PY
+then
+  ok "the file chip is no longer a fixed 64px square"
+else
+  bad "the file chip is no longer a fixed 64px square" "a 64px width/height is still on .attach-file-chip"
+fi
+# The dismiss control is a flat ghost on the right of the row, not a red badge.
+if python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+# Neutral, not destructive: the base is muted and it brightens on hover, which
+# is the reference's behaviour. The invariant that matters is that red never
+# appears here - it would compete with Reject on a permission card.
+base = re.search(r"\.attach-file-remove\s*\{([^}]*)\}", css)
+hov = re.search(r"\.attach-file-remove:hover\s*\{([^}]*)\}", css)
+b = base.group(1) if base else ""
+h = hov.group(1) if hov else ""
+okrow = bool(base) and "destructive" not in b and "destructive" not in h and "--foreground" in h
+sys.exit(0 if okrow else 1)
+PY
+then
+  ok "the file row's dismiss is a neutral ghost, not a red badge"
+else
+  bad "the file row's dismiss is a neutral ghost, not a red badge" ".attach-file-remove missing, still destructive, or its hover does not brighten"
+fi
+# The metadata line must exist and be muted, so type·size is legible as secondary.
+if python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+# The BASE rule only. `re.search` returns the first hit, and
+# `.attach-file-chip-queued .attach-file-meta` now comes first and carries
+# layout, not colour. Requiring an exact single-compound selector is what
+# distinguishes them — "endswith" is not enough, it matches both.
+base = None
+for sel, body in re.findall(r"([^{}]+)\{([^}]*)\}", css):
+    if " ".join(sel.split()) == ".attach-file-meta":
+        base = body
+        break
+sys.exit(0 if base and "var(--muted-foreground)" in base else 1)
+PY
+then
+  ok "the type·size line is styled from --muted-foreground"
+else
+  bad "the type·size line is styled from --muted-foreground" ".attach-file-meta missing or not muted"
+fi
+
+# The in-flight state must not invent a percentage: the body is one JSON fetch
+# with the file inlined as a data URL, so no progress event exists. A fabricated
+# number would be worse than none.
+if grep -q "Uploading…" perla-companion.js 2>/dev/null || grep -q "Uploading…" "$JS" 2>/dev/null; then
+  ok "the upload state is an indeterminate 'Uploading…'"
+else
+  bad "the upload state is an indeterminate 'Uploading…'" "not found in the JS"
+fi
+# Comments are stripped first: the source documents WHY there is no percentage,
+# and a naive grep matches that explanation and fails the build.
+if python3 - "$JS" <<'PYUPL'
+import re, sys
+js = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+js = re.sub(r"^\s*//.*$", "", js, flags=re.M)
+sys.exit(1 if re.search(r"Uploading[: ]+[0-9]+%", js) else 0)
+PYUPL
+then
+  ok "no fabricated upload percentage"
+else
+  bad "no fabricated upload percentage" "a 'Uploading: NN%' string exists in code but no progress event feeds it"
+fi
+
+echo
+echo "=== 14. attachment queue vs delivered, and the nine layout rules ==="
+# Each of these maps to a specific reported defect. Scoped to single-compound
+# selectors where a modifier of the same name exists, so a layout override is
+# never mistaken for the base rule.
+# The body of a rule whose SELECTOR IS EXACTLY the argument. Anything looser
+# matches a descendant modifier of the same name, which is how a check ends up
+# asserting against layout CSS instead of the rule it meant to read.
+rule_body() {  # rule_body "<exact selector>"
+  python3 - "$CSS" "$1" <<'PYR'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+for sel, body in re.findall(r"([^{}]+)\{([^}]*)\}", css):
+    if " ".join(sel.split()) == sys.argv[2]:
+        sys.stdout.write(body)
+        sys.exit(0)
+sys.exit(1)
+PYR
+}
+has() { rule_body "$1" 2>/dev/null | grep -qE "$2"; }
+
+# (1) A queued file is a FIXED square, the same size as the queued image tile,
+# so a mixed queue is one tidy row instead of squares above full-width bars.
+q=$(rule_body ".attach-file-chip-queued" 2>/dev/null || true)
+if [ -n "$q" ] && echo "$q" | grep -q "width: 104px" && echo "$q" | grep -q "height: 104px"; then
+  ok "(1) a queued file is a fixed 104x104 square"
+else
+  bad "(1) a queued file is a fixed 104x104 square" "got: $(echo "$q" | tr '\n' ' ')"
+fi
+if has ".attach-thumb" "width: 104px"; then
+  ok "(1) a queued image tile is the same 104px width"
+else
+  bad "(1) a queued image tile is the same 104px width" ".attach-thumb has no fixed width"
+fi
+
+# (3) One border around thumbnail + name + size, not just the image.
+if has ".attach-thumb" "border: 1px solid var\(--border\)" && has ".attach-thumb" "padding: 4px"; then
+  ok "(3) the image card border wraps the thumbnail, name and size"
+else
+  bad "(3) the image card border wraps the thumbnail, name and size" ".attach-thumb has no border/padding of its own"
+fi
+
+# (6) A delivered row is a fixed width, not the message bubble's width.
+r=$(rule_body ".entry-attachments .attach-file-row" 2>/dev/null || true)
+if [ -n "$r" ] && echo "$r" | grep -q "width: 320px"; then
+  ok "(6) a delivered attachment row has a fixed 320px width"
+else
+  bad "(6) a delivered attachment row has a fixed 320px width" "got: $(echo "$r" | tr '\n' ' ')"
+fi
+# The BASE .attach-file-row keeps width:100% on purpose — that is the composer's
+# row, which should fill. What must not happen is the DELIVERED rule falling back
+# to it, so the check belongs on the delivered selector, not the base one.
+if echo "$r" | grep -qE "^\s*width: 100%\s*;?\s*$"; then
+  bad "(6) the delivered row no longer inherits width:100% from the message" "width:100% is back on the delivered rule"
+else
+  ok "(6) the delivered row no longer inherits width:100% from the message"
+fi
+
+# (5) A real gap between the bubble and the bordered attachment rows.
+a=$(rule_body ".entry-attachments" 2>/dev/null || true)
+if echo "$a" | grep -qE "margin: [0-9]+px 0" || echo "$a" | grep -qE "margin-(top|bottom):"; then
+  ok "(5) there is a margin between the message and its attachments"
+else
+  bad "(5) there is a margin between the message and its attachments" "got: $(echo "$a" | tr '\n' ' ')"
+fi
+
+# (9) A real spinner element, not the file icon rotating.
+if grep -q "attach-file-spinner" "$JS" 2>/dev/null; then
+  ok "(9) a spinner element exists in the markup"
+else
+  bad "(9) a spinner element exists in the markup" "not found in the JS"
+fi
+if grep -qE "\.attach-file-icon[^}]*\{" "$CSS" && python3 - "$CSS" <<'PYS9'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+# The file ICON must not be the thing that rotates any more.
+bad = [s for s in re.findall(r"([^{}]+)\{([^}]*)\}", css)
+       if re.search(r"attach-file-icon", s[0]) and "animation" in s[1]]
+sys.exit(1 if bad else 0)
+PYS9
+then
+  ok "(9) the file icon itself is no longer animated"
+else
+  bad "(9) the file icon itself is no longer animated" "an animation is on an .attach-file-icon rule"
+fi
+
+# (7) Delivered files open a viewer on click; download is a separate control.
+if [ "$(python3 - "$JS" <<'PY7'
+import re, sys
+js = open(sys.argv[1]).read()
+i = js.find("function buildDeliveredFileRow")
+seg = js[i:i + 3000] if i != -1 else ""
+print("yes" if seg and "openFileViewer" in seg and "attach-file-download" in seg else "no")
+PY7
+)" = "yes" ]; then
+  ok "(7) a delivered file opens the viewer, with download as its own control"
+else
+  bad "(7) a delivered file opens the viewer, with download as its own control" \
+      "buildDeliveredFileRow does not wire both openFileViewer and a download button"
+fi
+
+# (8) YOUR sent images keep their thumbnails; Perla's sent files are rows.
+# These were briefly conflated — flattening a sent image into a file row removed
+# the image bar and made a picture indistinguishable from a document.
+if [ "$(python3 - "$JS" <<'PY8'
+import re, sys
+js = open(sys.argv[1]).read()
+i = js.find("function addUserMessageEntry")
+j = js.find("function addSentFileEntry")
+seg = js[i:j] if j > i else js[i:i + 6000]
+your_image_thumb = "buildImageCard" in seg
+perla_files_are_rows = "buildDeliveredFileRow" in js[js.find("function addSentFileEntry"):]
+print("yes" if your_image_thumb and perla_files_are_rows else "no")
+PY8
+)" = "yes" ]; then
+  ok "(8) your sent images stay thumbnails; Perla's sent files stay rows"
+else
+  bad "(8) your sent images stay thumbnails; Perla's sent files stay rows" \
+      "a sent image is being flattened into a file row, or a Perla file lost its row"
+fi
+
+# (2) Images are inserted ABOVE the other file row in a sent message.
+if [ "$(python3 - "$JS" <<'PY2'
+import re, sys
+js = open(sys.argv[1]).read()
+i = js.find("function addUserMessageEntry")
+j = js.find("function addSentFileEntry")
+seg = js[i:j] if j > i else js[i:i + 6000]
+print("yes" if re.search(r"attachments\.insertBefore\(row, attachments\.firstChild\)", seg) else "no")
+PY2
+)" = "yes" ]; then
+  ok "(2) the images row is inserted above the other files"
+else
+  bad "(2) the images row is inserted above the other files" "no insertBefore(...firstChild) on attachments"
+fi
+
+# (4) Perla's attachments go below the bubble; yours stay above.
+if [ "$(python3 - "$JS" <<'PY4'
+import re, sys
+js = open(sys.argv[1]).read()
+def order(fn, stop):
+    i = js.find(fn)
+    j = js.find(stop, i) if stop else len(js)
+    seg = js[i:j]
+    b = seg.find("entry.appendChild(bubble)")
+    a = seg.find("entry.appendChild(attachments)")
+    return (b != -1 and a != -1 and b < a)
+# Perla's own send: bubble first, then attachments => attachments below.
+perla_below = order("function addSentFileEntry", "function buildDeliveredImageRow")
+# The user's send: attachments first, then bubble => attachments above.
+i = js.find("function addUserMessageEntry"); j = js.find("function addSentFileEntry")
+u = js[i:j]
+user_above = u.find("entry.appendChild(attachments)") < u.find("entry.appendChild(bubble)")
+# The history replay must no longer insertBefore firstChild.
+hist = js[js.find("function addHistoryFileEntry"):]
+hist_below = "insertBefore(attachments, entry.firstChild)" not in hist[:1200] and "entry.appendChild(attachments)" in hist[:1200]
+print("yes" if (perla_below and user_above and hist_below) else "no")
+PY4
+)" = "yes" ]; then
+  ok "(4) Perla's attachments sit below the message, yours above"
+else
+  bad "(4) Perla's attachments sit below the message, yours above" \
+      "an ordering path still disagrees"
 fi
 
 echo

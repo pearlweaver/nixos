@@ -66,13 +66,27 @@
     let tier1Unread = sessionStorage.getItem("perla_tier1_unread") === "1";
     let tier2Unread = sessionStorage.getItem("perla_tier2_unread") === "1";
 
+    // The typing indicator is transient UI and must never outlive the turn it
+    // belongs to. It used to be captured into the saved transcript by every
+    // setChatLog(output.innerHTML) call, so switching tiers mid-reply persisted a
+    // stale indicator; switching back then painted it into the chat, and it came
+    // back AFTER the message had already been sent. Stripped on both write and
+    // read — the read side also repairs transcripts already saved with one.
+    function stripThinking(html) {
+      if (!html || html.indexOf("thinkingIndicator") === -1) return html;
+      const tpl = document.createElement("template");
+      tpl.innerHTML = html;
+      tpl.content.querySelectorAll("#thinkingIndicator, .thinking").forEach((n) => n.remove());
+      return tpl.innerHTML;
+    }
+
     function getChatLog(tier) {
-      return sessionStorage.getItem("perla_chat_t" + tier) || "";
+      return stripThinking(sessionStorage.getItem("perla_chat_t" + tier) || "");
     }
 
     function setChatLog(tier, html) {
       try {
-        sessionStorage.setItem("perla_chat_t" + tier, html);
+        sessionStorage.setItem("perla_chat_t" + tier, stripThinking(html));
       } catch (e) {
         // sessionStorage quota exceeded or unavailable — chat still works
         // in-memory for this page view, just won't survive a reload.
@@ -1416,27 +1430,28 @@
             const content = TEXT_FILE_EXTENSIONS.has(ext)
               ? decodeDataUrlAsText(item.dataUrl)
               : null;
-            row.appendChild(buildFileChip(item.filename, null, content));
+            row.appendChild(buildFileChip(item.filename, null, content, item.size));
           });
+          // The images row is appended AFTER this one, then moved to the top
+          // below — images above the other files.
           attachments.appendChild(row);
         }
 
         if (images && images.length) {
-          // Same flowing row as the file chips (not the old 2-column
-          // .entry-image-grid) — both file pills and image pills are now
-          // fixed 64x64 squares, so they line up in one row together
-          // rather than images getting their own separate grid layout.
+          // YOUR images keep their thumbnails. Flattening them into file rows
+          // removed the image bar entirely and made a picture you just sent
+          // indistinguishable from a document. Perla's own sent files stay
+          // rows (buildDeliveredFileRow) — that is a different thing: a file she
+          // handed back to you, not something you attached.
           const row = document.createElement("div");
-          row.className = "attach-file-row";
+          row.className = "attach-file-row attach-image-row";
           images.forEach((item) => {
-            const preview = document.createElement("img");
-            preview.className = "entry-image";
-            preview.src = item.dataUrl;
-            preview.alt = item.filename || "Attached image";
-            preview.addEventListener("click", () => openLightbox(item.dataUrl));
-            row.appendChild(preview);
+            const card = buildImageCard(item, { onClick: () => openLightbox(item.dataUrl) });
+            card.querySelector("img").classList.add("entry-image");
+            row.appendChild(card);
           });
-          attachments.appendChild(row);
+          // Images above the other files.
+          attachments.insertBefore(row, attachments.firstChild);
         }
 
         entry.appendChild(attachments);
@@ -1583,15 +1598,9 @@
       attachments.className = "entry-attachments";
       const row = document.createElement("div");
       row.className = "attach-file-row";
-      // buildFileChip wires its own click handler (open the text viewer)
-      // before returning the node — clone it to strip that listener so
-      // only our download handler fires, since a sent file should
-      // download on click, not open the (empty, for a sent file) text
-      // viewer.
-      const chip = buildFileChip(fileInfo.filename, null, null);
-      const freshChip = chip.cloneNode(true);
-      freshChip.addEventListener("click", () => downloadSentFile(fileInfo));
-      row.appendChild(freshChip);
+        // View on click, download on its own control — clicking used to
+        // download straight away, so there was no way to see what was sent.
+        row.appendChild(buildDeliveredFileRow(fileInfo));
       attachments.appendChild(row);
       entry.appendChild(attachments);
 
@@ -1609,25 +1618,79 @@
       return entry;
     }
 
-    async function downloadSentFile(fileInfo) {
-      if (!fileInfo || !fileInfo.url) return;
-      try {
+
+    // A DELIVERED file row: click opens the viewer, download is a separate
+    // control on the right.
+    //
+    // Clicking used to download straight away, which meant there was no way to
+    // look at what Perla sent before saving it. Now the row fetches the bytes
+    // once and hands them to the same viewer the composer uses; the download
+    // button reuses that fetch rather than pulling the file a second time.
+    function buildDeliveredFileRow(fileInfo) {
+      const row = buildFileChip(fileInfo.filename, null, null, null);
+      row.classList.add("attach-file-chip-delivered");
+
+      // Download is its own button so the row itself can mean "view".
+      const dl = document.createElement("button");
+      dl.className = "attach-file-download";
+      dl.setAttribute("aria-label", "Download " + (fileInfo.filename || "file"));
+      dl.title = "Download";
+      dl.innerHTML = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M11 3v11"/><polyline points="6.5 10 11 14.5 15.5 10"/><path d="M4 18h14"/></svg>';
+      row.appendChild(dl);
+
+      let cached = null;   // { text, url } so view and download share one fetch
+      async function load() {
+        if (cached) return cached;
         const url = fileInfo.url.startsWith("http") ? fileInfo.url : CONFIG.ENDPOINT + fileInfo.url;
         const res = await fetch(url, { headers: { Authorization: "Bearer " + authToken } });
         if (!res.ok) throw new Error("file fetch failed");
         const blob = await res.blob();
         const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = objectUrl;
-        a.download = fileInfo.filename || "file";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
-      } catch (e) {
-        notify("error", `Couldn't download ${fileInfo.filename || "that file"}.`);
+        // Text-ish formats decode so the viewer can show them; anything else
+        // (PDF, images, binaries) is binary at this layer and the viewer
+        // already has a "content wasn't saved" path for that.
+        let text = null;
+        if (TEXT_FILE_EXTENSIONS.has(textFileExtension(fileInfo.filename))) {
+          try { text = await blob.text(); } catch (e) { text = null; }
+        }
+        cached = { text, url: objectUrl, filename: fileInfo.filename };
+        return cached;
       }
+
+      row.addEventListener("click", async (e) => {
+        if (e.target.closest(".attach-file-download")) return;
+        row.classList.add("is-loading");
+        try {
+          const got = await load();
+          openFileViewer(got.filename, got.text);
+        } catch (err) {
+          notify("error", "Couldn't open " + (fileInfo.filename || "that file") + ".");
+        } finally {
+          row.classList.remove("is-loading");
+        }
+      });
+
+      dl.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        dl.disabled = true;
+        try {
+          const got = await load();
+          const a = document.createElement("a");
+          a.href = got.url;
+          a.download = got.filename || "file";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } catch (err) {
+          notify("error", "Couldn't download " + (fileInfo.filename || "that file") + ".");
+        } finally {
+          dl.disabled = false;
+        }
+      });
+
+      return row;
     }
+
 
     // ---------- Image lightbox (pan + zoom + download) ----------
     const lightbox = document.getElementById("lightbox");
@@ -2703,7 +2766,138 @@
     // markdown doc fully viewable while bounding the worst case.
     const FILE_VIEWER_CONTENT_CAP = 100 * 1024;
 
-    function buildFileChip(filename, onRemove, content) {
+    // Attachment labelling.
+    //
+    // Type comes from the filename extension because that is the only thing
+    // available for EVERY attachment: a queued file has the real File, but a
+    // sent one carries just {filename, url} and a history replay just
+    // {filename, id} — size and mime are never persisted, so deriving the type
+    // locally is what keeps the label honest on old messages too.
+    //
+    // Size is only ever shown when it is actually known (pass null/undefined
+    // otherwise) rather than guessed.
+    const ATTACHMENT_TYPES = {
+      png: "PNG", jpg: "JPG", jpeg: "JPG", gif: "GIF", webp: "WebP",
+      svg: "SVG", avif: "AVIF", heic: "HEIC", bmp: "BMP", ico: "ICO",
+      pdf: "PDF",
+      txt: "Text", md: "Markdown", markdown: "Markdown", rtf: "RTF",
+      csv: "CSV", tsv: "TSV", json: "JSON", yaml: "YAML", yml: "YAML",
+      xml: "XML", html: "HTML", htm: "HTML", css: "CSS",
+      js: "JavaScript", mjs: "JavaScript", cjs: "JavaScript",
+      ts: "TypeScript", tsx: "TypeScript", jsx: "JavaScript",
+      py: "Python", rb: "Ruby", rs: "Rust", go: "Go", java: "Java",
+      c: "C", h: "C", cpp: "C++", hpp: "C++", cs: "C#", php: "PHP",
+      sh: "Shell", bash: "Shell", zsh: "Shell", fish: "Shell",
+      sql: "SQL", toml: "TOML", ini: "INI", cfg: "Config", conf: "Config",
+      log: "Log", patch: "Patch", diff: "Diff", zip: "ZIP", gz: "Gzip",
+      tar: "Tar", mp3: "MP3", wav: "WAV", ogg: "OGG", mp4: "MP4",
+      mov: "MOV", webm: "WebM", mkv: "MKV",
+    };
+
+    function typeFromFilename(filename) {
+      if (!filename) return "File";
+      const dot = String(filename).lastIndexOf(".");
+      // A leading dot means a dotfile, not an extension, and no dot at all
+      // means no extension — both fall back to the generic label.
+      if (dot <= 0 || dot === String(filename).length - 1) return "File";
+      const ext = String(filename).slice(dot + 1).toLowerCase();
+      return ATTACHMENT_TYPES[ext] || (ext ? ext.toUpperCase() : "File");
+    }
+
+    // Binary units, matching how the reference writes them (820 KB, 11 MB).
+    // Returns "" for an unknown size so the caller can omit the whole segment
+    // rather than print a wrong one.
+    function formatBytes(bytes) {
+      if (bytes == null || !isFinite(bytes) || bytes < 0) return "";
+      if (bytes < 1024) return bytes + " B";
+      const units = ["KB", "MB", "GB", "TB"];
+      let v = bytes / 1024;
+      let i = 0;
+      while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+      // One decimal below 10, none above — 9.4 MB, 820 KB, 11 MB.
+      const rounded = v < 10 ? Math.round(v * 10) / 10 : Math.round(v);
+      return rounded + " " + units[i];
+    }
+
+    // The second line: "PDF", "PNG · 820 KB", "TypeScript · 12 KB".
+    function attachmentMetaLine(filename, size) {
+      const type = typeFromFilename(filename);
+      const bytes = formatBytes(size);
+      return bytes ? type + " · " + bytes : type;
+    }
+
+    // An image attachment: thumbnail on top, name and "TYPE · SIZE" beneath.
+    // Shared by the composer queue and the sent-message path so a queued image
+    // and the same image after sending are the same shape. `size` is the byte
+    // count where known and null for sent/replayed images, which were never
+    // persisted — the type still comes from the filename extension.
+    function buildImageCard(item, opts) {
+      const o = opts || {};
+      const card = document.createElement("div");
+      card.className = "attach-thumb";
+      const frame = document.createElement("div");
+      frame.className = "attach-thumb-frame";
+
+      const img = document.createElement("img");
+      img.src = item.dataUrl;
+      img.alt = item.filename || "Attached image";
+      if (o.onClick) img.addEventListener("click", o.onClick);
+      frame.appendChild(img);
+
+      if (o.onEdit) {
+        const editBtn = document.createElement("button");
+        editBtn.className = "attach-thumb-edit";
+        editBtn.setAttribute("aria-label", "Edit image");
+        editBtn.title = "Edit";
+        editBtn.innerHTML = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><path d="M13.5 3.5l5 5L7 20l-5.5 1.5L3 16z"/></svg>';
+        editBtn.addEventListener("click", (e) => { e.stopPropagation(); o.onEdit(); });
+        frame.appendChild(editBtn);
+      }
+      if (o.onRemove) {
+        const removeBtn = document.createElement("button");
+        removeBtn.className = "attach-thumb-remove";
+        removeBtn.setAttribute("aria-label", "Remove image");
+        removeBtn.title = "Remove";
+        removeBtn.textContent = "✕";
+        removeBtn.addEventListener("click", (e) => { e.stopPropagation(); o.onRemove(); });
+        frame.appendChild(removeBtn);
+      }
+
+      const caption = document.createElement("div");
+      caption.className = "attach-thumb-caption";
+      const nameEl = document.createElement("div");
+      nameEl.className = "attach-thumb-name";
+      nameEl.textContent = item.filename || "Image";
+      nameEl.title = item.filename || "Image";
+      const meta = document.createElement("div");
+      meta.className = "attach-thumb-meta";
+      meta.textContent = attachmentMetaLine(item.filename, item.size);
+      caption.appendChild(nameEl);
+      caption.appendChild(meta);
+
+      card.appendChild(frame);
+      card.appendChild(caption);
+      return card;
+    }
+
+    // A queued FILE: back to the compact square chip, matching the images beside
+    // it rather than the full-width row a delivered file uses. The two states
+    // are deliberately different — in the composer everything is a fixed-size
+    // tile you can see all of at once; once sent, files become labelled rows.
+    function buildQueuedFileChip(filename, onRemove, content, size) {
+      const chip = buildFileChip(filename, onRemove, content, size);
+      chip.classList.add("attach-file-chip-queued");
+      // The square chip centres a short name, so a long filename would be
+      // unreadable; the row layout truncates properly and is used once sent.
+      return chip;
+    }
+
+    // A file attachment: a full-width row, not a 64px square. Icon tile on the
+    // left, name over a muted "TYPE · SIZE" line, dismiss on the right.
+    // `size` is the byte count when known (queued composer items) and null for
+    // sent/history attachments, where it was never persisted — the type is
+    // still derived from the filename so the label is never blank.
+    function buildFileChip(filename, onRemove, content, size) {
       const chip = document.createElement("div");
       chip.className = "attach-file-chip";
       if (content != null) {
@@ -2712,26 +2906,45 @@
           "\n\n[... truncated for storage — reopen the original file to see the rest ...]"
           : content;
       }
+
       const icon = document.createElement("span");
       icon.className = "attach-file-icon";
       icon.innerHTML = GENERIC_FILE_ICON_SVG;
-      const name = document.createElement("span");
-      name.className = "attach-file-name";
-      name.textContent = filename;
-      name.title = filename;
+
+      // A separate spinner element. Spinning the file icon read as "this file
+      // is spinning", which is meaningless; a real spinner sits alongside the
+      // icon and the icon is hidden while it is showing.
+      const spinner = document.createElement("span");
+      spinner.className = "attach-file-spinner";
+      spinner.setAttribute("aria-hidden", "true");
+
+      const text = document.createElement("span");
+      text.className = "attach-file-text";
+      const nameEl = document.createElement("span");
+      nameEl.className = "attach-file-name";
+      nameEl.textContent = filename;
+      nameEl.title = filename;
+      const meta = document.createElement("span");
+      meta.className = "attach-file-meta";
+      meta.textContent = attachmentMetaLine(filename, size);
+      text.appendChild(nameEl);
+      text.appendChild(meta);
+
       chip.appendChild(icon);
-      chip.appendChild(name);
-      // Clicking the pill always opens the viewer — both a queued
-      // composer attachment (so you can double-check a file before
-      // sending) and a delivered sent-message pill. The remove button
-      // (composer only) stops propagation below so removing an item
-      // doesn't also pop the viewer open on the way out.
+      chip.appendChild(spinner);
+      chip.appendChild(text);
+
+      // Clicking the row always opens the viewer — both a queued composer
+      // attachment (so you can double-check a file before sending) and a
+      // delivered sent-message row. The remove button (composer only) stops
+      // propagation below so removing an item doesn't also pop the viewer open
+      // on the way out.
       chip.addEventListener("click", () => {
         openFileViewer(filename, chip.dataset.fileContent ?? null);
       });
       if (onRemove) {
         const removeBtn = document.createElement("button");
-        removeBtn.className = "attach-thumb-remove";
+        removeBtn.className = "attach-file-remove";
         removeBtn.setAttribute("aria-label", "Remove file");
         removeBtn.title = "Remove";
         removeBtn.textContent = "✕";
@@ -2756,35 +2969,15 @@
       attachPreview.hidden = attachQueue.length === 0 && textFileQueue.length === 0;
 
       attachQueue.forEach((item, index) => {
-        const thumb = document.createElement("div");
-        thumb.className = "attach-thumb";
-        const img = document.createElement("img");
-        img.src = item.dataUrl;
-        img.alt = item.filename || "Attached image";
-        const editBtn = document.createElement("button");
-        editBtn.className = "attach-thumb-edit";
-        editBtn.setAttribute("aria-label", "Edit image");
-        editBtn.title = "Edit";
-        editBtn.innerHTML = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><path d="M13.5 3.5l5 5L7 20l-5.5 1.5L3 16z"/></svg>';
-        editBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          openImageEditor(index);
-        });
-        const removeBtn = document.createElement("button");
-        removeBtn.className = "attach-thumb-remove";
-        removeBtn.setAttribute("aria-label", "Remove image");
-        removeBtn.title = "Remove";
-        removeBtn.textContent = "✕";
-        removeBtn.addEventListener("click", () => {
-          attachQueue.splice(index, 1);
-          renderAttachPreview();
-          updateComposerState();
-          saveCurrentTierDraft();
-        });
-        thumb.appendChild(img);
-        thumb.appendChild(editBtn);
-        thumb.appendChild(removeBtn);
-        attachPreview.appendChild(thumb);
+        attachPreview.appendChild(buildImageCard(item, {
+          onEdit: () => openImageEditor(index),
+          onRemove: () => {
+            attachQueue.splice(index, 1);
+            renderAttachPreview();
+            updateComposerState();
+            saveCurrentTierDraft();
+          },
+        }));
       });
 
       textFileQueue.forEach((item, index) => {
@@ -2797,12 +2990,12 @@
         const content = TEXT_FILE_EXTENSIONS.has(ext)
           ? decodeDataUrlAsText(item.dataUrl)
           : null;
-        const chip = buildFileChip(item.filename, () => {
+        const chip = buildQueuedFileChip(item.filename, () => {
           textFileQueue.splice(index, 1);
           renderAttachPreview();
           updateComposerState();
           saveCurrentTierDraft();
-        }, content);
+        }, content, item.size);
         attachPreview.appendChild(chip);
       });
     }
@@ -3701,6 +3894,38 @@
       }
     }
 
+    // Indeterminate upload state.
+    //
+    // The message body is one JSON fetch with the file inlined as a data URL,
+    // so there is no progress event to read and no honest percentage to show.
+    // What we can show is that the attachments in the just-sent entry are still
+    // in flight, which is what the reference's "Uploading: 64%" row is really
+    // communicating. The typed meta is restored when the turn settles, so the
+    // type·size line comes back rather than leaving "Uploading…" on a delivered
+    // attachment forever.
+    function setAttachmentsUploading(entry, on) {
+      if (!entry) return;
+      const rows = entry.querySelectorAll(".attach-file-chip");
+      rows.forEach((row) => {
+        const meta = row.querySelector(".attach-file-meta");
+        if (!meta) return;
+        if (on) {
+          if (meta.dataset.idleMeta == null) meta.dataset.idleMeta = meta.textContent;
+          meta.textContent = "Uploading…";
+          row.classList.add("is-uploading");
+        } else {
+          if (meta.dataset.idleMeta != null) {
+            meta.textContent = meta.dataset.idleMeta;
+            delete meta.dataset.idleMeta;
+          }
+          row.classList.remove("is-uploading");
+        }
+      });
+      entry.querySelectorAll(".attach-thumb").forEach((card) => {
+        card.classList.toggle("is-uploading", !!on);
+      });
+    }
+
     async function submitText() {
       const message = textInput.value.trim();
       const images = attachQueue;
@@ -3730,7 +3955,15 @@
       }
 
       const requestTier = activeTier; // capture now — activeTier may change before the reply arrives
-      await sendTextTurn(userEntry, buildTextBody(message, images, textFiles, requestTier));
+      // Only worth showing when there is something to upload; a text-only
+      // message is not "uploading" anything.
+      const hasAttachments = images.length > 0 || textFiles.length > 0;
+      if (hasAttachments) setAttachmentsUploading(userEntry, true);
+      try {
+        await sendTextTurn(userEntry, buildTextBody(message, images, textFiles, requestTier));
+      } finally {
+        if (hasAttachments) setAttachmentsUploading(userEntry, false);
+      }
     }
 
     // ---------- Voice recording → draft (WhatsApp-style) ----------
@@ -4553,7 +4786,7 @@
       if (e.file) {
         // History's file info only carries {filename, id} (from the log
         // line), not a ready-to-fetch URL — build the same URL shape the
-        // live response would have carried so downloadSentFile works
+        // live response would have carried so the viewer/download fetch works
         // identically for a replayed entry.
         const fileInfo = {
           filename: e.file.filename,
@@ -4590,12 +4823,13 @@
       attachments.className = "entry-attachments";
       const row = document.createElement("div");
       row.className = "attach-file-row";
-      const chip = buildFileChip(fileInfo.filename, null, null);
-      const freshChip = chip.cloneNode(true);
-      freshChip.addEventListener("click", () => downloadSentFile(fileInfo));
-      row.appendChild(freshChip);
+      // (4) Perla's attachments go BELOW the message. This used to be
+      // insertBefore(..., entry.firstChild), which put them above — the
+      // mirror image of the user's own layout, and inconsistent with the
+      // live send path, which already appends the bubble first.
+      row.appendChild(buildDeliveredFileRow(fileInfo));
       attachments.appendChild(row);
-      entry.insertBefore(attachments, entry.firstChild);
+      entry.appendChild(attachments);
       output.appendChild(entry);
       return entry;
     }
@@ -5585,7 +5819,7 @@
     // Text/code files fetch their content via /api/drive/view (JSON,
     // server-truncated past 2MB) and render as <pre>; images are fetched
     // as a blob through the authenticated download endpoint (same
-    // pattern addImageEntry/downloadSentFile already use, since a bare
+    // pattern addImageEntry/buildDeliveredFileRow already use, since a bare
     // <img src> can't carry a bearer token) and render as <img>. Neither
     // path touches the download-triggering DRIVE_DOWNLOAD_PATH flow used
     // by the toolbar's own Download button — viewing and downloading are

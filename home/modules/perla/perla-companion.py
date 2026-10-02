@@ -2823,6 +2823,36 @@ def format_text_attachments(files):
     return "\n\n".join(blocks)
 
 
+def attachment_manifest_line(typed_message, files):
+    """What the LOG records for a turn that carried uploaded text files.
+
+    The model genuinely needs the file bodies — they are folded into the prompt
+    text by format_text_attachments, because OpenCode has no document-ingestion
+    channel, only vision. But that same string was being handed to log_request,
+    so every uploaded file was pasted in full into Conversations/{date}.md and
+    into the History view. One pasted source file swamps a day of conversation.
+
+    So the log keeps the user's own words plus a one-line manifest of what was
+    attached. The content is still sent to the model; it is simply not filed.
+    """
+    if not files:
+        return typed_message
+    names = []
+    for entry in files:
+        filename = entry[0] if isinstance(entry, (tuple, list)) else str(entry)
+        content = entry[1] if isinstance(entry, (tuple, list)) and len(entry) > 1 else ""
+        size = len(content.encode("utf-8")) if isinstance(content, str) else 0
+        if size >= 1024 * 1024:
+            detail = f"{size / (1024 * 1024):.1f} MB"
+        elif size >= 1024:
+            detail = f"{size // 1024} KB"
+        else:
+            detail = f"{size} B"
+        names.append(f"{filename} ({detail})")
+    manifest = "[attached: " + ", ".join(names) + " — contents not logged]"
+    return f"{typed_message}\n\n{manifest}" if typed_message else manifest
+
+
 def build_opencode_body(text, tier, image_path=None):
     """Build the JSON request body for an OpenCode message turn. If
     image_path is given, attaches it as one or more file parts alongside the
@@ -3860,14 +3890,22 @@ def process_message(message, tier, source, confirm=False, user_image_paths=None,
     only vision. Instead their content is rendered (format_text_attachments)
     and appended to the message TEXT itself before it's sent, so the model
     just reads them as part of the prompt. This happens here rather than
-    in the caller so logging (log_request/is_memory_worthy) sees the full
-    text that was actually sent, same as it does for a purely typed message.
+    in the caller so the prompt format lives in one place. The LOG does NOT get
+    that text: it records the user's own words plus attachment_manifest_line's
+    manifest, because pasting every uploaded file into Conversations/{date}.md
+    and the History view drowns the conversation.
     """
 
+    # Remember what the user actually typed before the file bodies are folded in.
+    # `message` below becomes the full prompt the model reads, but the LOG gets
+    # typed_message + a manifest instead — otherwise every uploaded file is
+    # pasted in full into the day log and the History view.
+    typed_message = message
     if text_attachments:
         rendered = format_text_attachments(text_attachments)
         if rendered:
             message = (message + "\n\n" + rendered) if message else rendered
+    log_message = attachment_manifest_line(typed_message, text_attachments)
 
     vision_image_path = None
     if user_image_paths:
@@ -3958,10 +3996,13 @@ def process_message(message, tier, source, confirm=False, user_image_paths=None,
         # logged, written to memory, or treated as a real response.
         return response_text, False, False, None, None, None, None
 
-    log_request(message, response_text, tier, tool_used, source=source,
+    log_request(log_message, response_text, tier, tool_used, source=source,
                  sent_file=sent_file_ref, voice_filename=voice_filename)
 
-    if is_memory_worthy(message) and not obsidian_write:
+    # Scanned against the user's own words, not the prompt: a source file that
+    # happens to contain the word "remember" or "important" would otherwise
+    # trigger a memory write off the back of an upload.
+    if is_memory_worthy(typed_message) and not obsidian_write:
         log_memory_mismatch(message, response_text, tier, source=source)
         print("WARNING: memory-worthy input with no Obsidian write detected", flush=True)
 
