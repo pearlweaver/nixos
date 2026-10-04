@@ -107,7 +107,7 @@ html=$(render '| Name | Qty |
 contains "$html" "<table" && ok "emits a <table>" || bad "emits a <table>" "got: ${html:0:120}"
 contains "$html" "<th>Name</th>" && ok "header cells become <th>" || bad "header cells become <th>" "got: ${html:0:160}"
 contains "$html" "<td>Apples</td>" && ok "body cells become <td>" || bad "body cells become <td>" "got: ${html:0:200}"
-contains "$html" 'class="md-table-wrap"' && ok "wrapped for horizontal scroll" || bad "wrapped for horizontal scroll" "no md-table-wrap"
+contains "$html" 'class="prose-table-wrap"' && ok "wrapped for horizontal scroll" || bad "wrapped for horizontal scroll" "no prose-table-wrap"
 
 echo
 echo "=== renderer: alignment is honoured ==="
@@ -115,15 +115,15 @@ html=$(render '| L | C | R |
 | :--- | :---: | ---: |
 | a | b | c |')
 # Left is the HTML default, so the renderer omits the class for it rather than
-# emitting a redundant md-align-left. Assert that, not the class.
+# emitting a redundant prose-align-left. Assert that, not the class.
 head_row=$(sed -n 's/.*<thead><tr>\(.*\)<\/tr>.*/\1/p' <<<"$html")
 contains "$head_row" '<th>L</th>' && ok "left column carries no alignment class (it is the default)" \
   || bad "left column carries no alignment class (it is the default)" "head row: $head_row"
-contains "$head_row" 'md-align-center' && ok "center alignment" || bad "center alignment" "head row: $head_row"
-contains "$head_row" 'md-align-right' && ok "right alignment" || bad "right alignment" "head row: $head_row"
+contains "$head_row" 'prose-align-center' && ok "center alignment" || bad "center alignment" "head row: $head_row"
+contains "$head_row" 'prose-align-right' && ok "right alignment" || bad "right alignment" "head row: $head_row"
 # Alignment must reach the body cells too, not just the header.
 body_row=$(sed -n 's/.*<tbody><tr>\(.*\)<\/tr>.*/\1/p' <<<"$html")
-contains "$body_row" 'md-align-right' && ok "alignment is applied to body cells as well" \
+contains "$body_row" 'prose-align-right' && ok "alignment is applied to body cells as well" \
   || bad "alignment is applied to body cells as well" "body row: $body_row"
 
 echo

@@ -7,6 +7,7 @@
     ./modules/xdg.nix
     ./modules/perla.nix
     ./modules/flutter.nix
+    ./modules/cod-clients.nix
   ];
 
   home.username = "thedreamdev";

@@ -13,6 +13,7 @@
     qbittorrent
     uget
     vscodium
+    prismlauncher
     nwg-look
     adw-gtk3
     komikku
@@ -22,12 +23,11 @@
     pinta
     blanket
     qimgv
-    wine
+    # wine
     nocturne
     proton-vpn
     protontricks
     nautilus
-    lunar-client
     # KDE apps take their QPalette from KColorScheme via the KDE platform theme
     # (plasma-integration); without it they fall back to BreezeLight and ignore
     # both qt6ct and kdeglobals. Route the KDE apps to that platform theme so
@@ -113,6 +113,9 @@
     qpdf
     papirus-folders
     papirus-icon-theme
+    dxvk
+    winetricks
+    wine64
   ];
 
   xdg.dataFile."vulkan/implicit_layer.d/VkLayer_LS_frame_generation.json".source =

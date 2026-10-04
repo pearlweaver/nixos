@@ -294,6 +294,7 @@
     const elevateSubmit = document.getElementById("elevateSubmit");
     const elevateStatus = document.getElementById("elevateStatus");
     const tierBadge = document.getElementById("tierBadge");
+    const statusIndicator = document.getElementById("statusIndicator");
 
     elevateSubmit.addEventListener("click", async () => {
       const token = elevateInput.value.trim();
@@ -460,7 +461,7 @@
       }
 
       function alignAttr(align) {
-        return align && align !== "left" ? ' class="md-align-' + align + '"' : "";
+        return align && align !== "left" ? ' class="prose-align-' + align + '"' : "";
       }
 
       const lines = String(text).replace(/\r\n/g, "\n").split("\n");
@@ -567,7 +568,7 @@
         if (delim && line.indexOf("|") !== -1) {
           const aligns = splitRow(lines[i]).map((_, idx) => delim[idx] || "left");
           const heads = splitRow(lines[i]);
-          let html = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
+          let html = '<div class="prose-table-wrap"><table class="prose-table"><thead><tr>';
           heads.forEach((h, idx) => {
             html += "<th" + alignAttr(aligns[idx]) + ">" + inline(esc(h)) + "</th>";
           });
@@ -664,6 +665,13 @@
       // A real exchange replaces the welcome card — only meaningful when
       // landing live, since a backgrounded reply's welcome card (if any)
       // lives inside the stored HTML string, not in a queryable DOM.
+      //
+      // The "system" exemption is now vestigial: every call site passes
+      // "perla" or "user", and the .entry-system rules were removed with it
+      // (app-scope notices moved to the notify() toasts long ago — see the
+      // Global notifications section). Left in place because it is a cheap
+      // guard, but note there is NO .entry-system styling left, so passing
+      // "system" would now render an unstyled bubble.
       if (kind !== "system" && live) {
         output.querySelectorAll(".welcome").forEach((w) => w.remove());
       }
@@ -672,10 +680,10 @@
       const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       const useMd = kind.startsWith("perla");
       entry.innerHTML =
-        `<div class="entry-bubble">` + (useMd ? `<div class="md"></div>` : `<p></p>`) + `</div>` +
+        `<div class="entry-bubble">` + (useMd ? `<div class="prose"></div>` : `<p></p>`) + `</div>` +
         (kind !== "system" ? `<div class="entry-meta"><span class="entry-time">${time}</span></div>` : "");
       if (useMd) {
-        const mdEl = entry.querySelector(".md");
+        const mdEl = entry.querySelector(".prose");
         mdEl.innerHTML = renderMarkdown(text);
         attachCodeBlockCopyButtons(mdEl);
       } else {
@@ -730,7 +738,7 @@
 
       const confirmBtn = document.createElement("button");
       confirmBtn.textContent = "Confirm";
-      confirmBtn.className = "elevate-submit";
+      confirmBtn.className = "btn btn-md btn-destructive";
       confirmBtn.style.padding = "7px 14px";
       confirmBtn.style.fontSize = "0.78rem";
 
@@ -955,17 +963,17 @@
 
       const backBtn = document.createElement("button");
       backBtn.type = "button";
-      backBtn.className = "qac-btn";
+      backBtn.className = "btn btn-sm";
       backBtn.textContent = "Back";
 
       const nextBtn = document.createElement("button");
       nextBtn.type = "button";
-      nextBtn.className = "qac-btn qac-btn-primary";
+      nextBtn.className = "btn btn-sm btn-solid";
       nextBtn.textContent = "Next";
 
       const dismissBtn = document.createElement("button");
       dismissBtn.type = "button";
-      dismissBtn.className = "qac-btn";
+      dismissBtn.className = "btn btn-sm";
       dismissBtn.textContent = "Skip";
 
       const spacer = document.createElement("div");
@@ -1285,12 +1293,12 @@
 
       const onceBtn = document.createElement("button");
       onceBtn.type = "button";
-      onceBtn.className = "qac-btn qac-btn-primary";
+      onceBtn.className = "btn btn-sm btn-solid";
       onceBtn.textContent = "Allow once";
 
       const alwaysBtn = document.createElement("button");
       alwaysBtn.type = "button";
-      alwaysBtn.className = "qac-btn";
+      alwaysBtn.className = "btn btn-sm";
       alwaysBtn.textContent = "Always allow";
       alwaysBtn.title = "Remember this choice for " + (scope || "this path");
 
@@ -1298,7 +1306,7 @@
       // glow. It should read as "don't" without looking like another product.
       const rejectBtn = document.createElement("button");
       rejectBtn.type = "button";
-      rejectBtn.className = "qac-btn qac-btn-destructive";
+      rejectBtn.className = "btn btn-sm btn-destructive-flat";
       rejectBtn.textContent = "Reject";
 
       function disableAll() {
@@ -1911,7 +1919,7 @@
       }
       if (state.isMarkdown && state.renderedAsMarkdown) {
         const mdEl = document.createElement("div");
-        mdEl.className = "md";
+        mdEl.className = "prose";
         mdEl.innerHTML = renderMarkdown(state.content);
         fileViewerBody.appendChild(mdEl);
         attachCodeBlockCopyButtons(mdEl);
@@ -2180,6 +2188,13 @@
     // setComposerDisabled elsewhere) — this only decides between the normal
     // composer and the elevate bar for the plain-chat case.
     function updateComposerMode() {
+      // The tier pill, session countdown and status dot only describe the
+      // live conversation, so they go away with the composer when an
+      // overlay is up. Done here rather than at each open/close so a new
+      // overlay can't forget it — this is the one function all eight
+      // activeOverlay assignments already route through. Above the
+      // activeOverlay early-return below, deliberately.
+      statusIndicator.hidden = activeOverlay !== null;
       if (activeOverlay !== null) {
         // A read-only overlay (History/Reminders) wins over both — hide
         // the real composer and the elevate bar alike, and make sure the
@@ -2295,7 +2310,7 @@
       const meta = entry.querySelector(".entry-meta");
       if (!meta) return;
       const btn = document.createElement("button");
-      btn.className = "copy-btn";
+      btn.className = "btn-icon btn-icon-20 copy-btn";
       btn.setAttribute("aria-label", "Copy message");
       btn.title = "Copy";
       btn.innerHTML = COPY_ICON_SVG;
@@ -2320,8 +2335,18 @@
         const code = pre.querySelector("code");
         const text = (code || pre).textContent;
         pre.classList.add("code-block-wrap");
+        // The button goes in a wrapper AROUND the pre, not inside it. The pre
+        // is the horizontal scroll container, and an absolutely positioned
+        // descendant of a scroller is placed against the scroller's content
+        // and scrolls with it - so `right: 6px` meant 6px past the longest
+        // line and the button drifted off on any code that overflowed.
+        // A wrapper that does not scroll gives it a corner that stays put.
+        const wrap = document.createElement("div");
+        wrap.className = "code-block";
+        pre.parentNode.insertBefore(wrap, pre);
+        wrap.appendChild(pre);
         const btn = document.createElement("button");
-        btn.className = "code-copy-btn";
+        btn.className = "btn-icon btn-icon-24 btn-icon-square btn-icon-outline code-copy-btn";
         btn.setAttribute("aria-label", "Copy code");
         btn.title = "Copy code";
         btn.innerHTML = COPY_ICON_SVG;
@@ -2329,7 +2354,7 @@
           e.stopPropagation();
           copyTextToClipboard(text, btn, COPY_ICON_SVG, CHECK_ICON_SVG);
         });
-        pre.appendChild(btn);
+        wrap.appendChild(btn);
       });
     }
 
@@ -2337,7 +2362,7 @@
       const meta = entry.querySelector(".entry-meta");
       if (!meta) return;
       const btn = document.createElement("button");
-      btn.className = "replay-btn";
+      btn.className = "btn-icon btn-icon-20 replay-btn";
       btn.setAttribute("aria-label", "Play voice reply");
       btn.title = "Play";
       btn.innerHTML = '<svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" width="14" height="14"><path d="M6.5 4.5v13l11-6.5-11-6.5z"/></svg>';
@@ -2345,7 +2370,13 @@
       meta.appendChild(btn);
     }
 
-    const STOP_ICON_SVG = '<svg viewBox="0 0 22 22" width="12" height="12" fill="currentColor"><rect x="5.5" y="5.5" width="11" height="11" rx="2"/></svg>';
+    // A HOLLOW square, not a filled one: it sits beside replay/copy/retry in the
+    // message's action row, and a solid block at the same optical weight read as
+    // the loudest thing in the row when "stop" is a quiet, temporary affordance.
+    // Stroked rather than filled, so it shares its weight with the mic's stop
+    // square (.mic-stop-square), which is drawn the same way.
+    // The rect spans 5.5..16.5 on both axes, centred on the viewBox's (11,11).
+    const STOP_ICON_SVG = '<svg viewBox="0 0 22 22" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><rect x="5.5" y="5.5" width="11" height="11" rx="2"/></svg>';
 
     // Aborts whatever the given tier is doing (in-flight generation and/or a
     // pending question). Sending a new message interrupts too — this button
@@ -2391,7 +2422,10 @@
       if (!meta) return () => { };
       if (stopButtonRemovers[targetTier]) stopButtonRemovers[targetTier]();
       const btn = document.createElement("button");
-      btn.className = "stop-btn";
+      // No .stop-btn class: it was set here but never queried by anything, and
+      // its only rule (:disabled) is the primitive's. The button itself is
+      // styled by .btn-icon; only the name was dead.
+      btn.className = "btn-icon btn-icon-20";
       btn.setAttribute("aria-label", "Stop generating");
       btn.title = "Stop";
       btn.innerHTML = STOP_ICON_SVG;
@@ -2499,7 +2533,7 @@
           const stale = meta.querySelector(".retry-btn");
           if (stale) stale.remove();
           const btn = document.createElement("button");
-          btn.className = "retry-btn";
+          btn.className = "btn-icon btn-icon-20 retry-btn";
           btn.setAttribute("aria-label", "Retry sending this message");
           btn.title = "Retry";
           btn.innerHTML = RETRY_ICON_SVG;
@@ -4809,10 +4843,10 @@
       if (kind.includes("entry-tier0")) entry.classList.add("entry-tier0");
       const useMd = kind.startsWith("perla");
       entry.innerHTML =
-        `<div class="entry-bubble">` + (useMd ? `<div class="md"></div>` : `<p></p>`) + `</div>` +
+        `<div class="entry-bubble">` + (useMd ? `<div class="prose"></div>` : `<p></p>`) + `</div>` +
         `<div class="entry-meta"><span class="entry-time">${timeStr || ""}</span></div>`;
       if (useMd) {
-        const mdEl = entry.querySelector(".md");
+        const mdEl = entry.querySelector(".prose");
         mdEl.innerHTML = renderMarkdown(text);
         attachCodeBlockCopyButtons(mdEl);
       } else {
@@ -5332,7 +5366,7 @@
       const entryPath = driveCurrentPath ? driveCurrentPath + "/" + entry.name : entry.name;
       const isCutSource = driveClipboard && driveClipboard.mode === "cut" && driveClipboard.path === entryPath;
       const card = document.createElement("div");
-      card.className = "drive-item"
+      card.className = "surface-raised drive-item"
         + (entry.is_dir ? " is-folder" : "")
         + (entry.is_hidden ? " is-hidden" : "")
         + (isCutSource ? " is-cut" : "");
@@ -5370,7 +5404,7 @@
       if (metaCol.children.length) card.appendChild(metaCol);
 
       const menuBtn = document.createElement("button");
-      menuBtn.className = "drive-item-menu-btn";
+      menuBtn.className = "btn-icon btn-icon-28 btn-icon-square drive-item-menu-btn";
       menuBtn.setAttribute("aria-label", "More actions");
       menuBtn.title = "Actions";
       menuBtn.innerHTML = '<svg viewBox="0 0 22 22" fill="currentColor" width="14" height="14"><circle cx="11" cy="5" r="1.6"/><circle cx="11" cy="11" r="1.6"/><circle cx="11" cy="17" r="1.6"/></svg>';
@@ -5931,10 +5965,10 @@
       }
 
       const card = document.createElement("div");
-      card.className = "qa-feedback-card" + (type === "info" ? "" : " " + type);
+      card.className = "toast" + (type === "info" ? "" : " " + type);
 
       const iconSpan = document.createElement("span");
-      iconSpan.className = "qa-feedback-icon";
+      iconSpan.className = "toast-icon";
       if (type === "loading") {
         iconSpan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="16" height="16"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>';
       } else if (type === "success") {
@@ -5947,16 +5981,16 @@
       card.appendChild(iconSpan);
 
       const contentDiv = document.createElement("div");
-      contentDiv.className = "qa-feedback-content";
+      contentDiv.className = "toast-content";
 
       const titleDiv = document.createElement("div");
-      titleDiv.className = "qa-feedback-title";
+      titleDiv.className = "toast-title";
       titleDiv.textContent = title || "";
       contentDiv.appendChild(titleDiv);
 
       if (meta) {
         const metaDiv = document.createElement("div");
-        metaDiv.className = "qa-feedback-meta";
+        metaDiv.className = "toast-meta";
         metaDiv.textContent = meta;
         contentDiv.appendChild(metaDiv);
       }
@@ -5966,10 +6000,10 @@
       // Each click runs its callback then dismisses the card.
       if (actions && actions.length) {
         const actionsDiv = document.createElement("div");
-        actionsDiv.className = "qa-feedback-actions";
+        actionsDiv.className = "toast-actions";
         actions.forEach((action) => {
           const btn = document.createElement("button");
-          btn.className = "qa-feedback-action";
+          btn.className = "btn btn-xs btn-primary";
           btn.textContent = action.label;
           btn.addEventListener("click", () => {
             dismissNotification(card);
@@ -5981,7 +6015,7 @@
       }
 
       const closeBtn = document.createElement("button");
-      closeBtn.className = "qa-feedback-close";
+      closeBtn.className = "btn-icon btn-icon-24 btn-icon-square";
       closeBtn.setAttribute("aria-label", "Dismiss");
       closeBtn.textContent = "✕";
       closeBtn.addEventListener("click", () => dismissNotification(card));
@@ -6578,7 +6612,7 @@
 
         if (statusClass === "pending") {
           const dismiss = document.createElement("button");
-          dismiss.className = "reminder-dismiss";
+          dismiss.className = "btn-icon btn-icon-28 reminder-dismiss";
           dismiss.setAttribute("aria-label", "Remove reminder");
           dismiss.title = "Remove reminder";
           dismiss.textContent = "✕";

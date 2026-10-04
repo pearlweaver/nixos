@@ -1,21 +1,6 @@
-    /* ---------------------------------------------------------------------
-       Design tokens.
 
-       Tokens are named by ROLE, not by appearance. shadcn/ui's convention:
-       a surface token X is paired with X-foreground, because the text colour
-       that sits on a surface belongs to the token rather than to each call
-       site. An appearance name like --ink-faint says what a colour looks like
-       but not what it is FOR, which is why the old set could not be
-       re-themed without renaming 347 references.
-
-       The VALUES are unchanged from the pre-token stylesheet - this layer is a
-       rename, not a restyle. Perla is dark-only, so there is no .dark block;
-       adding one later is purely a matter of re-declaring the same names.
-
-       tests/test_design_tokens.sh asserts the palette has not drifted.
-       --------------------------------------------------------------------- */
     :root {
-      /* Surfaces, lightest to darkest role. */
+
       --background: #17131a;
       --foreground: #e9dfc7;
       --card: #201a23;
@@ -23,40 +8,19 @@
       --popover: #29212c;
       --popover-foreground: #e9dfc7;
 
-      /* Emphasis. --primary is the brass accent used for active/high-emphasis
-         states; --ring is its brighter sibling, reserved for focus so a focus
-         ring is always visible against whatever it sits on. */
+
       --primary: #c97b8d;
       --primary-foreground: #ffffff;
-      /* The filled sender bubble. NOT --primary: that pink is a light colour
-         (3.13:1 against white), so white text on it fails AA outright. This is
-         --primary mixed 32% toward --background — the same hue, darkened enough
-         for white to clear AA at 5.46:1. Kept as its own token because
-         --primary is also the send button, focus rings and dashed outlines, and
-         darkening it there would change surfaces nobody asked about. */
+
       --primary-solid: color-mix(in srgb, var(--primary) 68%, var(--background));
       --primary-solid-hover: color-mix(in srgb, var(--primary) 58%, var(--background));
-      /* Tinted steps of --primary, expressed as alpha over whatever sits
-         behind them rather than as new opaque colours. --primary-subtle is a
-         quiet fill (the user's own message bubbles, hover states);
-         --primary-hover is one step stronger, for the pressed/hover edge. Both
-         derive from --primary so re-theming the accent moves them too. */
+
       --primary-subtle: color-mix(in srgb, var(--primary) 11%, transparent);
       --primary-hover: color-mix(in srgb, var(--primary) 22%, transparent);
-      /* Code inside a SOLID sender bubble. The text there is white, so the
-         plate has to be DARKER than the bubble, not lighter — mixing toward
-         --foreground would drop it to 1.1:1 against the fill and stop reading
-         as a chip at all. 26% toward --background gives white code text 7.62:1
-         while staying 1.40:1 distinct from the bubble behind it. */
+
       --primary-code-bg: color-mix(in srgb, var(--background) 26%, transparent);
       --primary-code-border: color-mix(in srgb, var(--background) 40%, transparent);
-      /* The SELECTED state of a question/permission option card. The reference
-         steps #121212 -> #262626 (1.34:1), but the stock neutrals cannot do that
-         here: --accent is only 1.09:1 from --card, and --muted is byte-identical
-         to --card. A 12% primary tint gives 1.19:1 — deliberately short of the
-         reference, because matching 1.34:1 needs an 18% tint and that drops the
-         option descriptions to 4.19:1, under AA. The selected BORDER is what
-         actually carries the signal (--border -> --primary is 3.43:1). */
+
       --card-selected: color-mix(in srgb, var(--primary) 12%, var(--card));
       --secondary: #29212c;
       --secondary-foreground: #e9dfc7;
@@ -66,32 +30,24 @@
       --accent-foreground: #6e5f45;
       --ring: #e4a2b2;
 
-        /* Status. Wax is the destructive red; --wax-bright survives as the
-           hover/active step for destructive controls. */
+
         --destructive: #8a3226;
         --destructive-foreground: #e9dfc7;
         --destructive-bright: #b8452f;
-        /* Success was a bare #7fae6a in exactly one rule (the quick-action
-           button's completed state), so nothing else could refer to it. */
+
         --success: #7fae6a;
         --success-foreground: #17131a;
         --primary-dim: #8c4f5c;
 
-      /* Two colours that had no token at all and were spelled out at their
-         call sites. --folder-accent is a leftover: gold was an appearance-named
-         token (--brass) before the role-naming pass, and section 4 rightly
-         banned the old name - but one literal use of the colour rode through
-         the rename un-tokenised. */
+
       --folder-accent: #e4c26a;
       --scrim: #0c0a0e;
 
-      /* Lines. --border is every 1px rule in the app; --input is the slightly
-         stronger one for form controls, which need to read as interactive. */
+
       --border: #453a49;
       --input: #322a36;
 
-      /* One radius, everything else derived - so a single change resizes
-         every corner in the app consistently. */
+
       --radius: 0.5rem;
       --radius-sm: calc(var(--radius) * 0.6);
       --radius-md: calc(var(--radius) * 0.8);
@@ -99,65 +55,25 @@
       --radius-xl: calc(var(--radius) * 1.4);
       --radius-2xl: calc(var(--radius) * 1.8);
         --radius-3xl: calc(var(--radius) * 2.2);
-        /* Chat bubbles. NOT 9999px: a pill is the right shape only for a
-           single-line bubble. The browser clamps an oversized radius to
-           height/2, so on a tall bubble the left/right edges bow inward far
-           enough that the first and last lines of text fall OUTSIDE the fill
-           and land on the page background. Verified against real wrapped
-           messages: at h=176 the clamp is 88px, and the arc at x=15px from the
-           edge does not begin until 39px down.
-           A large fixed radius rounds hard without that failure, at any height. */
+
         --radius-bubble: 20px;
-        /* A true circle. Like --radius-bubble this is a shape, not a corner
-           size, so it is a token rather than a bare 9999px at the call site. */
+
         --radius-full: 9999px;
 
-      /* Motion. Two durations cover 65 of the 78 transition timings in this
-         file, so naming them buys most of the coherence for zero visual
-         change - the values are exactly what was already there. The oddballs
-         (0.05/0.12/0.16/0.18/0.22/0.25/0.3s) are deliberately left literal:
-         they sit in hand-tuned multi-speed animations, and re-timing one is a
-         judgement best made by someone who can watch it happen. */
+
       --duration: 0.15s;
       --duration-slow: 0.2s;
       --ease: ease;
 
-      /* Type. Named for ROLE, not appearance - this is why the token is --font-text
-         and not --font-serif: it sets UI chrome, chat prose and labels alike,
-         and its name should say what it is FOR.
 
-         LEADING FONT IS NOT OPTIONAL. This stack used to name six macOS
-         families - Iowan Old Style, Palatino Linotype, Palatino, Book
-         Antiqua, Georgia, Times New Roman - and NOT ONE of them was installed
-         on this machine. The stack silently fell through to generic `serif`
-         and rendered Noto Serif, so the file described a font nobody was
-         seeing. Noto Serif is now named first because noto-fonts installs it,
-         so the leading family is the one that actually renders here.
-
-         The macOS names are KEPT as fallbacks, not as decoration: they are
-         genuinely present on iOS and macOS, which is why the phone used to get
-         a real serif while the laptop did not. Dropping them would fix the
-         laptop and break the phone, so the chain serves both ends - installed
-         face first for this machine, platform faces after it for the phone,
-         generic last so an unknown platform still renders a serif rather than
-         a sans.
-
-         tests/test_scales.sh holds the leading family to fonts.nix and
-         requires the chain to end in a generic. */
       --font-text: "Noto Serif", "Iowan Old Style", "Palatino Linotype",
         Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
 
-      /* Mono leads with a font this repo installs. Its tail is the platform
-         monos (SFMono on iOS, Menlo on macOS) plus a generic, for the same
-         reason as above - and unlike --text-mono before this change, which
-         pointed at a token that was never defined and so rendered generic
-         monospace on every machine including this one. */
+
       --font-mono: "JetBrains Mono", ui-monospace, "Liberation Mono", Menlo,
         Consolas, monospace;
 
-      /* A type scale, because ~62 bare font-size values were split between px
-         and rem and agreed on neither. Phase C migrates the call sites family
-         by family; this is where they land. */
+
       --text-xs: 0.75rem;
       --text-sm: 0.875rem;
       --text-base: 1rem;
@@ -165,84 +81,54 @@
       --text-xl: 1.25rem;
       --text-2xl: 1.5rem;
 
-      /* Stacking order. Fifteen raw literals across eleven distinct values
-         could not be reasoned about: a dropdown at 25 and a context menu at 30
-         is correct only by accident, and 18-vs-19 is the difference between a
-         toast painting over the QA drawer or under it.
 
-         The ORDER IS PRESERVED, quirks included: --z-toast (19) deliberately
-         sits below --z-header (20), so toasts pass under the header, and far
-         below the full-screen overlays. That is what the app has always done.
-         Renumbering the scale into a tidy 10/20/30/40 would silently promote
-         every toast above the header, so the gaps are load-bearing.
+      --qac-text-title: 0.95rem;
+      --qac-text-label: 0.85rem;
+      --qac-text-sub: 0.8rem;
+      --qac-text-desc: 0.78rem;
+      --qac-text-status: 0.75rem;
+      --qac-text-command: 0.74rem;
+      --qac-text-progress: 0.72rem;
 
-         One value moved: .drive-toolbar 2 -> 5, joining the other in-panel
-         tier. Safe because nothing occupies 3-4, and the two other z-5 rules
-         are either inside unrelated subtrees or its own ancestor.
 
-         --z-drawer exists rather than folding the QA drawer into --z-raised
-         because the drag-and-drop overlay also sits at 15. Equal z-index falls
-         back to DOM order, and the two do overlap - so 18 is a real tier, not
-         a rounding artefact. */
-      --z-sticky: 5;      /* in-panel: drive toolbar, editor toolbars, composer */
-      --z-raised: 15;     /* above page content: the drag-and-drop overlay */
-      --z-drawer: 18;     /* the QA output drawer - own tier, see below */
-      --z-toast: 19;      /* global notifications - above the drawer, below the header */
+      --z-sticky: 5;
+      --z-raised: 15;
+      --z-drawer: 18;
+      --z-toast: 19;
       --z-header: 20;
-      --z-dropdown: 25;   /* floating menus, app menu */
-      --z-context: 30;    /* context menus opened from inside a panel */
-      --z-modal: 50;      /* the password gate */
-      --z-overlay: 100;   /* lightbox, attached-file viewer */
-      --z-top: 110;       /* image editor, file-viewer modal - above the overlay */
+      --z-dropdown: 25;
+      --z-context: 30;
+      --z-modal: 50;
+      --z-overlay: 100;
+      --z-top: 110;
 
-      /* Elevation. Four steps replace 21 hand-tuned box-shadows spread over 8+
-         distinct recipes, three of which were duplicated verbatim.
 
-         The ALPHAS are deliberately heavier than shadcn's (which peaks around
-         rgb(0 0 0 / .1) for its largest step). shadcn assumes a light or
-         mid-grey surface; on --background #17131a a 10%-alpha shadow is
-         invisible, so the same PERCEIVED lift needs a heavier one. Copying
-         shadcn's values here would have flattened the overlays into the page.
-         Only overlays use these - sections 9-14 of test_design_tokens.sh hold
-         the chat, card, quick-actions and attachment surfaces flat. */
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
       --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
       --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
       --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.60);
-      /* --shadow-sm is not a step so much as the CONTACT layer: the two-layer
-         recipe "0 8px 24px, 0 1px 3px" appeared twice by hand, and composing
-         var(--shadow-lg), var(--shadow-sm) says what it means - a lift plus a
-         crisp edge - instead of freezing one recipe as if it were a step. */
 
-      /* NOT elevation. The QA drawer rises from the bottom edge, so its shadow
-         points UP; no downward step can express that, and forcing one onto the
-         scale would have made it cast downward like everything else. */
+
+
       --shadow-drawer: 0 -8px 30px rgba(0, 0, 0, 0.35);
-      /* A scrim, not a shadow: the crop box masks everything outside the
-         selection by spreading 2000px in every direction at zero blur. */
+
       --scrim-crop: 0 0 0 2000px rgba(0, 0, 0, 0.45);
-      /* A selection ring drawn in the background colour so it reads as a gap
-         around the swatch rather than a halo. */
+
       --select-ring: 0 0 0 2px rgba(23, 19, 26, 0.8);
 
-      /* A status GLOW is a different axis from elevation - it reports state, it
-         does not report depth - so it stays off the shadow scale. The two
-         hand-tuned variants (0 0 8px, and a 0 0 10px at 0.45 alpha) collapse
-         onto one step each. */
+
       --glow-success: 0 0 8px rgba(127, 174, 106, 0.6);
       --glow-destructive: 0 0 8px rgba(184, 69, 47, 0.6);
 
-      /* The composer's control size - the mic and send buttons, and the row
-         the voice-draft widget has to match so the box does not jump when
-         drafting starts. Named because .voice-draft's height is derived from
-         it and would silently desync if the buttons were ever resized. */
+
       --control-lg: 42px;
 
-      /* The fixed header's height. This was the literal 58px in FOUR places -
-         .app's padding-top plus three top: offsets - which the mobile
-         keyboard handler (appEl.style.height/.top in perla-companion.js)
-         silently depends on. One token, four call sites. 56px rather than 58
-         because 3.5rem is shadcn's default header height. */
+
+      --btn-height-xs: 28px;
+      --btn-height-sm: 32px;
+      --btn-height-md: 38px;
+
+
       --header-height: 56px;
 
       --safe-top: env(safe-area-inset-top, 0px);
@@ -251,18 +137,33 @@
 
     * {
       box-sizing: border-box;
-      /* Every border in the app inherits this colour, so components stop
-         hand-picking one. Override locally only when a rule truly differs. */
+
       border-color: var(--border);
     }
 
-    /* Perla had no focus-visible styling at all, so keyboard focus on a
-       phone-first UI with a text input was invisible. */
+
     :focus-visible {
       outline: 2px solid var(--ring);
       outline-offset: 2px;
     }
 
+    /* The ONE place [hidden] is honoured, and it is !important on purpose:
+       every panel, bar and overlay in this file sets `display` from a class
+       (display:flex, inline-flex, grid), and a bare attribute selector loses to
+       a class selector on specificity - so without !important the attribute
+       would be silently ignored and the element would stay on screen.
+
+       This rule used to be accompanied by 21 near-identical `.foo[hidden]`
+       rules "just in case", each repeating display:none and several carrying a
+       comment arguing for itself along the lines of "an attribute selector
+       loses to a class selector". They were all redundant: !important already
+       outranks specificity regardless of source order, so the global rule
+       covers every one of them. Two of the arguments were written in this
+       codebase's own comments and were wrong for the same reason.
+
+       Kept deliberately: the three rules that merely MENTION [hidden] but do
+       something else - #quickActionsPanel:not([hidden]) ~ .content-wrap and the
+       two .reminder-composer:has() rules. Those are not display:none. */
     [hidden] {
       display: none !important;
     }
@@ -274,10 +175,7 @@
       background: var(--background);
       color: var(--foreground);
       font-family: var(--font-text);
-      /* overflow hidden here (not just on .app) is what stops the desktop
-       card's extra 28px top/bottom padding from creating a page-level
-       scrollbar — .app itself scrolls internally via .page, the shell
-       never needs to. */
+
       overflow: hidden;
     }
 
@@ -295,32 +193,13 @@
       font-family: inherit;
     }
 
-    /* ---------- Primitives ----------
-       One name per widget, defined once, consumed by every surface that needs
-       it. Each block below replaced N hand-written variants that had drifted
-       apart, and the comment says which - because "why does this exist" is the
-       part a later reader needs and "what colour is it" is not.
 
-       A rule belongs here only if it needs to know NOTHING about what it is
-       for. The moment it does, it is a component and lives in that component's
-       section, which is why there is no ".quick-action-spinner" below. */
 
-    /* --- Divider ---
-       Three chrome dividers were spelled out longhand (.menu-divider,
-       .editor-divider, .drive-toolbar-divider) and the two vertical ones had
-       hand-set heights - 20px and 22px - that had to be kept in step with
-       their toolbars by hand, and would have drifted the moment a type scale
-       changed a button. align-self: stretch removes that coupling: the rule
-       takes the height of the row it sits in, which is what a divider is for.
 
-       (.md hr is deliberately NOT here. A horizontal rule inside rendered
-       markdown is prose, owned by .prose, and it is drawn in --input rather
-       than --border because it divides content rather than chrome.) */
     .divider {
       height: 1px;
       flex-shrink: 0;
-      /* The 6px/4px is not decoration: without it a menu separator sits flush
-         against the items above and below and the menu reads as one block. */
+
       margin: 6px 4px;
       background: var(--border);
     }
@@ -329,22 +208,48 @@
       width: 1px;
       flex-shrink: 0;
       align-self: stretch;
-      /* Was 0 1px in the image editor and 0 2px in the Drive toolbar. Unified
-         on the looser of the two; a 1px gap either side of a separator is not
-         worth a second rule. */
+
       margin: 0 2px;
       background: var(--border);
     }
 
-    /* --- Scroll area ---
-       THREE hand-written blocks, not two: .history-day-menu and .qa-drawer-body
-       each had their own, and a third served six elements by spelling all six
-       selectors out longhand. Between them they named fourteen rules where one
-       class now does, and two of the three had forgotten `height: 8px` for
-       horizontal scrolling.
 
-       The hover step is part of the primitive, not an extra: a thumb that
-       cannot be hovered is a thumb the user cannot find. */
+    .surface-raised {
+      background: var(--card);
+      border: 1px solid var(--input);
+      border-radius: var(--radius-xl);
+    }
+
+
+    .surface-raised-accent {
+      border-color: var(--primary-dim);
+    }
+
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      flex-shrink: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+
+    .panel-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+    }
+
+
+    .scroll-area {
+
+      scrollbar-width: thin;
+      scrollbar-color: var(--primary-dim) transparent;
+    }
+
     .scroll-area::-webkit-scrollbar {
       width: 8px;
       height: 8px;
@@ -357,9 +262,7 @@
     .scroll-area::-webkit-scrollbar-thumb {
       background: var(--primary-dim);
       border-radius: var(--radius-lg);
-      /* The 2px transparent border plus background-clip shrinks the visible
-         thumb to 4px and keeps it off the track edge - it is a gap, not a
-         border, which is why it cannot be a real border colour. */
+
       border: 2px solid transparent;
       background-clip: padding-box;
     }
@@ -369,15 +272,7 @@
       background-clip: padding-box;
     }
 
-    /* --- Spinner ---
-       Two spinners existed: an 18px ring for attachment chips, and a spinning
-       ICON inside quick-action buttons, each with its own rotate keyframe
-       (attach-spin, qa-spin) that did the identical thing. One ring, one
-       keyframe; the button reuses the ring's timing by naming the keyframe.
 
-       Visibility is the caller's business - a chip shows its spinner while
-       uploading, the button spins its own icon. Nothing here decides when a
-       spinner should appear, because that is state, not appearance. */
     @keyframes perla-spin {
       to {
         transform: rotate(360deg);
@@ -396,22 +291,12 @@
 
     @media (prefers-reduced-motion: reduce) {
       .spinner {
-        /* Still spins, slowly enough to read as motion rather than flicker.
-           Removing it entirely would strand a chip that has told the user
-           "Uploading…" with no way to see it is still trying. */
+
         animation-duration: 2s;
       }
     }
 
-    /* --- Empty ---
-       Seven hand-written "nothing here" states all shared
-       `color: var(--accent-foreground); font-style: italic` and then disagreed
-       about font-size (13px in three, 14px in four) and centring. Two of the
-       seven were loading messages rather than empty ones
-       (.entry-image-loading, .file-viewer-modal-loading) and were styled
-       identically - a loading message IS an empty state, because either way
-       there is no content to show. Layout stays at the call site; only the
-       appearance is shared. */
+
     .empty {
       color: var(--accent-foreground);
       font-style: italic;
@@ -419,10 +304,7 @@
       text-align: center;
     }
 
-    /* --- Status ---
-       Already consistent - six call sites, one rule - so this is a rename only.
-       It was .panel-status, which named the panels that happened to use it
-       rather than the thing itself: three of the six are not in a panel. */
+
     .status {
       display: block;
       margin-top: 8px;
@@ -435,28 +317,7 @@
       display: none;
     }
 
-    /* --- Input ---
-       Five boxed text controls were five near-copies: the reminder composer's
-       text and due fields, its repeat select, the Drive new-folder field, and
-       the Quick Actions input row. They agreed on border, colour, font and
-       focus, and disagreed about everything else by a pixel or a rem.
 
-       WHAT THE PRIMITIVE OWNS - the border, the radius, the text colour, the
-       font, the size, the focus ring and the placeholder. Those were written
-       out five times and had drifted: three used --radius-lg and two
-       --radius-xl, and the focus ring was --primary in three rules but
-       --primary-dim in a fourth. The values here are the majority.
-
-       WHAT IT DELIBERATELY DOES NOT OWN - the background. Three of the five sit
-       on flat panels and take --card; two sit inside a card->popover gradient
-       and take --background so the field reads as a well instead of blending
-       into the panel. That is a per-surface decision, so those two override it
-       with .input-sunken rather than the primitive guessing wrong for them.
-       Same for padding and flex sizing.
-
-       The gate's password field and the image editor's range slider are NOT
-       here: a centred, letter-spaced code entry and a slider are different
-       widgets that happen to be <input>, not variants of a text field. */
 .input {
       flex: 1;
       min-width: 0;
@@ -479,22 +340,16 @@
       border-color: var(--primary);
     }
 
-    /* For a field sitting on a gradient panel rather than a flat one. */
+
     .input-sunken {
       background: var(--background);
     }
 
-    /* --- Textarea ---
-       The composer. Was #textInput, an id-scoped rule for the single element.
-       An id selector is right when there is genuinely one such element, but it
-       left the primitives with no textarea and the auto-grow cap undocumented
-       in one place. */
+
     .textarea {
       width: 100%;
       resize: none;
-      /* The cap the JS auto-grow respects. If you change this, change
-         MAX_TEXTAREA_H in perla-companion.js too - it is duplicated there in
-         three places and nothing enforces the match. */
+
       max-height: 120px;
       background: transparent;
       border: none;
@@ -510,48 +365,189 @@
       color: var(--accent-foreground);
     }
 
-    /* --- Icon button ---
-       A round target with a glyph in it. This replaces .icon-btn,
-       .editor-icon-btn, .voice-draft-btn and .reminder-add-toggle, which were
-       four names for one widget - and which had drifted on every axis except
-       the shape: two hovers were a white wash and two were a pink tint at 8%,
-       the "on" states were 14%, 18% and 22%, and the resting colour was
-       --muted-foreground in three places and --accent-foreground in a fourth.
 
-       TWO variants, because these were never really one component:
-       .btn-icon is the ghost (header, image editor, lightbox, voice draft),
-       and .btn-icon-outline is the bordered chip the Drive toolbar uses. The
-       Drive toolbar used to get that look from a descendant override of
-       .icon-btn, which meant the same class rendered two different things
-       depending on where it sat.
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      border-radius: var(--radius-3xl);
+      flex-shrink: 0;
+    }
 
-       Hover is --ring over a 10% primary tint (the midpoint of the 8%/11% the
-       old rules used) and the "on" state is 18% (the strongest of the three
-       values in play). Both are changes: the image editor's hover was a white
-       wash and the voice buttons' was 5% white.
 
-       SIZES ARE NOT UNIFIED, DELIBERATELY. The app uses 28, 30, 32 and 34px
-       today. Snapping them to a real scale is a visual change on every icon
-       button in the app, and it wants eyes on a rendered page rather than a
-       diff. The four hooks below are not a scale - they are the sizes that
-       exist, named so that when they are snapped there is one place to do it. */
+    .badge-outline {
+      padding: 2px 8px;
+      margin-right: 6px;
+      border: 1px solid var(--primary-dim);
+      background: color-mix(in srgb, var(--primary) 8%, transparent);
+      color: var(--ring);
+
+      font-variant-numeric: tabular-nums;
+    }
+
+
+    .badge-solid {
+      padding: 2px 7px;
+      margin-right: 6px;
+      background: var(--destructive);
+      color: var(--background);
+      font-size: 0.65rem;
+      font-weight: 700;
+      box-shadow: var(--glow-destructive);
+    }
+
+    .badge-label {
+
+      color: var(--accent-foreground);
+    }
+
+    .badge-label.locked {
+      color: var(--destructive-bright);
+    }
+
+    .badge-label.unread {
+      color: var(--ring);
+      font-weight: 600;
+    }
+
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      flex-shrink: 0;
+      border: 1px solid transparent;
+      border-radius: var(--radius-lg);
+      background: transparent;
+      color: var(--foreground);
+      font-family: var(--font-text);
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background var(--duration) var(--ease),
+        border-color var(--duration) var(--ease),
+        color var(--duration) var(--ease),
+        transform var(--duration) var(--ease);
+    }
+
+    .btn:hover {
+      background: color-mix(in srgb, var(--primary) 10%, transparent);
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: default;
+      transform: none;
+    }
+
+
+    .btn-xs {
+      height: var(--btn-height-xs);
+      padding: 0 8px;
+      font-size: var(--text-xs);
+    }
+
+    .btn-sm {
+      height: var(--btn-height-sm);
+      padding: 0 12px;
+      font-size: var(--text-sm);
+    }
+
+    .btn-md {
+      height: var(--btn-height-md);
+      padding: 0 14px;
+      font-size: 0.85rem;
+    }
+
+
+    .btn-pill {
+      height: 34px;
+      padding: 0 14px;
+      border-radius: var(--radius-3xl);
+
+      font-size: 13px;
+    }
+
+
+    .btn-block {
+      display: flex;
+      width: 100%;
+    }
+
+    .btn-primary {
+      border-color: var(--primary-dim);
+      background: color-mix(in srgb, var(--primary) 14%, transparent);
+      color: var(--ring);
+    }
+
+    .btn-primary:hover {
+      background: color-mix(in srgb, var(--primary) 24%, transparent);
+    }
+
+
+    .btn-solid {
+      color: var(--primary-foreground);
+      background: var(--primary-solid);
+      border-color: var(--primary-solid);
+    }
+
+    .btn-solid:hover {
+      background: var(--primary-solid-hover);
+    }
+
+
+    .btn-destructive-flat {
+      color: var(--destructive);
+      border-color: var(--destructive);
+    }
+
+    .btn-destructive-flat:hover {
+      background: color-mix(in srgb, var(--destructive) 14%, transparent);
+    }
+
+    .btn-outline {
+      border-color: var(--border);
+      background: var(--card);
+    }
+
+    .btn-ghost {
+      color: var(--accent-foreground);
+    }
+
+    .btn-ghost:hover {
+      color: var(--foreground);
+    }
+
+    .btn-destructive {
+      border-color: var(--destructive);
+      background: color-mix(in srgb, var(--destructive-bright) 16%, transparent);
+      color: var(--destructive-bright);
+    }
+
+    .btn-destructive:hover {
+      background: color-mix(in srgb, var(--destructive-bright) 32%, transparent);
+    }
+
+
     .btn-icon {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
       padding: 0;
-      /* Transparent rather than none, so a variant can add a real border
-         without the glyph shifting by a pixel or the box changing size. */
+
       border: 1px solid transparent;
       border-radius: var(--radius-full);
       background: transparent;
       color: var(--muted-foreground);
       font-size: 14px;
       line-height: 1;
-      /* All four replaced rules set this individually. Without it a button
-         falls back to the UA's `cursor: default` and stops reading as
-         clickable. */
+
       cursor: pointer;
       transition: background var(--duration) var(--ease),
         color var(--duration) var(--ease);
@@ -562,8 +558,7 @@
       background: color-mix(in srgb, var(--primary) 10%, transparent);
     }
 
-    /* The toggled-on state: a toolbar tool that is selected, a view toggle set
-       to grid. Not aria-pressed - these predate it and use a plain class. */
+
     .btn-icon.active {
       color: var(--ring);
       background: color-mix(in srgb, var(--primary) 18%, transparent);
@@ -579,13 +574,9 @@
       background: transparent;
     }
 
-    /* The bordered variant. The Drive toolbar's buttons sit on a raised strip
-       and need an edge to read as pressable. */
+
     .btn-icon-outline {
-      /* A rounded SQUARE, not the circle .btn-icon gives every other icon
-         button. The Drive toolbar's buttons were --radius-lg before this
-         change (via a descendant override of .icon-btn) and making them
-         circles would have been a silent shape change on five controls. */
+
       border-radius: var(--radius-lg);
       border-color: var(--input);
       background: var(--muted);
@@ -609,24 +600,61 @@
       border-color: var(--input);
     }
 
-    /* NOT a scale - see the note above. The four sizes the app uses today. */
+
+    .btn-icon-accent {
+      border-color: var(--primary-dim);
+      background: var(--primary-subtle);
+      color: var(--ring);
+    }
+
+    .btn-icon-accent:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn-icon-accent:active {
+      transform: scale(0.94);
+    }
+
+    .btn-icon-accent:disabled {
+
+      background: var(--muted);
+    }
+
+    .btn-icon-accent:disabled:hover {
+      color: var(--ring);
+      background: var(--muted);
+      border-color: var(--primary-dim);
+    }
+
+
+    .btn-icon-20 { width: 20px; height: 20px; }
+    .btn-icon-24 { width: 24px; height: 24px; }
     .btn-icon-28 { width: 28px; height: 28px; }
     .btn-icon-30 { width: 30px; height: 30px; }
     .btn-icon-32 { width: 32px; height: 32px; }
     .btn-icon-34 { width: 34px; height: 34px; }
 
+
+    .btn-icon-square {
+      border-radius: var(--radius-md);
+    }
+
+
+    .btn-icon.copied {
+      color: var(--success);
+    }
+
+
+    .btn-icon-lg {
+      width: var(--control-lg);
+      height: var(--control-lg);
+    }
+
     .btn-icon svg {
       flex-shrink: 0;
     }
 
-    /* --- Radio and checkbox ---
-       One rule styled both through [type=], which meant the shared geometry
-       could not be told apart from the shape. Split so each is named and the
-       shared half stays here. Was .qac-input - named for the question card,
-       which is only one of the places a radio can appear.
 
-       The checked mark is drawn with ::after rather than a background image so
-       it inherits --background and needs no second asset. */
     .radio,
     .checkbox {
       appearance: none;
@@ -675,7 +703,7 @@
       transform: rotate(-45deg);
     }
 
-    /* ---------- Password Gate ---------- */
+
     .gate {
       position: fixed;
       inset: 0;
@@ -694,7 +722,7 @@
       padding: 40px 32px 32px;
       border: 1px solid var(--border);
       border-radius: var(--radius-2xl);
-      background: linear-gradient(180deg, var(--card), var(--popover));
+      background: var(--card);
       box-shadow: var(--shadow-xl);
     }
 
@@ -746,26 +774,9 @@
       border-bottom-color: var(--primary);
     }
 
-    .gate-card button {
+
+    .gate-card .btn {
       margin-top: 22px;
-      width: 100%;
-      padding: 12px;
-      border-radius: var(--radius-lg);
-      border: 1px solid var(--primary-dim);
-      background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 14%, transparent), color-mix(in srgb, var(--primary) 4%, transparent));
-      color: var(--ring);
-      font-size: 15px;
-      letter-spacing: 0.06em;
-      cursor: pointer;
-      transition: transform var(--duration) var(--ease), background var(--duration-slow) var(--ease);
-    }
-
-    .gate-card button:hover {
-      background: color-mix(in srgb, var(--primary) 20%, transparent);
-    }
-
-    .gate-card button:active {
-      transform: scale(0.98);
     }
 
     .gate-error {
@@ -803,27 +814,19 @@
       }
     }
 
-    /* ---------- App shell ---------- */
+
     .app {
       height: 100dvh;
-      /* JS overrides height (and top) to track the live visualViewport
-       while the on-screen keyboard is open, so the whole shell (header
-       included) shrinks to the visible area instead of the header
-       getting pushed off-screen or the composer floating above the
-       keyboard. position:fixed is what makes the JS-set `top` do
-       anything — see the @media(max-width) override below. */
+
       display: flex;
       flex-direction: column;
       width: 100%;
       max-width: 820px;
       margin: 0 auto;
-      /* No side borders — the chat blends straight into the page
-       background instead of sitting in a bounded card. */
+
     }
 
-    /* Below this, the app is full-bleed and fixed to track the visual
-     viewport (keyboard handling). Kept distinct from the 641px desktop
-     breakpoint below so there's no width where both could apply. */
+
     @media (max-width: 640px) {
       .app {
         position: fixed;
@@ -842,36 +845,16 @@
       flex-direction: column;
     }
 
-    .content-wrap[hidden] {
-      display: none !important;
-    }
-
     .app-header {
       display: flex;
       align-items: center;
-      /* The height is STATED, not inherited from content, and it is the same
-         token .app reserves with padding-top. That equality is load-bearing:
-         the mobile keyboard handler in perla-companion.js recomputes .app's
-         height and top from visualViewport, assuming the space under this
-         header is exactly --header-height tall. Left to size itself the header
-         would be 14px + content + 14px - right only while the type scale keeps
-         the content at 30px, and silently wrong the moment it does not. */
+
       height: var(--header-height);
       padding: 14px 20px;
       z-index: var(--z-header);
-      /* Blends into the page background instead of sitting in its own
-       panel — no border-bottom, no distinct background fill. */
+
       background: transparent;
-      /* Full-bleed: .app (the chat column) is capped at max-width and
-       centered within a flex-centered body, so a margin-based breakout
-       (calc(50% - 50vw)) resolves against .app's width, not the real
-       viewport — it doesn't actually reach the browser edges. Using
-       position:fixed anchored to the true viewport corners is what
-       makes this a real top bar spanning the whole window, independent
-       of how .app itself is sized/centered. Unlike the chat body, the
-       header's own buttons intentionally use the full window width
-       (hamburger/logo at the true left edge, status at the true right
-       edge) rather than being re-capped to the chat column's width. */
+
       position: fixed;
       top: 0;
       left: 0;
@@ -880,10 +863,7 @@
       box-sizing: border-box;
     }
 
-    /* The header is fixed now, so it no longer takes up space in normal
-     flow — reserve that height at the top of .app so the app-menu,
-     dropdown panels, and content-wrap (all its siblings) sit below the
-     header instead of underneath it. */
+
     .app {
       padding-top: var(--header-height);
     }
@@ -925,11 +905,7 @@
       letter-spacing: 0.03em;
     }
 
-    /* Renamed from .status. The inline message line in the panels is .status
-       (a primitive in the Primitives section), and two unrelated components
-       sharing a class name is how the header's flex layout ended up applying
-       to a row of status text: same specificity, later rule wins. The dot and
-       the timer below it keep their own names - only the wrapper moved. */
+
     .status-indicator {
       display: flex;
       align-items: center;
@@ -982,49 +958,34 @@
       align-self: flex-start;
     }
 
-    .entry-system {
-      align-self: center;
-      max-width: 100%;
-    }
 
     .entry-bubble {
       padding: 10px 14px;
+      border-radius: var(--radius-bubble);
     }
 
     .entry-user .entry-bubble {
       text-align: left;
       background: var(--primary-solid);
-      border: none;
-      border-radius: var(--radius-bubble);
     }
 
     .entry-perla .entry-bubble {
       background: var(--card);
-      border: none;
-      border-radius: var(--radius-bubble);
     }
 
-    /* The sender bubble is a solid fill, so it cannot use --foreground: the
-       cream body text is 4.12:1 on --primary-solid, under AA's 4.5 for body
-       copy. --primary-foreground is white, at 5.46:1. */
+
     .entry-user p {
       color: var(--primary-foreground);
     }
 
-    .entry-user .entry-bubble .md,
-    .entry-user .entry-bubble .md p,
-    .entry-user .entry-bubble .md li,
-    .entry-user .entry-bubble .md h1,
-    .entry-user .entry-bubble .md h2,
-    .entry-user .entry-bubble .md h3,
-    .entry-user .entry-bubble .md h4,
-    .entry-user .entry-bubble .md blockquote,
-    .entry-user .entry-bubble .md td,
-    .entry-user .entry-bubble .md th {
+
+    .entry-user .entry-bubble .prose,
+    .entry-user .entry-bubble .prose blockquote,
+    .entry-user .entry-bubble .prose-table th {
       color: var(--primary-foreground);
     }
 
-    .entry-user .entry-bubble .md a {
+    .entry-user .entry-bubble .prose a {
       color: var(--primary-foreground);
       text-decoration: underline;
     }
@@ -1039,32 +1000,16 @@
       color: var(--muted-foreground);
     }
 
-    /* ---------- Question & permission cards ----------
-       Structure follows the shadcn reference; the palette stays Perla's. These
-       rules used to be ~24 inline style.* assignments in the JS, which is why
-       this surface could not be restyled at all without touching the renderer.
 
-       Geometry is measured from the reference: 1px border, ~8px radius, 14px
-       padding, 9px gap between options, 16px indicator. Selection changes BOTH
-       the fill (--card-selected) and the border (--primary) — the old version
-       changed only the fill, at a step too small to see. */
     .entry-question,
     .entry-permission {
-      /* Option cards need the full column; a chat bubble hugging its text is
-         far too narrow for "Ask before sensitive or destructive actions."
-         align-self has to be reset as well as width: .entry-perla sets
-         align-self: flex-start, and in a column flex container that makes the
-         item shrink-to-fit — which silently ignores width and left the card
-         312px wide in a 780px column. */
+
       align-self: stretch;
       max-width: 100%;
       width: 100%;
     }
 
-    /* The card's own bubble is the dark well the options sit in. The reference
-       does the same: page #0a0a0a, options #121212. With the bubble on --card
-       the options were ALSO --card, so they were separated by a border and
-       nothing else. */
+
     .entry-question .entry-bubble,
     .entry-permission .entry-bubble {
       background: var(--background);
@@ -1078,18 +1023,18 @@
     }
 
     .qac-progress {
-      font-size: 0.72rem;
+      font-size: var(--qac-text-progress);
       color: var(--muted-foreground);
     }
 
     .qac-title {
-      font-size: 0.95rem;
+      font-size: var(--qac-text-title);
       font-weight: 600;
       color: var(--foreground);
     }
 
     .qac-sub {
-      font-size: 0.8rem;
+      font-size: var(--qac-text-sub);
       color: var(--muted-foreground);
     }
 
@@ -1125,10 +1070,7 @@
       border-color: var(--primary);
     }
 
-    /* A real input, not a div: keyboard and screen-reader behaviour come free,
-       and appearance:none lets it carry the shadcn indicator. The styling
-       moved to the .radio / .checkbox primitives in the Primitives section -
-       it used to be duplicated here under a name only the question card used. */
+
 
     .qac-text {
       display: flex;
@@ -1138,12 +1080,12 @@
     }
 
     .qac-label {
-      font-size: 0.85rem;
+      font-size: var(--qac-text-label);
       color: var(--foreground);
     }
 
     .qac-desc {
-      font-size: 0.78rem;
+      font-size: var(--qac-text-desc);
       color: var(--muted-foreground);
     }
 
@@ -1151,7 +1093,7 @@
       width: 100%;
       box-sizing: border-box;
       padding: 9px 11px;
-      font-size: 0.85rem;
+      font-size: var(--qac-text-label);
       color: var(--foreground);
       background: transparent;
       border: 1px solid var(--border);
@@ -1169,11 +1111,9 @@
 
     .qac-command {
       padding: 9px 11px;
-      /* Was var(--mono, monospace) against a --mono token that was never defined, so
-         this silently rendered in generic monospace while every other code
-         surface named JetBrains Mono. Now one token, like the rest. */
+
       font-family: var(--font-mono);
-      font-size: 0.74rem;
+      font-size: var(--qac-text-command);
       color: var(--foreground);
       white-space: pre-wrap;
       word-break: break-all;
@@ -1193,71 +1133,17 @@
       flex: 1 1 auto;
     }
 
-    .qac-btn {
-      padding: 7px 14px;
-      font-size: 0.78rem;
-      color: var(--foreground);
-      background: transparent;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      cursor: pointer;
-      transition: background var(--duration), border-color var(--duration);
-    }
 
-    .qac-btn:hover {
-      background: var(--accent);
-    }
-
-    .qac-btn:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
-
-    /* Not the reference's inverted near-white. On Perla that would be a second
-       light-on-dark language and would collide with the sender bubble, which is
-       the only such element. Same size and shape, filled with the accent. */
-    .qac-btn-primary {
-      color: var(--primary-foreground);
-      background: var(--primary-solid);
-      border-color: var(--primary-solid);
-    }
-
-    .qac-btn-primary:hover {
-      background: var(--primary-solid-hover);
-    }
-
-    /* Destructive stays destructive, but flat: a token, not a hand-mixed red
-       with a glow over it. */
-    .qac-btn-destructive {
-      color: var(--destructive);
-      border-color: var(--destructive);
-    }
-
-    .qac-btn-destructive:hover {
-      background: color-mix(in srgb, var(--destructive) 14%, transparent);
-    }
 
     .qac-status {
-      font-size: 0.75rem;
+      font-size: var(--qac-text-status);
       font-style: italic;
       color: var(--muted-foreground);
     }
 
-    .entry-system .entry-bubble {
-      text-align: center;
-      background: var(--muted);
-      border: none;
-      border-radius: var(--radius-bubble);
-      padding: 6px 14px;
-    }
 
-    /* A send that never made it to Perla. The bubble keeps its shape and
-       only the border goes wax-red, so the message stays readable while
-       reading as "this one didn't get through". The Retry button that
-       rides in the meta row clears the state and re-sends the same
-       payload. */
     .entry-failed .entry-bubble {
-      border-color: var(--destructive-bright);
+      border: 1px solid var(--destructive-bright);
     }
 
     .entry-fail-label {
@@ -1276,54 +1162,46 @@
           color: var(--foreground);
         }
 
-    .entry-system p {
-      color: var(--accent-foreground);
-      font-style: italic;
-      font-size: 14px;
-    }
 
-    /* Markdown container — used for Perla's bubbles (live chat + history
-     replay). Everything is HTML-escaped before this renders, so these
-     rules only ever see tags the renderer itself emits. */
-    .md {
+    .prose {
       font-size: 17px;
       line-height: 1.55;
       color: var(--foreground);
     }
 
-    .md p {
+    .prose p {
       margin: 0 0 10px;
       font-size: inherit;
       line-height: inherit;
     }
 
-    .md p:last-child {
+    .prose p:last-child {
       margin-bottom: 0;
     }
 
-    .md h1,
-    .md h2,
-    .md h3,
-    .md h4 {
+    .prose h1,
+    .prose h2,
+    .prose h3,
+    .prose h4 {
       margin: 12px 0 6px;
       line-height: 1.3;
       font-weight: 600;
     }
 
-    .md h1 {
+    .prose h1 {
       font-size: 1.3em;
     }
 
-    .md h2 {
+    .prose h2 {
       font-size: 1.2em;
     }
 
-    .md h3,
-    .md h4 {
+    .prose h3,
+    .prose h4 {
       font-size: 1.1em;
     }
 
-    .md pre {
+    .prose pre {
       position: relative;
       margin: 8px 0;
       padding: 10px 12px;
@@ -1337,7 +1215,7 @@
       line-height: 1.5;
     }
 
-    .md code {
+    .prose code {
       font-family: var(--font-mono);
       font-size: 0.9em;
       background: rgba(0, 0, 0, 0.3);
@@ -1346,97 +1224,92 @@
       padding: 1px 5px;
     }
 
-    .md pre code {
+    .prose pre code {
       background: none;
       border: none;
       padding: 0;
       font-size: inherit;
     }
 
-    .md ul,
-    .md ol {
+    .prose ul,
+    .prose ol {
       margin: 6px 0;
       padding-left: 22px;
     }
 
-    .md li {
+    .prose li {
       margin: 2px 0;
     }
 
-    .md a {
+    .prose a {
       color: var(--ring);
       text-decoration: underline;
       text-underline-offset: 2px;
     }
 
-    .md blockquote {
+    .prose blockquote {
       margin: 8px 0;
       padding: 2px 0 2px 12px;
       border-left: 3px solid var(--primary-dim);
       color: var(--muted-foreground);
     }
 
-    /* Tables. The wrapper scrolls sideways so a wide table stays readable on a
-       phone instead of stretching the bubble past the screen. */
-    .md-table-wrap {
+
+    .prose-table-wrap {
       margin: 10px 0;
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
     }
 
-    .md-table {
+    .prose-table {
       border-collapse: collapse;
       width: 100%;
       font-size: 0.94em;
     }
 
-    .md-table th,
-    .md-table td {
+    .prose-table th,
+    .prose-table td {
       padding: 6px 10px;
       border: 1px solid var(--input);
       text-align: left;
       vertical-align: top;
     }
 
-    .md-table th {
+    .prose-table th {
       background: rgba(0, 0, 0, 0.28);
       color: var(--foreground);
       font-weight: 600;
       white-space: nowrap;
     }
 
-    .md-table td {
+    .prose-table td {
       background: rgba(0, 0, 0, 0.12);
     }
 
-    .md-table tbody tr:nth-child(even) td {
+    .prose-table tbody tr:nth-child(even) td {
       background: var(--muted);
     }
 
-    .md-align-center {
+    .prose-align-center {
       text-align: center;
     }
 
-    .md-align-right {
+    .prose-align-right {
       text-align: right;
     }
 
-    /* A long unbroken value (a path, a hash) should wrap rather than force the
-       wrapper to scroll for one cell. */
-    .md-table td {
+
+    .prose-table td {
       overflow-wrap: anywhere;
     }
 
-    .md hr {
+    .prose hr {
       border: none;
       border-top: 1px solid var(--input);
       margin: 10px 0;
     }
 
-    /* Meta row (timestamp + optional play button) sits below the bubble
-     and stays hidden until the message is hovered, focused (keyboard
-     nav), or tapped — tap support is via the .meta-visible class, which
-     JS toggles on mobile where :hover doesn't apply. */
+
     .entry-meta {
       display: flex;
       align-items: center;
@@ -1491,29 +1364,6 @@
       border-radius: var(--radius-xl);
     }
 
-    .entry-image-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 6px;
-    }
-
-    .entry-image-grid .entry-image {
-      width: 100%;
-      height: 140px;
-      max-height: none;
-      object-fit: cover;
-    }
-
-    .entry-image-grid:has(.entry-image:only-child) {
-      grid-template-columns: 1fr;
-    }
-
-    .entry-image-grid:has(.entry-image:only-child) .entry-image {
-      height: auto;
-      max-height: 360px;
-      object-fit: contain;
-    }
-
     .entry-image-loading,
     .entry-image-error {
       display: block;
@@ -1524,106 +1374,50 @@
       color: var(--destructive-bright);
     }
 
-    .replay-btn,
-    .copy-btn,
-    .stop-btn,
-    .retry-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 20px;
-      height: 20px;
-      flex-shrink: 0;
-      background: transparent;
-      border: none;
-      border-radius: 50%;
-      color: var(--muted-foreground);
-      padding: 0;
-      cursor: pointer;
-    }
 
-    .replay-btn:hover,
-    .copy-btn:hover,
-    .stop-btn:hover,
-    .retry-btn:hover {
-      color: var(--ring);
-    }
-
-    /* Retry lives on a message that's already marked failed, so it wears
-       the wax-red accent to tie it to the border. */
     .retry-btn {
       color: var(--destructive-bright);
     }
 
-    .retry-btn:hover {
-      color: var(--ring);
+
+
+
+
+    .code-block {
+      position: relative;
     }
 
-    .stop-btn:disabled,
-    .retry-btn:disabled {
-      opacity: 0.35;
-      cursor: default;
-    }
-
-    .copy-btn.copied {
-      color: var(--success);
-    }
-
-    /* Per-code-block copy button (attachCodeBlockCopyButtons) — floats in
-     the corner of any rendered fenced code block, chat bubble or file
-     viewer alike. `position: relative` on the .md pre rule (and the file
-     viewer's own pre, see below) is what anchors it. Hidden until the
-     block is hovered/focused/tapped, same reveal pattern as the message
-     meta row's copy button, so a wall of code isn't cluttered with
-     buttons at rest. */
     pre.code-block-wrap {
       padding-right: 34px;
     }
 
+
     .code-copy-btn {
+
+      transition: opacity var(--duration) var(--ease),
+        background var(--duration) var(--ease), color var(--duration) var(--ease);
       position: absolute;
       top: 6px;
       right: 6px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 24px;
-      height: 24px;
-      border-radius: var(--radius-md);
-      border: 1px solid var(--input);
       background: color-mix(in srgb, var(--background) 75%, transparent);
       color: var(--accent-foreground);
-      cursor: pointer;
-      padding: 0;
       opacity: 0;
-      transition: opacity var(--duration) var(--ease), color var(--duration) var(--ease), background var(--duration) var(--ease);
     }
 
-    pre.code-block-wrap:hover .code-copy-btn,
-    pre.code-block-wrap:focus-within .code-copy-btn,
+    .code-block:hover .code-copy-btn,
+    .code-block:focus-within .code-copy-btn,
     .code-copy-btn.copied {
       opacity: 1;
     }
 
-    .code-copy-btn:hover {
-      color: var(--ring);
-      background: color-mix(in srgb, var(--primary) 14%, transparent);
-    }
 
-    .code-copy-btn.copied {
-      color: var(--success);
-    }
-
-    /* Touch devices have no :hover — always show the button there so it's
-     actually reachable, matching how the message meta row already
-     handles touch via .meta-visible elsewhere in this file. */
     @media (hover: none) {
       .code-copy-btn {
         opacity: 1;
       }
     }
 
-    /* ---------- Composer ---------- */
+
     .composer {
       padding: 10px 14px;
       background: var(--card);
@@ -1632,18 +1426,11 @@
       display: flex;
       flex-direction: column;
       gap: 6px;
-      /* Lifted off the bottom edge instead of resting flush against it,
-       and inset from the sides so it reads as a floating docked bar. */
+
       margin: 0 14px calc(14px + var(--safe-bottom));
     }
 
-    .composer[hidden] {
-      display: none;
-    }
 
-    /* Replaces .composer in the exact same footer slot whenever Tier 2's
-     chat is on screen but not yet elevated — same floating-bar shell so
-     the transition to/from the real composer doesn't jump the layout. */
     .elevate-composer {
       padding: 12px 14px;
       background: var(--card);
@@ -1653,13 +1440,6 @@
       flex-direction: column;
       gap: 4px;
       margin: 0 14px calc(14px + var(--safe-bottom));
-    }
-
-    /* Without this, the [hidden] attribute set from JS is silently beaten
-     by the `display: flex` rule above (same specificity, and this class
-     rule wins), so the bar stayed visible on every tier — this is the fix. */
-    .elevate-composer[hidden] {
-      display: none;
     }
 
     .elevate-composer-row {
@@ -1702,30 +1482,9 @@
       border-bottom-color: var(--destructive);
     }
 
+
     .attach-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: var(--control-lg);
-      height: var(--control-lg);
-      flex-shrink: 0;
-      border-radius: 50%;
-      border: none;
-      background: transparent;
-      color: var(--accent-foreground);
       font-size: 20px;
-      cursor: pointer;
-      transition: color var(--duration-slow) var(--ease), background var(--duration-slow) var(--ease);
-    }
-
-    .attach-btn:hover {
-      color: var(--ring);
-      background: color-mix(in srgb, var(--primary) 8%, transparent);
-    }
-
-    .attach-btn.active {
-      color: var(--ring);
-      background: color-mix(in srgb, var(--primary) 14%, transparent);
     }
 
     .attach-preview {
@@ -1735,13 +1494,8 @@
       padding: 2px 2px 4px;
     }
 
-    /* ---------- Attachments ----------
-       Labelled image cards and full-width file rows. These were 64x64 squares:
-       a bare thumb with no filename, and a chip with a 10px centred name, so
-       an attachment was unidentifiable once it was that small. */
-    /* A queued image is a fixed-size tile: one border around the thumbnail, the
-       name AND the size together, so the card reads as one object. Previously
-       only the thumbnail had a border and the caption floated outside it. */
+
+
     .attach-thumb {
       position: relative;
       width: 104px;
@@ -1761,8 +1515,7 @@
     .attach-thumb-frame {
       position: relative;
       width: 100%;
-      /* Fixed height, so a queue of images is a tidy row regardless of aspect
-         ratio. object-fit crops rather than distorts. */
+
       height: 64px;
       border-radius: var(--radius-sm);
       overflow: hidden;
@@ -1803,9 +1556,7 @@
 
     .attach-thumb-remove,
     .attach-thumb-edit {
-      /* Hidden until the tile is hovered or something inside it takes focus.
-         The focus-within reveal below matters: an opacity rule that ignored
-         focus would leave these reachable by mouse and stranded by keyboard. */
+
       opacity: 0;
       transition: opacity var(--duration) var(--ease);
       position: absolute;
@@ -1840,9 +1591,7 @@
       color: var(--ring);
     }
 
-    /* Reveal on hover, and on focus-within so the controls stay reachable by
-       keyboard - an opacity rule that only knew about hover would leave them
-       visible to a mouse and stranded to a keyboard. */
+
     .attach-thumb:hover .attach-thumb-remove,
     .attach-thumb:hover .attach-thumb-edit,
     .attach-thumb:focus-within .attach-thumb-remove,
@@ -1850,9 +1599,7 @@
       opacity: 1;
     }
 
-    /* A touch device has no hover, so the reveal above would leave these
-       permanently invisible and the attachments unremovable. With no hover to
-       hide them from, on touch they are simply always shown. */
+
     @media (hover: none) {
       .attach-thumb-remove,
       .attach-thumb-edit {
@@ -1860,11 +1607,8 @@
       }
     }
 
-    /* A ROW, not a 64px square: icon tile left, name over a muted type·size
-       line, dismiss right. Clicking still opens the viewer / download. */
-    /* A DELIVERED file: a full-width row. Queued files use the square variant
-       below instead — in the composer everything is a fixed-size tile, and
-       once sent everything is a row. */
+
+
     .attach-file-chip {
       position: relative;
       width: 100%;
@@ -1880,9 +1624,7 @@
       cursor: pointer;
     }
 
-    /* (1) A queued file: the same square it has always been, and the same fixed
-       size as the image tiles beside it, so a mixed queue is one tidy row
-       rather than a row of squares above a column of full-width bars. */
+
     .attach-file-chip-queued {
       width: 104px;
       height: 104px;
@@ -1964,9 +1706,7 @@
       white-space: nowrap;
     }
 
-    /* Neutral ghost, not the red badge the thumbnails use: dismissing a queued
-       file is a routine edit, and red here would compete with Reject on a
-       permission card. */
+
     .attach-file-remove {
       flex-shrink: 0;
       width: 22px;
@@ -1989,7 +1729,7 @@
       border-color: var(--border);
     }
 
-    /* (7) Download is its own control so the row itself can mean "view". */
+
     .attach-file-download {
       flex-shrink: 0;
       width: 26px;
@@ -2015,12 +1755,7 @@
       cursor: default;
     }
 
-    /* (9) A real spinner, not the file icon spinning. Spinning the icon read as
-       "this file is rotating", which says nothing; a spinner sits in the icon's
-       place and the icon comes back the moment the state clears.
 
-       The ring itself is the .spinner primitive; this rule only owns WHEN the
-       chip shows it, which is state rather than appearance. */
     .attach-file-chip .spinner {
       display: none;
     }
@@ -2035,10 +1770,10 @@
       display: none;
     }
 
-    /* A delivered file row is a row; the icon slot is shared with the spinner. */
+
     .attach-file-chip .attach-file-icon,
     .attach-file-chip .spinner {
-      /* both occupy the same 40px slot in the row */
+
       flex-shrink: 0;
     }
 
@@ -2057,21 +1792,12 @@
       align-items: flex-start;
     }
 
-    /* Attachments block for a SENT message — file chips and/or images,
-     rendered as their OWN element ABOVE the message bubble rather than
-     nested inside it (matches Claude's UI: the attachment sits outside
-     the chat bubble, the bubble only ever holds the typed text). Sent
-     images are ALSO square pills here (see .entry-attachments
-     .entry-image below) rather than full-size — tap opens the lightbox
-     for the full view, same interaction as the file pill opening the
-     file viewer. */
+
     .entry-attachments {
       display: flex;
       flex-direction: column;
       gap: 8px;
-      /* (5) A real gap. The bubble and the attachment rows are both bordered,
-         and with no margin between them the two borders touched and read as one
-         box. */
+
       margin: 8px 0;
     }
 
@@ -2080,38 +1806,28 @@
       margin-bottom: 0;
     }
 
-    /* .entry stretches its children to full width by default (flex-direction:
-     column), so without this the attachments row would span the whole
-     bubble column instead of hugging its own content — align it to the
-     same edge the bubble itself sits on (right for the user's own
-     messages) so a single small file chip doesn't look stranded at full
-     width. */
+
     .entry-user .entry-attachments {
       align-items: flex-end;
     }
 
-    .entry-perla .entry-attachments,
-    .entry-system .entry-attachments {
+    .entry-perla .entry-attachments {
       align-items: flex-start;
     }
 
-    /* (6) A delivered attachment is a FIXED width, not the width of the message
-       it belongs to. Before, the row was width:100% of the bubble, so a short
-       message produced a very wide file card and a long one overflowed the
-       rhythm. */
+
     .entry-attachments .attach-file-row {
       width: 320px;
       max-width: 100%;
     }
 
-    /* Images you sent keep their thumbnails, so that row sizes to its tiles
-       rather than the fixed 320px a delivered file row uses. */
+
     .entry-attachments .attach-image-row {
       width: auto;
       max-width: 100%;
     }
 
-    /* (4) Yours sit to the right of the message, Perla's to the left. */
+
     .entry-user .entry-attachments .attach-file-row {
       justify-content: flex-end;
     }
@@ -2119,8 +1835,6 @@
     .entry-perla .entry-attachments .attach-file-row {
       justify-content: flex-start;
     }
-
-
 
     .composer-row {
       display: flex;
@@ -2132,20 +1846,9 @@
       flex: 1;
     }
 
+
     .send-btn {
-      width: var(--control-lg);
-      height: var(--control-lg);
-      flex-shrink: 0;
-      border-radius: 50%;
-      border: 1px solid var(--primary-dim);
-      background: var(--primary-subtle);
-      color: var(--ring);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0;
-      transition: transform var(--duration) var(--ease), background var(--duration-slow) var(--ease), opacity var(--duration-slow) var(--ease);
+      transition: transform var(--duration) var(--ease);
     }
 
     .send-btn svg {
@@ -2154,40 +1857,13 @@
       height: 19px;
     }
 
-    .send-btn:hover {
-      background: var(--primary-hover);
-    }
-
-    .send-btn:active {
-      transform: scale(0.94);
-    }
-
     .send-btn:disabled {
-      opacity: 0.32;
-      cursor: default;
       transform: none;
-      background: var(--muted);
     }
+
 
     .mic-btn {
       position: relative;
-      width: var(--control-lg);
-      height: var(--control-lg);
-      flex-shrink: 0;
-      border-radius: 50%;
-      border: none;
-      background: transparent;
-      color: var(--accent-foreground);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: opacity var(--duration-slow) var(--ease), color var(--duration-slow) var(--ease), background var(--duration-slow) var(--ease);
-    }
-
-    .mic-btn:hover {
-      color: var(--ring);
-      background: var(--primary-subtle);
     }
 
     .mic-btn.typing-hidden {
@@ -2263,7 +1939,7 @@
       display: none;
     }
 
-    /* ---------- Voice draft (record → preview → send) ---------- */
+
     .composer.voice-drafting #textInput,
     .composer.voice-drafting .composer-row {
       display: none;
@@ -2277,20 +1953,9 @@
       padding: 6px 8px;
       border-radius: var(--radius-xl);
       animation: panel-drop 0.18s ease;
-      /* NO border and NO background. This widget lives INSIDE footer.composer,
-         which already supplies a border and a fill, so drawing a second one
-         produced two concentric outlines around the composer. */
-      /* Height: while drafting, #textInput and .composer-row are both hidden,
-         so the composer would otherwise collapse from (textarea + control row)
-         to one short strip and the whole box would jump under the user's thumb.
-         40px is the textarea's own height (17px x 1.4 line box + 6px/10px
-         padding) and 42px is the control row - see --control-lg, the size of
-         the mic and send buttons. */
-      min-height: calc(40px + var(--control-lg));
-    }
 
-    .voice-draft[hidden] {
-      display: none;
+
+      min-height: calc(40px + var(--control-lg));
     }
 
     .voice-draft-time {
@@ -2330,8 +1995,7 @@
       animation: none;
     }
 
-    /* Stop-generation control in the draft bar while a voice turn is in
-       flight — matches the .stop-btn icon in message meta rows. */
+
     .voice-draft-interrupt {
       color: var(--muted-foreground);
     }
@@ -2356,7 +2020,7 @@
       }
     }
 
-    /* Voice bubble in the chat */
+
     .voice-bubble {
       max-width: 260px;
     }
@@ -2420,7 +2084,7 @@
       transition: height 0.05s linear;
     }
 
-    /* ---------- Thinking indicator ---------- */
+
     .thinking {
       align-self: flex-start;
       display: inline-flex;
@@ -2463,7 +2127,7 @@
       }
     }
 
-    /* ---------- Welcome empty state ---------- */
+
     .welcome {
       margin: 14vh auto 0;
       text-align: center;
@@ -2508,7 +2172,7 @@
       color: var(--accent-foreground);
     }
 
-    /* ---------- Image lightbox ---------- */
+
     .lightbox {
       position: fixed;
       inset: 0;
@@ -2523,16 +2187,7 @@
       animation: fade-in 0.18s ease;
     }
 
-    .lightbox[hidden] {
-      display: none;
-    }
 
-    /* Positioned wrap/inner pair, same pattern as the image editor's
-     editorCanvasWrap/editorCanvasInner: --fit-w/--fit-h set the base
-     "fits the screen" size in JS once the image loads, and zoom/pan on
-     top of that apply as a CSS transform on the inner element — which
-     keeps getBoundingClientRect() correct for any pointer math at any
-     zoom level without the editor's code needing to know about zoom. */
     .lightbox-canvas-wrap {
       position: relative;
       width: 100%;
@@ -2577,7 +2232,7 @@
       }
     }
 
-    /* ---------- File viewer (reopen an attached text/code/document file) ---------- */
+
     .file-viewer {
       position: fixed;
       inset: 0;
@@ -2592,10 +2247,6 @@
       animation: fade-in 0.18s ease;
     }
 
-    .file-viewer[hidden] {
-      display: none;
-    }
-
     .file-viewer-panel {
       width: 100%;
       max-width: 720px;
@@ -2603,7 +2254,7 @@
       max-height: 640px;
       display: flex;
       flex-direction: column;
-      background: linear-gradient(180deg, var(--popover), var(--card));
+      background: var(--popover);
       border: 1px solid var(--border);
       border-radius: var(--radius-2xl);
       box-shadow: var(--shadow-xl);
@@ -2677,7 +2328,7 @@
       padding: 20px;
     }
 
-    /* ---------- Image editor (crop + pen) ---------- */
+
     .img-editor {
       position: fixed;
       inset: 0;
@@ -2690,11 +2341,7 @@
       animation: fade-in 0.18s ease;
     }
 
-    .img-editor[hidden] {
-      display: none;
-    }
 
-    /* Canvas fills the whole editor — every control floats above it. */
     .img-editor-canvas-wrap {
       flex: 1;
       min-height: 0;
@@ -2710,12 +2357,7 @@
     .img-editor-canvas-inner {
       position: relative;
       line-height: 0;
-      /* Base fit-to-screen size is set inline via JS (--fit-w/--fit-h) once
-       the image loads; zoom then scales on top of that via --editor-zoom,
-       and pan offsets via --editor-pan-x/--editor-pan-y. Transform-based
-       zoom (rather than resizing the canvas element) keeps
-       getBoundingClientRect() — and therefore all pointer-to-canvas
-       coordinate mapping — correct at any zoom level for free. */
+
       width: var(--fit-w, auto);
       height: var(--fit-h, auto);
       max-width: none;
@@ -2776,7 +2418,7 @@
       cursor: nwse-resize;
     }
 
-    /* Shared floating-pill shell used by every editor control cluster. */
+
     .editor-float {
       position: absolute;
       z-index: var(--z-sticky);
@@ -2792,38 +2434,28 @@
       -webkit-backdrop-filter: blur(8px);
     }
 
-    .editor-float[hidden] {
-      display: none;
-    }
 
-    /* Top-center: Crop / Pen mode switch — the only always-visible control. */
     .editor-mode-switch {
       top: 12px;
       left: 50%;
       transform: translateX(-50%);
     }
 
-    /* Top-right: close button, on its own so it never competes with modes. */
+
     .editor-close-float {
       top: 12px;
       right: 12px;
       padding: 0;
     }
 
-    /* Top-left: undo/reset, small and out of the way. */
+
     .editor-history-float {
       top: 12px;
       left: 12px;
     }
 
-    /* Bottom-center: whatever the active mode needs (pen options, or apply-crop). */
-    /* Floats that hold exactly ONE control do not want this chrome. A pill-shaped
-       border, a fill and 5px of padding AROUND a pill-shaped button reads as a
-       very wide border rather than as two things, which is what the Save and
-       Apply-crop controls looked like. `.bare` drops the wrapper chrome so the
-       button inside it is the only visible object; the multi-control floats
-       (mode switch, undo/reset, zoom) keep it, because there the ring is what
-       groups them. */
+
+
     .editor-float.bare {
       padding: 0;
       border: none;
@@ -2840,13 +2472,13 @@
       max-width: calc(100vw - 24px);
     }
 
-    /* Bottom-right: Save. Kept apart from context controls so it's always reachable. */
+
     .editor-save-float {
       bottom: calc(12px + var(--safe-bottom));
       right: 12px;
     }
 
-    /* Bottom-left: zoom controls */
+
     .editor-zoom-float {
       bottom: calc(12px + var(--safe-bottom));
       left: 12px;
@@ -2859,34 +2491,6 @@
       text-align: center;
       flex-shrink: 0;
       user-select: none;
-    }
-
-    .editor-pill-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      height: 34px;
-      padding: 0 14px;
-      border-radius: var(--radius-3xl);
-      border: none;
-      background: transparent;
-      color: var(--ring);
-      font-family: var(--font-text);
-      font-size: 13px;
-      white-space: nowrap;
-      cursor: pointer;
-    }
-
-    .editor-pill-btn:hover {
-      background: color-mix(in srgb, var(--primary) 14%, transparent);
-    }
-
-    .editor-pill-btn.primary {
-      background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 28%, transparent), color-mix(in srgb, var(--primary) 12%, transparent));
-    }
-
-    .editor-pill-btn.primary:hover {
-      background: color-mix(in srgb, var(--primary) 34%, transparent);
     }
 
     .img-editor-colors {
@@ -2914,16 +2518,12 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      /* Was a fixed 90px, which is narrower than its own contents: a 70px
-         range + a 6px gap + a 26px label is 102px, so the "6px" readout was
-         pushed outside the floating toolbar. Width is now whatever the
-         children need. */
+
       width: auto;
     }
 
     .img-editor-size input[type="range"] {
-      /* flex-shrink:0 so the slider gives way instead - a range input is a
-         replaced element and will happily shrink below its set width. */
+
       flex: 0 0 70px;
       width: 70px;
       accent-color: var(--ring);
@@ -2967,70 +2567,37 @@
 
       .app {
         height: calc(100dvh - 56px);
-        /* No card chrome (border/shadow/radius) — the chat blends into
-         the page background instead of floating in a bounded card. */
+
       }
     }
 
-    .tier-badge {
-      background: linear-gradient(180deg, var(--destructive-bright), var(--destructive));
-      color: var(--background);
-      font-size: 0.65rem;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      padding: 2px 7px;
-      border-radius: var(--radius-3xl);
-      margin-right: 6px;
-      box-shadow: var(--glow-destructive);
+
+
+
+    .history-daypicker-btn.open {
+      border-color: var(--primary);
     }
 
-    .tier-timer {
-      font-size: 11px;
-      letter-spacing: 0.04em;
-      color: var(--ring);
-      border: 1px solid var(--primary-dim);
-      background: color-mix(in srgb, var(--primary) 8%, transparent);
-      padding: 2px 8px;
-      border-radius: var(--radius-3xl);
-      margin-right: 6px;
-      font-variant-numeric: tabular-nums;
+    .history-daypicker-btn.open .history-daypicker-caret {
+      transform: rotate(180deg);
     }
 
-    .tier-timer[hidden] {
-      display: none;
-    }
 
-    .elevate-submit {
-      background: linear-gradient(180deg, color-mix(in srgb, var(--destructive-bright) 22%, transparent), color-mix(in srgb, var(--destructive-bright) 8%, transparent));
-      color: var(--destructive-bright);
-      border: 1px solid var(--destructive);
-      border-radius: var(--radius-lg);
-      padding: 8px 14px;
-      font-size: 0.8rem;
-      letter-spacing: 0.04em;
-      cursor: pointer;
-      transition: background var(--duration-slow) var(--ease), transform var(--duration) var(--ease);
+    .history-daypicker-caret {
       flex-shrink: 0;
     }
 
-    .elevate-submit:hover {
-      background: color-mix(in srgb, var(--destructive-bright) 32%, transparent);
+    .history-tier-btn.active {
+      background: color-mix(in srgb, var(--primary) 18%, transparent);
+      color: var(--foreground);
     }
 
-    .elevate-submit:active {
-      transform: scale(0.96);
+
+    .qa-input-cancel {
+      padding: 0 11px;
     }
 
-    /* The header's icon buttons (menu, history, elevate) are .btn-icon at 30px
-       - see the primitive in the Primitives section. What is left here is the
-       one rule that could not move into it: [hidden] needs !important because
-       .btn-icon sets `display: inline-flex`, and a bare attribute selector
-       loses to a class selector on specificity. #voiceDraftPlay relies on it. */
-    .btn-icon[hidden] {
-      display: none !important;
-    }
 
-    /* ---------- Hamburger menu button ---------- */
     .menu-btn {
       position: relative;
     }
@@ -3064,12 +2631,12 @@
       transform: translateY(-4.5px) rotate(-45deg);
     }
 
-    /* ---------- App menu (hamburger dropdown) ---------- */
+
     .floating-menu {
       display: flex;
       flex-direction: column;
       padding: 8px;
-      background: linear-gradient(180deg, var(--popover), var(--card));
+      background: var(--popover);
       border: 1px solid var(--border);
       border-radius: var(--radius-2xl);
       box-shadow: var(--shadow-lg);
@@ -3088,11 +2655,7 @@
     }
 
     .app-menu {
-      /* Floats over the content near the hamburger button instead of
-       pushing the page down — anchored to the header's fixed left
-       padding (20px) since the button always sits there. Sits directly
-       below the header, so it tracks --header-height rather than a
-       literal that silently desyncs when the type scale changes. */
+
       top: var(--header-height);
       left: 20px;
       width: 240px;
@@ -3105,12 +2668,7 @@
     }
 
     .attach-menu {
-      /* Anchored above the composer's attach button (opens upward instead
-       of down since the button sits near the bottom of the screen).
-       left/top are set dynamically in JS from the button's actual
-       position, since the composer is a centered, max-width column —
-       not flush against the viewport edge like the header — so a fixed
-       left offset would only be correct at one particular screen width. */
+
       transform-origin: bottom left;
       transform: scale(0.94) translateY(6px);
     }
@@ -3163,22 +2721,7 @@
       flex: 1;
     }
 
-    .menu-item-badge {
-      font-size: 11px;
-      color: var(--accent-foreground);
-      letter-spacing: 0.04em;
-    }
 
-    .menu-item-badge.locked {
-      color: var(--destructive-bright);
-    }
-
-    .menu-item-badge.unread {
-      color: var(--ring);
-      font-weight: 600;
-    }
-
-    /* ---------- Dropdown panels (history day picker, elevate token) ---------- */
     .dropdown-panel {
       padding: 12px 20px 16px;
       background: transparent;
@@ -3201,7 +2744,7 @@
       padding: 0;
     }
 
-    /* ---------- History toolbar (day picker + tier filter) ---------- */
+
     .history-toolbar {
       display: flex;
       align-items: center;
@@ -3213,29 +2756,6 @@
     .history-daypicker-wrap {
       position: relative;
       min-width: 0;
-    }
-
-    .history-daypicker-btn {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      max-width: 260px;
-      padding: 9px 12px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-xl);
-      color: var(--foreground);
-      font-family: var(--font-text);
-      font-size: 0.88rem;
-      cursor: pointer;
-      transition: border-color var(--duration-slow) var(--ease), background var(--duration-slow) var(--ease);
-    }
-    .history-daypicker-btn:hover {
-      border-color: var(--primary-dim);
-      background: var(--muted);
-    }
-    .history-daypicker-btn.open {
-      border-color: var(--primary);
     }
     .history-daypicker-icon {
       flex-shrink: 0;
@@ -3258,23 +2778,14 @@
       color: var(--accent-foreground);
       transition: transform var(--duration) var(--ease);
     }
-    .history-daypicker-btn.open .history-daypicker-caret {
-      transform: rotate(180deg);
-    }
 
-    /* Reuses .floating-menu's base look (same shell as the hamburger/
-     attach menus) so the day list reads as the same design language
-     rather than a bespoke dropdown, but anchored under the day-picker
-     button instead of the header, and scrollable with the shared modern
-     scrollbar since a long history can have many days. */
+
     .history-day-menu {
       width: 260px;
       max-height: 320px;
       overflow-y: auto;
       transform-origin: top left;
       transform: scale(0.96) translateY(-4px);
-      scrollbar-width: thin;
-      scrollbar-color: var(--primary-dim) transparent;
     }
     .history-day-menu.open {
       transform: scale(1) translateY(0);
@@ -3315,7 +2826,7 @@
       color: var(--primary-dim);
     }
 
-    /* Segmented tier filter — All / Tier 1 / Tier 2 */
+
     .history-tier-filter {
       display: flex;
       align-items: center;
@@ -3326,31 +2837,13 @@
       border-radius: var(--radius-xl);
       flex-shrink: 0;
     }
-    .history-tier-btn {
-      background: transparent;
-      border: none;
-      border-radius: var(--radius-md);
-      color: var(--muted-foreground);
-      font-family: var(--font-text);
-      font-size: 0.82rem;
-      padding: 6px 12px;
-      cursor: pointer;
-      transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
-    }
-    .history-tier-btn:hover {
-      color: var(--foreground);
-    }
-    .history-tier-btn.active {
-      background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 24%, transparent), color-mix(in srgb, var(--primary) 10%, transparent));
-      color: var(--ring);
-    }
 
     .entry-tier0 p {
       color: var(--muted-foreground);
       font-style: italic;
     }
 
-    /* ---------- Reminders ---------- */
+
     .reminder-section-title {
       font-size: 11px;
       letter-spacing: 0.14em;
@@ -3383,10 +2876,10 @@
       gap: 12px;
       padding: 12px 14px;
       border-radius: var(--radius-xl);
-      background: linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, transparent), color-mix(in srgb, var(--popover) 96%, transparent));
+      background: color-mix(in srgb, var(--card) 96%, transparent);
       border: 1px solid var(--border);
       box-shadow: var(--shadow-md), var(--shadow-sm);
-      animation: qa-feedback-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+      animation: pop-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
 
     .reminder-card.pending {
@@ -3462,20 +2955,10 @@
       flex-shrink: 0;
     }
 
+
     .reminder-dismiss {
-      flex-shrink: 0;
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      border: none;
-      background: transparent;
-      color: var(--accent-foreground);
       font-size: 13px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
+      color: var(--accent-foreground);
     }
 
     .reminder-dismiss:hover {
@@ -3487,7 +2970,7 @@
       padding: 4px 0 18px;
     }
 
-    /* ------ Reminder composer (pinned above the list) ------ */
+
     .reminder-composer {
       display: flex;
       flex-direction: column;
@@ -3501,8 +2984,7 @@
       justify-content: flex-end;
     }
 
-    /* When collapsed the composer occupies no vertical space and the +
-       floats at the top-right beside the list's first section. */
+
     .reminder-composer:has(.reminder-composer-menu[hidden]) {
       padding: 0;
     }
@@ -3514,20 +2996,17 @@
       z-index: var(--z-sticky);
     }
 
-    /* The "new reminder" toggle. Accent-styled because it is the primary action in
-       that bar - it gets a border and a gradient rather than the ghost look -
-       so the geometry, size, cursor and hit area all come from .btn-icon and
-       only the colour is declared here. */
+
     .reminder-add-toggle {
       border-color: var(--primary-dim);
-      background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 18%, transparent), color-mix(in srgb, var(--primary) 6%, transparent));
+      background: color-mix(in srgb, var(--primary) 14%, transparent);
       color: var(--ring);
       transition: transform 0.18s var(--ease),
         background var(--duration) var(--ease);
     }
 
     .reminder-add-toggle:hover {
-      background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 28%, transparent), color-mix(in srgb, var(--primary) 10%, transparent));
+      background: color-mix(in srgb, var(--primary) 22%, transparent);
     }
 
     .reminder-add-toggle.open {
@@ -3546,33 +3025,11 @@
       animation: panel-drop 0.18s ease;
     }
 
-    .reminder-composer-menu[hidden] {
-      display: none;
-    }
-
     .reminder-composer input[type="datetime-local"] {
       color-scheme: dark;
     }
 
-    #reminderAddBtn {
-      flex-shrink: 0;
-      border-radius: var(--radius-lg);
-      border: 1px solid var(--primary-dim);
-      background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 18%, transparent), color-mix(in srgb, var(--primary) 6%, transparent));
-      color: var(--ring);
-      font-family: var(--font-text);
-      font-size: 0.85rem;
-      padding: 8px 14px;
-      cursor: pointer;
-      font-weight: 500;
-    }
 
-    #reminderAddBtn:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
-
-    /* ---------- System / File browser ---------- */
     .drive-panel {
       display: flex;
       flex-direction: column;
@@ -3583,18 +3040,9 @@
       overflow-y: auto;
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
-      /* Breaks out of .app's max-width: 820px cap the same way .app-header
-       already does — fixed and anchored to the true viewport edges,
-       independent of how .app itself is centered/capped, so System gets
-       the full browser width instead of being squeezed into the chat
-       column's width. Only takes effect while open (toggled from JS
-       alongside drivePanel.hidden), so the chat itself keeps its
-       readable, centered width the rest of the time. */
+
       position: fixed;
-      /* Flush below the fixed header — the header's own height, not a
-       magic number. The visualViewport keyboard handler in
-       perla-companion.js rewrites .app's height and top, so the space this
-       panel occupies has to stay consistent with it. */
+
       top: var(--header-height);
       left: 0;
       right: 0;
@@ -3605,28 +3053,6 @@
       background: var(--background);
     }
 
-    /* Modern, slim scrollbar — used on every internally-scrolling
-     surface in the app (chat, System, History, Quick Actions, both file
-     viewers). Firefox via scrollbar-width/scrollbar-color, WebKit/Blink
-     via the pseudo-elements below; both degrade gracefully to the
-     platform default elsewhere. One shared rule (rather than the old
-     per-surface bespoke scrollbar CSS #quickActionsPanel used to have)
-     so every surface looks and behaves identically, and a new scrollable
-     panel just needs adding to this selector list, not its own copy. */
-    .page,
-    .drive-panel,
-    .file-viewer-body,
-    .file-viewer-modal-body,
-    #quickActionsPanel,
-    .md pre {
-      scrollbar-width: thin;
-      scrollbar-color: var(--primary-dim) transparent;
-    }
-
-    .drive-panel[hidden] {
-      display: none !important;
-    }
-
     .drive-toolbar {
       display: flex;
       align-items: center;
@@ -3634,9 +3060,6 @@
       gap: 12px;
       padding: 10px 14px;
       margin-bottom: 12px;
-      border: 1px solid var(--input);
-      border-radius: var(--radius-xl);
-      background: linear-gradient(180deg, var(--card) 0%, var(--popover) 100%);
       position: sticky;
       top: 0;
       z-index: var(--z-sticky);
@@ -3655,17 +3078,9 @@
       color: var(--muted-foreground);
     }
 
-    /* Deliberately NOT a .scroll-area. This strip scrolls sideways on a
-       narrow phone, but a visible scrollbar would eat a row of a toolbar that
-       is already height-constrained - so it scrolls without one. Giving it the
-       .scroll-area class would have added the thumb back, which is the opposite
-       of the intent. */
+
     .drive-breadcrumbs::-webkit-scrollbar {
       display: none;
-    }
-
-    .drive-breadcrumbs[hidden] {
-      display: none !important;
     }
 
     .drive-breadcrumb-wrap {
@@ -3680,11 +3095,7 @@
       flex: 1;
     }
 
-    /* Writable path bar — swaps in for the breadcrumb trail when the
-     edit button (or the breadcrumb background) is clicked. Styled to sit
-     flush in the same slot rather than looking like a separate control,
-     since it's a mode of the same "where am I" bar, not a new feature
-     bolted on next to it. */
+
     .drive-path-edit-row {
       display: flex;
       align-items: center;
@@ -3695,9 +3106,6 @@
       border-radius: var(--radius-lg);
       border: 1px solid var(--primary-dim);
       background: var(--background);
-    }
-    .drive-path-edit-row[hidden] {
-      display: none !important;
     }
     .drive-path-edit-icon {
       flex-shrink: 0;
@@ -3777,14 +3185,7 @@
       gap: 8px;
       margin-bottom: 12px;
       padding: 10px 12px;
-      background: linear-gradient(180deg, var(--card) 0%, var(--popover) 100%);
-      border: 1px solid var(--primary-dim);
-      border-radius: var(--radius-xl);
-      animation: qa-feedback-in 0.18s ease;
-    }
-
-    .drive-new-folder-row[hidden] {
-      display: none !important;
+      animation: pop-in 0.18s ease;
     }
 
     .drive-clipboard-bar {
@@ -3799,19 +3200,14 @@
       border-radius: var(--radius-xl);
       font-size: 13px;
       color: var(--muted-foreground);
-      animation: qa-feedback-in 0.18s ease;
-    }
-    .drive-clipboard-bar[hidden] {
-      display: none !important;
+      animation: pop-in 0.18s ease;
     }
     .drive-clipboard-bar strong {
       color: var(--foreground);
       font-weight: 600;
     }
 
-    /* Visual cue for a "cut" item still sitting in its original spot,
-     same convention as most desktop file managers — dimmed, not removed,
-     until the paste actually completes. */
+
     .drive-item.is-cut {
       opacity: 0.45;
     }
@@ -3824,11 +3220,7 @@
       width: 100%;
     }
 
-    /* Grid mode — a real CSS grid of square-ish cards, toggled via a
-     class on the same #driveGrid container the list rows also render
-     into (buildDriveItemCard branches its own markup per mode, since
-     list rows and grid cards have different internal layouts, not just
-     different container layouts). */
+
     .drive-grid.grid-mode {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -3843,9 +3235,6 @@
       justify-content: flex-start;
       gap: 14px;
       padding: 10px 14px;
-      border-radius: var(--radius-xl);
-      border: 1px solid var(--input);
-      background: linear-gradient(180deg, var(--card) 0%, var(--popover) 100%);
       cursor: pointer;
       user-select: none;
       -webkit-user-select: none;
@@ -3854,7 +3243,7 @@
 
     .drive-item:hover {
       border-color: var(--primary-dim);
-      background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 8%, transparent), color-mix(in srgb, var(--primary) 2%, transparent));
+      background: color-mix(in srgb, var(--primary) 6%, transparent);
       transform: translateX(2px);
     }
 
@@ -3866,10 +3255,7 @@
       opacity: 0.6;
     }
 
-    /* Grid-mode card layout override — same .drive-item element, just
-     re-flowed vertically with a fixed-ish footprint instead of a full-
-     width row. Kept as a modifier (not a separate class set) so hover/
-     active/menu-button styling above stays shared between both modes. */
+
     .drive-grid.grid-mode .drive-item {
       flex-direction: column;
       align-items: center;
@@ -3961,31 +3347,18 @@
       white-space: nowrap;
     }
 
+
     .drive-item-menu-btn {
+
+      transition: opacity var(--duration) var(--ease),
+        background var(--duration) var(--ease), color var(--duration) var(--ease);
       position: static;
-      width: 28px;
-      height: 28px;
-      border-radius: var(--radius-md);
-      border: none;
-      background: transparent;
-      color: var(--muted-foreground);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
       opacity: 0.6;
-      flex-shrink: 0;
-      transition: opacity var(--duration) var(--ease), color var(--duration) var(--ease), background var(--duration) var(--ease);
     }
 
     .drive-item:hover .drive-item-menu-btn,
     .drive-item-menu-btn.open {
       opacity: 1;
-    }
-
-    .drive-item-menu-btn:hover {
-      color: var(--ring);
-      background: color-mix(in srgb, var(--primary) 18%, transparent);
     }
 
     @media (hover: none) {
@@ -4001,14 +3374,10 @@
       flex-direction: column;
       padding: 6px;
       min-width: 170px;
-      background: linear-gradient(180deg, var(--popover), var(--card));
+      background: var(--popover);
       border: 1px solid var(--border);
       border-radius: var(--radius-xl);
       box-shadow: var(--shadow-lg);
-    }
-
-    .drive-item-menu[hidden] {
-      display: none !important;
     }
 
     .drive-item-menu button {
@@ -4069,12 +3438,7 @@
       border-radius: var(--radius-xl);
     }
 
-    /* Drag-and-drop highlight for the chat shell (see chatDropTarget in
-     the script) — outlines the whole app rather than just the message
-     list, since the drop target is deliberately the full `.app` element
-     so dropping near the composer also registers. z-index above normal
-     content but below modals/menus (::before overlay, not outline, so it
-     doesn't get clipped by any descendant's own overflow:hidden). */
+
     .chat-dropzone-active {
       position: relative;
     }
@@ -4090,7 +3454,7 @@
       z-index: var(--z-raised);
     }
 
-    /* ---------- File viewer modal (System's "View" action) ---------- */
+
     .file-viewer-modal {
       position: fixed;
       inset: 0;
@@ -4104,9 +3468,6 @@
       padding: 24px;
       animation: fade-in 0.18s ease;
     }
-    .file-viewer-modal[hidden] {
-      display: none !important;
-    }
 
     .file-viewer-modal-card {
       width: 100%;
@@ -4115,7 +3476,7 @@
       max-height: 640px;
       display: flex;
       flex-direction: column;
-      background: linear-gradient(180deg, var(--popover), var(--card));
+      background: var(--popover);
       border: 1px solid var(--border);
       border-radius: var(--radius-2xl);
       box-shadow: var(--shadow-xl);
@@ -4123,12 +3484,7 @@
     }
 
     .file-viewer-modal-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px 14px;
       border-bottom: 1px solid var(--input);
-      flex-shrink: 0;
     }
 
     .file-viewer-modal-icon {
@@ -4152,8 +3508,6 @@
     }
 
     .file-viewer-modal-body {
-      flex: 1;
-      min-height: 0;
       overflow: auto;
       padding: 16px;
     }
@@ -4170,15 +3524,10 @@
 
     .file-viewer-modal-body img {
       display: block;
-      /* max-width alone constrains only the horizontal axis, so a tall portrait
-         image overflowed and the body scrolled - which is exactly what the
-         image editor never does, because it fits the image to the viewport on
-         both axes. Capping the height too is the whole fix; intrinsic aspect
-         ratio still does the rest, so no object-fit is needed. */
+
       max-width: 100%;
       max-height: 100%;
-      /* Without this an <img> is an inline-level replaced element and the
-         percentage max-height resolves against nothing. */
+
       width: auto;
       height: auto;
       margin: 0 auto;
@@ -4226,13 +3575,9 @@
       margin-bottom: 0;
     }
 
-    /* ---------- Global Notifications ---------- */
-    /* App-scope floating notices: reuses .qa-feedback-card styling and the
-       qa-feedback-in keyframes, but mounts in a fixed top-center container
-       visible from every panel (chat, History, Reminders, Quick Actions,
-       Drive). The app-header is z-index 20 and position:fixed across the
-       window top, so an offset below it keeps cards clear of the header. */
-    .global-notifications {
+
+
+    .toast-stack {
       position: fixed;
       top: calc(var(--header-height) + 10px + var(--safe-top));
       left: 50%;
@@ -4246,11 +3591,11 @@
       pointer-events: none;
     }
 
-    .global-notifications > * {
+    .toast-stack > * {
       pointer-events: auto;
     }
 
-    /* ---------- Quick Actions ---------- */
+
     #quickActionsPanel {
       position: relative;
       flex: 1;
@@ -4258,32 +3603,17 @@
       overflow-y: auto;
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
-      /* Extra bottom padding clears the collapsed output drawer (~46px +
-       safe-area) that's pinned via position:fixed over this panel — see
-       #qaDrawer — so the last row of buttons never sits underneath it. */
+
       padding: 10px 18px calc(70px + var(--safe-bottom));
     }
 
-    /* While Quick Actions is open the panel must own the entire content
-     column: it's a flex:1 sibling of .content-wrap, so without hiding the
-     chat beneath it the two would each claim half the height and the
-     button grid would stop at a phantom midline instead of extending to
-     the bottom edge of the window. Same "swap .content-wrap out" idea as
-     #drivePanel — done declaratively so open/close/relock need no JS. */
+
     #quickActionsPanel:not([hidden]) ~ .content-wrap {
       display: none;
     }
 
-    /* ---------- Quick Actions output drawer ---------- */
-    /* Pinned to the bottom of the viewport, independent of the button
-     grid's own scroll — running a command never reflows or scrolls the
-     buttons out of view the way inserting a result card at the top of
-     qaResult used to. Collapsed by default (just the header bar);
-     expanding grows upward via max-height rather than pushing anything,
-     since it's position:fixed and out of normal flow entirely. Results
-     APPEND (newest first) rather than replacing each other, so a string
-     of quick actions/scoped commands reads as a small log instead of
-     only ever showing the last one. */
+
+
     #qaDrawer {
       position: fixed;
       left: 0;
@@ -4292,7 +3622,7 @@
       z-index: var(--z-drawer);
       max-width: 820px;
       margin: 0 auto;
-      background: linear-gradient(180deg, var(--popover), var(--card));
+      background: var(--popover);
       border-top: 1px solid var(--border);
       border-left: 1px solid var(--border);
       border-right: 1px solid var(--border);
@@ -4301,12 +3631,8 @@
       display: flex;
       flex-direction: column;
       transition: max-height 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
-      max-height: 46px; /* collapsed: header only */
+      max-height: 46px;
       overflow: hidden;
-    }
-
-    #qaDrawer[hidden] {
-      display: none !important;
     }
 
     #qaDrawer.expanded {
@@ -4314,14 +3640,7 @@
     }
 
     .qa-drawer-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px 14px;
       cursor: pointer;
-      flex-shrink: 0;
-      user-select: none;
-      -webkit-user-select: none;
     }
 
     .qa-drawer-title {
@@ -4353,21 +3672,6 @@
       flex: 1;
     }
 
-    .qa-drawer-clear {
-      background: transparent;
-      border: none;
-      color: var(--accent-foreground);
-      font-size: 11.5px;
-      padding: 4px 8px;
-      border-radius: var(--radius-md);
-      cursor: pointer;
-    }
-
-    .qa-drawer-clear:hover {
-      color: var(--destructive-bright);
-      background: color-mix(in srgb, var(--destructive-bright) 12%, transparent);
-    }
-
     .qa-drawer-chevron {
       display: flex;
       align-items: center;
@@ -4381,14 +3685,9 @@
     }
 
     .qa-drawer-body {
-      flex: 1;
-      min-height: 0;
-      overflow-y: auto;
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
       padding: 0 14px calc(14px + var(--safe-bottom));
-      scrollbar-width: thin;
-      scrollbar-color: var(--primary-dim) transparent;
     }
 
     .qa-drawer-empty {
@@ -4401,7 +3700,7 @@
       margin-bottom: 10px;
       overflow: hidden;
       background: rgba(0, 0, 0, 0.15);
-      animation: qa-feedback-in 0.18s ease;
+      animation: pop-in 0.18s ease;
     }
 
     .qa-drawer-entry-header {
@@ -4527,19 +3826,15 @@
       user-select: none;
       -webkit-user-select: none;
       overflow: hidden;
-      /* No transform and no shadow. Scaling a tile inside a fixed grid makes
-         its neighbours jump, and 38 buttons lifting at once reads as noise
-         rather than feedback; a border step says the same thing and stays put. */
+
       transition: background var(--duration) var(--ease),
         border-color var(--duration) var(--ease);
     }
-
 
     .qa-btn:hover {
       border-color: var(--primary);
       background: var(--card-selected);
     }
-
 
     .qa-btn:active {
       background: var(--accent);
@@ -4552,10 +3847,8 @@
       cursor: default;
     }
 
-    /* Button dynamic states */
-    /* Status used box-shadow rings with !important, which fought the hover
-       rules above. Specificity already resolves these, so they are plain rules
-       now, and the ring is an outline rather than a shadow. */
+
+
     .qa-btn.is-loading {
       border-color: var(--ring);
       outline: 2px solid var(--ring);
@@ -4579,7 +3872,6 @@
       outline-offset: -2px;
     }
 
-
     .qa-icon {
       display: flex;
       align-items: center;
@@ -4587,8 +3879,7 @@
       width: 38px;
       height: 38px;
       border-radius: var(--radius-xl);
-      /* The chip was rgba(201,123,141,.08) — the same tint as
-         --primary-subtle, just hand-written. */
+
       background: var(--primary-subtle);
       color: var(--ring);
       transition: transform var(--duration-slow) var(--ease), background var(--duration-slow) var(--ease), color var(--duration-slow) var(--ease);
@@ -4616,7 +3907,7 @@
       padding: 0 2px;
     }
 
-    /* Danger styling */
+
     .qa-btn-danger {
       border-color: var(--destructive);
     }
@@ -4625,7 +3916,6 @@
       color: var(--destructive-bright);
       background: color-mix(in srgb, var(--destructive) 18%, transparent);
     }
-
 
     .qa-btn-danger:hover {
       border-color: var(--destructive-bright);
@@ -4637,7 +3927,7 @@
       color: var(--destructive-foreground);
     }
 
-    /* Active input row toggle button */
+
     .qa-btn-input.active {
       background: var(--primary-hover);
       border-color: var(--ring);
@@ -4649,60 +3939,32 @@
       gap: 8px;
       margin-bottom: 12px;
       padding: 10px 12px;
-      background: linear-gradient(180deg, var(--card) 0%, var(--popover) 100%);
-      border: 1px solid var(--primary-dim);
-      border-radius: var(--radius-xl);
       box-shadow: var(--shadow-md);
-      animation: qa-feedback-in 0.18s ease;
+      animation: pop-in 0.18s ease;
     }
 
-    .qa-input-row[hidden] {
-      display: none;
-    }
 
-    .qa-input-go,
-    .qa-input-cancel {
-      flex-shrink: 0;
-      border-radius: var(--radius-lg);
-      border: 1px solid var(--primary-dim);
-      background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 18%, transparent), color-mix(in srgb, var(--primary) 6%, transparent));
-      color: var(--ring);
-      font-family: var(--font-text);
-      font-size: 0.85rem;
-      padding: 8px 13px;
-      cursor: pointer;
-      font-weight: 500;
-    }
-
-    .qa-input-cancel {
-      padding: 8px 11px;
-      color: var(--accent-foreground);
-      border-color: var(--border);
-      background: transparent;
-    }
-
-    /* ---------- QA Output / Feedback Banner ---------- */
-    .qa-feedback-card {
+    .toast {
       display: flex;
       align-items: center;
       gap: 12px;
       padding: 11px 14px;
       border-radius: var(--radius-xl);
-      background: linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, transparent), color-mix(in srgb, var(--popover) 96%, transparent));
+      background: color-mix(in srgb, var(--card) 96%, transparent);
       backdrop-filter: blur(14px);
       -webkit-backdrop-filter: blur(14px);
       border: 1px solid var(--border);
       box-shadow: var(--shadow-lg), var(--shadow-sm);
-      animation: qa-feedback-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+      animation: pop-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
       transition: opacity 0.25s var(--ease), transform 0.25s var(--ease);
     }
 
-    .qa-feedback-card.closing {
+    .toast.closing {
       opacity: 0;
       transform: translateY(-6px) scale(0.98);
     }
 
-    @keyframes qa-feedback-in {
+    @keyframes pop-in {
       from {
         opacity: 0;
         transform: translateY(-8px) scale(0.96);
@@ -4714,22 +3976,22 @@
       }
     }
 
-    .qa-feedback-card.loading {
+    .toast.loading {
       border-color: var(--primary-dim);
-      background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 14%, transparent), color-mix(in srgb, var(--card) 97%, transparent));
+      background: color-mix(in srgb, var(--primary) 14%, var(--card));
     }
 
-    .qa-feedback-card.success {
+    .toast.success {
       border-color: color-mix(in srgb, var(--success) 50%, transparent);
-      background: linear-gradient(180deg, color-mix(in srgb, var(--success) 14%, transparent), color-mix(in srgb, var(--card) 97%, transparent));
+      background: color-mix(in srgb, var(--success) 14%, var(--card));
     }
 
-    .qa-feedback-card.error {
+    .toast.error {
       border-color: color-mix(in srgb, var(--destructive-bright) 55%, transparent);
-      background: linear-gradient(180deg, color-mix(in srgb, var(--destructive-bright) 16%, transparent), color-mix(in srgb, var(--card) 97%, transparent));
+      background: color-mix(in srgb, var(--destructive-bright) 16%, var(--card));
     }
 
-    .qa-feedback-icon {
+    .toast-icon {
       flex-shrink: 0;
       width: 32px;
       height: 32px;
@@ -4741,96 +4003,49 @@
       color: var(--foreground);
     }
 
-    .qa-feedback-card.loading .qa-feedback-icon {
+    .toast.loading .toast-icon {
       color: var(--ring);
       background: color-mix(in srgb, var(--primary) 14%, transparent);
       animation: perla-spin 1s linear infinite;
     }
 
-    .qa-feedback-card.success .qa-feedback-icon {
+    .toast.success .toast-icon {
       color: var(--success);
       background: color-mix(in srgb, var(--success) 18%, transparent);
     }
 
-    .qa-feedback-card.error .qa-feedback-icon {
+    .toast.error .toast-icon {
       color: var(--destructive-bright);
       background: color-mix(in srgb, var(--destructive-bright) 18%, transparent);
     }
 
-    .qa-feedback-content {
+    .toast-content {
       flex: 1;
       min-width: 0;
     }
 
-    .qa-feedback-title {
+    .toast-title {
       font-size: 13px;
       font-weight: 600;
       color: var(--foreground);
       line-height: 1.3;
     }
 
-    .qa-feedback-meta {
+    .toast-meta {
       font-size: 11px;
       color: var(--accent-foreground);
       margin-top: 2px;
     }
 
-    .qa-feedback-close {
-      flex-shrink: 0;
-      background: transparent;
-      border: none;
-      color: var(--accent-foreground);
-      font-size: 14px;
-      width: 24px;
-      height: 24px;
-      border-radius: var(--radius-md);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
-    }
 
-    .qa-feedback-close:hover {
-      background: rgba(255, 255, 255, 0.08);
-      color: var(--foreground);
-    }
-
-    /* Action buttons inside a feedback card (e.g. Drive's "Undo" after a
-     delete) — a small brass pill sitting between the message content and
-     the dismiss ✕. Kept inside the flex row so a card with an action still
-     reads as a single inline toast. */
-    .qa-feedback-actions {
+    .toast-actions {
       display: flex;
       align-items: center;
       gap: 6px;
       flex-shrink: 0;
     }
 
-    .qa-feedback-action {
-      flex-shrink: 0;
-      height: 28px;
-      padding: 0 13px;
-      border-radius: var(--radius-2xl);
-      border: 1px solid var(--primary-dim);
-      background: color-mix(in srgb, var(--primary) 12%, transparent);
-      color: var(--ring);
-      font-family: var(--font-text);
-      font-size: 12px;
-      letter-spacing: 0.02em;
-      cursor: pointer;
-      transition: background var(--duration) var(--ease), color var(--duration) var(--ease), transform 0.12s var(--ease);
-    }
 
-    .qa-feedback-action:hover {
-      background: color-mix(in srgb, var(--primary) 24%, transparent);
-    }
-
-    .qa-feedback-action:active {
-      transform: scale(0.96);
-    }
-
-    /* Screenshot Card */
     .qa-result {
       margin-bottom: 14px;
     }
@@ -4845,7 +4060,7 @@
       border: 1px solid var(--border);
       background: var(--card);
       box-shadow: var(--shadow-md);
-      animation: qa-feedback-in 0.22s ease;
+      animation: pop-in 0.22s ease;
     }
 
     .qa-screenshot-header {
@@ -4888,7 +4103,7 @@
       backdrop-filter: blur(4px);
     }
 
-    /* Mobile responsiveness */
+
     @media (max-width: 520px) {
       #quickActionsPanel {
         padding: 8px 12px calc(42px + var(--safe-bottom));

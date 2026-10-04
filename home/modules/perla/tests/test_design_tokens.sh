@@ -181,7 +181,7 @@ import re, sys
 css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
 CHAT = re.compile(r"entry|bubble|composer|#textInput|send-btn|mic-btn")
 # Other surfaces, excluded on purpose.
-OUT = re.compile(r"qa-drawer|qa-btn|elevate-composer-icon|\.md\b")
+OUT = re.compile(r"qa-drawer|qa-btn|elevate-composer-icon|\.prose\b")
 for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
     sel = " ".join(m.group(1).split())
     if not CHAT.search(sel) or OUT.search(sel):
@@ -238,11 +238,36 @@ is_rounded() {  # is_rounded "<radius>"
   for p in "${parts[@]}"; do [ "$p" != "$first" ] && return 1; done
   return 0
 }
+# Asserts the EFFECTIVE radius: the variant's own declaration if it has one,
+# otherwise the base it inherits. Checking only the variant would have failed
+# when the three duplicated `border-radius` declarations collapsed into one.
+# The base is what every variant now leans on, so it is asserted directly.
+_base_r="$(bubble_radius ".entry-bubble")"
+if is_rounded "$_base_r"; then
+  ok "the bubble base states the radius once for every variant ($_base_r)"
+else
+  bad "the bubble base states the radius once" \
+      "got '$_base_r' - the variants no longer declare their own, so bubbles would be square"
+fi
+# And no variant may go back to repeating it: that duplication is what hid the
+# failed-entry border bug (three rules set border-style:none while a fourth set
+# only a border-COLOUR, which cannot render without a style).
+_dup=0
+for _sel in ".entry-perla .entry-bubble" ".entry-user .entry-bubble"; do
+  [ -n "$(bubble_radius "$_sel")" ] && _dup=$((_dup + 1))
+done
+if [ "$_dup" -eq 0 ]; then
+  ok "no bubble variant re-declares the radius (the duplication stays collapsed)"
+else
+  bad "no bubble variant re-declares the radius" "$_dup of 2 do again"
+fi
 for spec in ".entry-perla .entry-bubble:Perla's" \
             ".entry-user .entry-bubble:the user's" \
-            ".entry-system .entry-bubble:the system notice"; do
+            ".entry-question .entry-bubble:the question card" \
+            ".entry-failed .entry-bubble:the failed"; do
   sel="${spec%:*}"; who="${spec##*:} bubble"
   r=$(bubble_radius "$sel")
+  [ -n "$r" ] || r=$(bubble_radius ".entry-bubble")
   if is_rounded "$r"; then
     ok "$who is fully rounded ($r)"
   else
@@ -307,9 +332,12 @@ print(max(0.0, R - math.sqrt(max(R * R - (R - d) ** 2, 0))))")
 fi
 
 # Solid fill means no border is left to hide behind.
+# No .entry-system here any more: nothing builds that class, so the lookup
+# returned "" and took the empty-string branch below - a pass that asserted
+# nothing at all. Empty IS still fine for these three, because the variants
+# no longer declare `border: none`, they simply do not declare a border.
 for spec in ".entry-perla .entry-bubble:Perla's" \
-            ".entry-user .entry-bubble:the user's" \
-            ".entry-system .entry-bubble:the system notice"; do
+            ".entry-user .entry-bubble:the user's"; do
   sel="${spec%:*}"; who="${spec##*:} bubble"
   b=$(bubble_decl "$sel" "border")
   case "$b" in
@@ -578,18 +606,25 @@ m = re.search(r"\." + re.escape(sys.argv[2]) + r"\s*\{([^}]*)\}", css)
 print("yes" if m and re.search(r"var\(--" + re.escape(sys.argv[3]) + r"\)", m.group(1)) else "no")
 PY
 }
-if [ "$(qac_uses qac-btn-destructive destructive)" = "yes" ]; then
+# Re-baselined when the question card's buttons moved to the .btn primitive.
+# This used to grep .qac-btn-destructive, which is the card's PRIVATE name; the
+# styling is now .btn-destructive-flat. The INTENT is unchanged - the destructive
+# option must come from the token, not a hand-mixed red - so the assertion was
+# re-pointed at the canonical class rather than deleted. Mutation-verified:
+# swap the token for a literal colour and this goes red.
+if [ "$(qac_uses btn-destructive-flat destructive)" = "yes" ]; then
   ok "the destructive option is styled from --destructive"
 else
-  bad "the destructive option is styled from --destructive" ".qac-btn-destructive is missing or does not use the token"
+  bad "the destructive option is styled from --destructive" ".btn-destructive-flat is missing or does not use the token"
 fi
 # The primary action must NOT be the inverted near-white of the reference: on
 # Perla that would be a second light-on-dark language and would collide with the
 # sender bubble, which is the only such element.
-if [ "$(qac_uses qac-btn-primary primary-solid)" = "yes" ]; then
+# Same re-baseline: the card's solid accent is now .btn-solid.
+if [ "$(qac_uses btn-solid primary-solid)" = "yes" ]; then
   ok "the card's primary action uses --primary-solid, not an inverted white"
 else
-  bad "the card's primary action uses --primary-solid, not an inverted white" ".qac-btn-primary is missing or has the wrong fill"
+  bad "the card's primary action uses --primary-solid, not an inverted white" ".btn-solid is missing or has the wrong fill"
 fi
 # And nothing on the card may reintroduce a hand-mixed near-white.
 if python3 - "$CSS" <<'PY'
@@ -1060,6 +1095,52 @@ else
 fi
 
 echo
+echo "=== 15. the Drive/overlay surface is flat and tokenised ==="
+# Drive is where the flatness gap showed. Twelve gradient fills accumulated
+# across the Drive toolbar, Drive rows, the menus, the drawer, the file-viewer
+# panels and the toasts, and NOTHING scanned any of it - sections 11-13 each
+# name one narrow surface, and Drive was not one of them. So the rule is here
+# now, and it is deliberately WIDE: every surface rule except the three
+# declared decorative exceptions (body's ambient wash, and the two logo marks).
+drive_scope() {
+  python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
+SURFACE = re.compile(r"drive-|floating-menu|reminder-card|toast|qa-drawer|file-viewer-(panel|modal-card)|gate-card|surface-raised")
+for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
+    sel = " ".join(m.group(1).split())
+    if SURFACE.search(sel):
+        print(sel + "\t" + " ".join(m.group(2).split()))
+PY
+}
+mapfile -t drive_rules < <(drive_scope)
+if [ "${#drive_rules[@]}" -gt 0 ]; then
+  ok "the Drive/overlay surface has real CSS rules (${#drive_rules[@]} found)"
+else
+  bad "the Drive/overlay surface has real CSS rules" "no Drive/overlay rules found"
+fi
+scan_drive() {  # scan_drive "<fixed-string>" "<human name>"
+  local pat="$1" name="$2" hits=0
+  for r in "${drive_rules[@]}"; do
+    case "$r" in *"$pat"*) hits=$((hits+1)) ;; esac
+  done
+  if [ "$hits" -eq 0 ]; then
+    ok "$name"
+  else
+    bad "$name" "$hits rule(s) still match"
+  fi
+}
+scan_drive "-gradient(" "no gradient on the Drive/overlay surface"
+scan_drive "!important" "no !important overrides on the Drive/overlay surface"
+# Lift on an OVERLAY is functional - it is what says the thing sits above the
+# content - so box-shadow is allowed there. What is not allowed is a shadow on
+# an in-page surface, which is .surface-raised's job.
+if rule_body ".surface-raised" | grep -q 'box-shadow'; then
+  bad "the in-page raised surface has no shadow" "got: $(rule_body ".surface-raised")"
+else
+  ok "the in-page raised surface has no shadow (overlays keep theirs)"
+fi
+
 echo "=================================="
 echo "  $pass passed, $fail failed"
 [ "$fail" = 0 ] || exit 1

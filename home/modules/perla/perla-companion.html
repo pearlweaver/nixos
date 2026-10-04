@@ -26,13 +26,13 @@
       <div id="gateMark" class="gate-mark">P</div>
       <h1>Perla</h1>
       <input id="gatePassword" type="password" placeholder="password" autocomplete="off" inputmode="text" />
-      <button id="gateSubmit">Unlock</button>
+      <button id="gateSubmit" class="btn btn-md btn-primary btn-block">Unlock</button>
       <p id="gateError" class="gate-error" hidden>Wrong password.</p>
     </div>
   </div>
 
   <div id="app" class="app" hidden>
-    <div id="globalNotifications" class="global-notifications" aria-live="polite"></div>
+    <div id="globalNotifications" class="toast-stack" aria-live="polite"></div>
     <header class="app-header">
       <div class="app-header-inner">
         <div class="header-left">
@@ -44,9 +44,13 @@
             <span class="brand-name">Perla</span>
           </div>
         </div>
-        <div class="status-indicator">
-          <span id="tierBadge" class="tier-badge">T1</span>
-          <span id="tierTimer" class="tier-timer" hidden></span>
+        <!-- Chat-only. The T1/T2 pill, the session countdown and the
+             status dot all describe the *conversation* on screen, so they
+             are hidden whenever an overlay (History, Reminders, Drive,
+             Quick Actions) covers it — see updateComposerMode(). -->
+        <div class="status-indicator" id="statusIndicator">
+          <span id="tierBadge" class="badge badge-solid">T1</span>
+          <span id="tierTimer" class="badge badge-outline" hidden></span>
           <span class="status-dot" id="statusDot"></span>
         </div>
       </div>
@@ -60,7 +64,7 @@
               d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
           </svg></span>
         <span class="menu-item-label">Tier 1 chat</span>
-        <span class="menu-item-badge" id="tier1Badge"></span>
+        <span class="badge badge-label" id="tier1Badge"></span>
       </button>
       <button id="tier2Btn" class="menu-item">
         <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6"
@@ -69,7 +73,7 @@
             <line x1="12" y1="19" x2="20" y2="19" />
           </svg></span>
         <span class="menu-item-label">Tier 2 chat</span>
-        <span class="menu-item-badge" id="tier2Badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        <span class="badge badge-label" id="tier2Badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
             <rect x="4" y="11" width="16" height="11" rx="2" ry="2" />
             <path d="M8 11V7a4 4 0 0 1 8 0v4" />
@@ -141,7 +145,7 @@
     <div id="historyPanel" class="dropdown-panel" hidden>
       <div class="history-toolbar">
         <div class="history-daypicker-wrap">
-          <button id="historyDayBtn" class="history-daypicker-btn" aria-haspopup="listbox" aria-expanded="false">
+          <button id="historyDayBtn" class="btn btn-md btn-outline history-daypicker-btn" aria-haspopup="listbox" aria-expanded="false">
             <span class="history-daypicker-icon">
               <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="3" y="4.5" width="16" height="14" rx="2"/><line x1="3" y1="9" x2="19" y2="9"/><line x1="7" y1="2.5" x2="7" y2="6.5"/><line x1="15" y1="2.5" x2="15" y2="6.5"/></svg>
             </span>
@@ -153,9 +157,9 @@
           <div id="historyDayMenu" class="floating-menu history-day-menu scroll-area" aria-hidden="true" role="listbox"></div>
         </div>
         <div id="historyTierFilter" class="history-tier-filter" role="group" aria-label="Filter by tier">
-          <button class="history-tier-btn active" data-tier="all">All</button>
-          <button class="history-tier-btn" data-tier="1">Tier 1</button>
-          <button class="history-tier-btn" data-tier="2">Tier 2</button>
+          <button class="btn btn-sm btn-ghost history-tier-btn active" data-tier="all">All</button>
+          <button class="btn btn-sm btn-ghost history-tier-btn" data-tier="1">Tier 1</button>
+          <button class="btn btn-sm btn-ghost history-tier-btn" data-tier="2">Tier 2</button>
         </div>
       </div>
       <span id="historyStatus" class="status"></span>
@@ -184,14 +188,14 @@
             <option value="monthly">Monthly</option>
             <option value="yearly">Yearly</option>
           </select>
-          <button id="reminderAddBtn">Add</button>
+          <button id="reminderAddBtn" class="btn btn-md btn-primary">Add</button>
         </div>
       </div>
       <span id="remindersStatus" class="status"></span>
     </div>
 
     <div id="drivePanel" class="drive-panel scroll-area" hidden>
-      <div class="drive-toolbar">
+      <div class="surface-raised drive-toolbar">
         <div id="driveBreadcrumbWrap" class="drive-breadcrumb-wrap">
           <div id="driveBreadcrumbs" class="drive-breadcrumbs"></div>
           <div id="drivePathEditRow" class="drive-path-edit-row" hidden>
@@ -249,13 +253,13 @@
       </div>
       <div id="driveClipboardBar" class="drive-clipboard-bar" hidden>
         <span id="driveClipboardLabel"></span>
-        <button id="driveClipboardCancel" class="qa-input-cancel" aria-label="Clear clipboard">✕</button>
+        <button id="driveClipboardCancel" class="btn btn-md btn-ghost" aria-label="Clear clipboard">✕</button>
       </div>
       <input id="driveUploadInput" type="file" multiple hidden>
-      <div id="driveNewFolderRow" class="drive-new-folder-row" hidden>
+      <div id="driveNewFolderRow" class="surface-raised surface-raised-accent drive-new-folder-row" hidden>
         <input id="driveNewFolderInput" class="input" type="text" placeholder="Folder name" autocomplete="off" />
-        <button id="driveNewFolderGo" class="qa-input-go">Create</button>
-        <button id="driveNewFolderCancel" class="qa-input-cancel" aria-label="Cancel">✕</button>
+        <button id="driveNewFolderGo" class="btn btn-md btn-primary">Create</button>
+        <button id="driveNewFolderCancel" class="btn btn-md btn-ghost" aria-label="Cancel">✕</button>
       </div>
       <div id="driveStatus" class="status"></div>
       <div id="driveGrid" class="drive-list"></div>
@@ -263,7 +267,7 @@
 
     <div id="fileViewerModal" class="file-viewer-modal" hidden>
       <div class="file-viewer-modal-card">
-        <div class="file-viewer-modal-header">
+        <div class="panel-header file-viewer-modal-header">
           <span id="fileViewerModalIcon" class="file-viewer-modal-icon"></span>
           <span id="fileViewerModalName" class="file-viewer-modal-name"></span>
           <button id="fileViewerModalDownload" class="btn-icon btn-icon-30" aria-label="Download" title="Download">
@@ -273,7 +277,7 @@
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><line x1="4" y1="4" x2="18" y2="18"/><line x1="18" y1="4" x2="4" y2="18"/></svg>
           </button>
         </div>
-        <div id="fileViewerModalBody" class="file-viewer-modal-body scroll-area"></div>
+        <div id="fileViewerModalBody" class="panel-body file-viewer-modal-body scroll-area"></div>
       </div>
     </div>
 
@@ -282,7 +286,7 @@
       <div id="qaResult" class="qa-result"></div>
 
       <div id="qaDrawer" hidden>
-        <div class="qa-drawer-header" id="qaDrawerHeader">
+        <div class="panel-header qa-drawer-header" id="qaDrawerHeader">
           <span class="qa-drawer-title">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
               stroke-linejoin="round" width="15" height="15">
@@ -295,7 +299,7 @@
           </span>
           <span id="qaDrawerCount" class="qa-drawer-count" data-count="0"></span>
           <span class="qa-drawer-spacer"></span>
-          <button id="qaDrawerClear" class="qa-drawer-clear" title="Clear all results" aria-label="Clear all results">
+          <button id="qaDrawerClear" class="btn btn-xs btn-ghost" title="Clear all results" aria-label="Clear all results">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
               stroke-linejoin="round" width="14" height="14">
               <path d="M3 6h18" />
@@ -312,15 +316,15 @@
             </svg>
           </span>
         </div>
-        <div id="qaDrawerBody" class="qa-drawer-body">
+        <div id="qaDrawerBody" class="panel-body qa-drawer-body scroll-area">
           <div class="qa-drawer-empty">No results yet — run a command to see its output here.</div>
         </div>
       </div>
 
-      <div id="qaInputRow" class="qa-input-row" hidden>
+      <div id="qaInputRow" class="surface-raised surface-raised-accent qa-input-row" hidden>
         <input id="qaInputField" class="input input-sunken" type="text" placeholder="" autocomplete="off" />
-        <button id="qaInputGo" class="qa-input-go">Go</button>
-        <button id="qaInputCancel" class="qa-input-cancel" aria-label="Cancel">✕</button>
+        <button id="qaInputGo" class="btn btn-md btn-primary">Go</button>
+        <button id="qaInputCancel" class="btn btn-md btn-ghost" aria-label="Cancel">✕</button>
       </div>
 
       <div class="qa-container">
@@ -648,7 +652,7 @@
         <div id="attachPreview" class="attach-preview" hidden></div>
         <textarea id="textInput" class="textarea" rows="1" placeholder="Write to Perla…"></textarea>
         <div class="composer-row">
-          <button id="attachBtn" class="attach-btn" aria-label="Attach" title="Attach an image" aria-expanded="false">
+          <button id="attachBtn" class="btn-icon btn-icon-lg attach-btn" aria-label="Attach" title="Attach an image" aria-expanded="false">
             <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
               stroke-linejoin="round" width="20" height="20">
               <path
@@ -661,7 +665,7 @@
             accept=".md,.markdown,.txt,.rst,.adoc,.json,.yaml,.yml,.toml,.ini,.cfg,.conf,.env,.xml,.csv,.tsv,.py,.js,.jsx,.ts,.tsx,.nix,.sh,.bash,.zsh,.c,.h,.cpp,.hpp,.cc,.cxx,.rs,.go,.java,.kt,.rb,.php,.lua,.pl,.sql,.gd,.swift,.cs,.html,.css,.scss,.vue,.svelte,.log,.diff,.patch,.gitignore,.pdf,.docx,.pptx,.xlsx,.ipynb,.odt"
             multiple hidden>
           <div class="composer-row-spacer"></div>
-          <button id="micBtn" class="mic-btn" aria-label="Record">
+          <button id="micBtn" class="btn-icon btn-icon-lg mic-btn" aria-label="Record">
             <span class="mic-ring ring-1"></span>
             <span class="mic-ring ring-2"></span>
             <svg class="mic-icon" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7"
@@ -673,11 +677,11 @@
             </svg>
             <span class="mic-stop-square"></span>
           </button>
-          <button id="sendText" class="send-btn" aria-label="Send">
+          <button id="sendText" class="btn-icon btn-icon-lg btn-icon-accent send-btn" aria-label="Send">
             <svg viewBox="0 0 22 22" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7"
               stroke-linecap="round" stroke-linejoin="round">
-              <line x1="12" y1="19" x2="12" y2="5" />
-              <polyline points="5 12 12 5 19 12" />
+              <line x1="11" y1="18" x2="11" y2="4" />
+              <polyline points="4 11 11 4 18 11" />
             </svg>
           </button>
         </div>
@@ -693,7 +697,7 @@
           </span>
           <input id="elevateInput" type="password" placeholder="Elevation token to unlock Full Mode"
             autocomplete="off" />
-          <button id="elevateSubmit" class="elevate-submit">Activate</button>
+          <button id="elevateSubmit" class="btn btn-md btn-destructive">Activate</button>
         </div>
         <span id="elevateStatus" class="status"></span>
       </footer>
@@ -842,12 +846,12 @@
         </div>
       </div>
       <div class="editor-float editor-context-float bare" id="cropOptionsRow" hidden>
-        <button class="editor-pill-btn primary" id="applyCrop">Apply crop</button>
+        <button class="btn btn-pill btn-solid" id="applyCrop">Apply crop</button>
       </div>
 
       <!-- Bottom-right: save -->
       <div class="editor-float editor-save-float bare">
-        <button class="editor-pill-btn primary" id="editorSave">Save</button>
+        <button class="btn btn-pill btn-solid" id="editorSave">Save</button>
       </div>
     </div>
   </div>

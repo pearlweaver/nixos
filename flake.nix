@@ -49,6 +49,11 @@
       url = "github:uiriansan/SilentSDDM";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    cod-clients = {
+      url = "github:Daaboulex/cod-clients-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   # nixConfig = {
@@ -56,7 +61,7 @@
   #  extra-trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
   #};
 
-  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, catppuccin, sops-nix, ryoku, silentSDDM, ... }@inputs:
+  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, catppuccin, sops-nix, ryoku, silentSDDM, cod-clients, ... }@inputs:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {

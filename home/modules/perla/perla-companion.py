@@ -19,6 +19,32 @@ the machine and use a fixed local token. Remote calls (from the phone, over
 Tailscale) go through the gate-password -> session-token flow as before.
 """
 
+# pyright: reportArgumentType=false, reportCallIssue=false
+# pyright: reportOptionalMemberAccess=false, reportGeneralTypeIssues=false
+#
+# This file is UNANNOTATED by design — it has no parameter or return
+# annotations anywhere, and the repo has no type checker configured and no CI.
+# An inferring checker therefore cannot see this file's one pervasive
+# invariant, the (value, error) convention:
+#
+#     result, error = drive_list(rel)
+#     if error:
+#         return None, error
+#     os.path.isdir(result)        # <- result is None only if error was set
+#
+# That is correct at runtime, but it depends on a relationship BETWEEN two
+# tuple slots. Measured here: pyright does not narrow a destructured
+# `tuple[str, None] | tuple[None, str]` from its sibling — not on `if error:`,
+# not on `if error is not None:`, and not on the `if error is None:` positive
+# branch. Annotating the helper does not help; only an explicit `assert x is
+# not None` narrows, and ~60 of those in daemon code would be noise that
+# `python -O` strips out anyway.
+#
+# So the four rules that ONLY fire on an unannotated Optional are muted here,
+# scoped to this file, rather than papering over 61 individual sites with
+# type: ignore. The alternative — annotating the whole file and teaching the
+# checker the convention — is a real option and a much larger change; say the
+# word and it is worth doing properly.
 import base64
 import fcntl
 import getpass
@@ -32,14 +58,12 @@ import re
 import shlex
 import signal
 import subprocess
-import sys
 import tempfile
 import time
 import urllib.parse
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta
-from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote, unquote
 import threading
@@ -120,6 +144,16 @@ ELEVATION_DURATION = int(os.environ.get("PERLA_ELEVATION_DURATION", "300"))  # 5
 GATE_PASSWORD = os.environ.get("PERLA_GATE_PASSWORD", "")
 
 SECRETS_DIR = os.path.expanduser("~/.config/perla/secrets")
+
+# Declared HERE, at module scope, rather than conjured by the `global`
+# statement inside _load_tokens(). That statement does not create a binding -
+# it only redirects an assignment to one, so the names came into existence as a
+# side effect of _load_tokens() being CALLED. It works (it is called at import,
+# below, before anything can reach them) but it is invisible to a static
+# reader, human or tool: 7 use sites looked undefined to a stricter analyzer
+# than pyright. Start as None; _load_tokens() overwrites both immediately.
+LOCAL_TOKEN = None
+ELEVATE_TOKEN = None
 
 
 def read_secret(name):
@@ -256,7 +290,7 @@ class SessionManager:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True
             )
-        for i in range(15):
+        for _ in range(15):
             time.sleep(1)
             if self._server_alive(tier):
                 print(f"Tier {tier} server ready.", flush=True)
@@ -1414,7 +1448,7 @@ def resolve_app_target(target):
     if query in apps:
         match = apps[query]
     if match is None:
-        for key, (label, exec_line) in apps.items():
+        for _, (label, exec_line) in apps.items():
             if os.path.basename(exec_line.split(" ", 1)[0]).lower() == query:
                 match = (label, exec_line)
                 break
@@ -3040,13 +3074,10 @@ def _parse_message_response(data, tier):
             return None
 
         sent_file_ref = None
-        send_file_called = False
-        send_file_parsed_ok_false = False
         for p in tool_parts:
             name = (p.get("tool") or p.get("toolName") or "").lower()
             if not name.endswith("send_file"):
                 continue
-            send_file_called = True
 
             candidates = [
                 p.get("result"),
@@ -3069,7 +3100,6 @@ def _parse_message_response(data, tier):
                     # A legitimate "no match" / "ambiguous" / "error"
                     # response from send_file — not a schema mismatch,
                     # just nothing to attach.
-                    send_file_parsed_ok_false = True
                     break
 
             if not parsed_anything:
@@ -3755,8 +3785,8 @@ def _append_reminder(text, due, repeat=None):
         )
     if not REMINDER_DUE_RE.match((due or "").strip()):
         return False, (
-            f"Due must be a full timestamp in YYYY-MM-DDTHH:MM form "
-            "(local time), e.g. 2026-08-30T18:00 — got '{due}'."
+            "Due must be a full timestamp in YYYY-MM-DDTHH:MM form "
+            f"(local time), e.g. 2026-08-30T18:00 — got '{due}'."
         )
     repeat_token = _valid_repeat(repeat)
     if repeat and repeat_token is None:
