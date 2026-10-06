@@ -12,6 +12,39 @@ Exit 0 and print nothing when the stylesheet is clean.
 import re
 import sys
 
+# One CSS border property, in the two shapes it comes in:
+#
+#   border            border-style        border-width        border-color
+#   border-bottom     border-bottom-style border-bottom-width border-bottom-color
+#
+# The pattern is `border` + an OPTIONAL side + an OPTIONAL longhand, in that
+# order, which is the order CSS itself spells them in.
+#
+# It has to name all of them. It used to be `border(-style)?`, which matched
+# neither a per-side longhand nor `border-color` - and the two blind spots it
+# left are what kept this guard from seeing the file's underline fields at all.
+# `.input-underline { border: none; border-bottom: 1px solid var(--border) }`
+# reported NO border (the shorthand was `none`, the longhand was invisible), and
+# `.input-underline:focus { border-bottom-color: ... }` was never even a
+# candidate, because the colour trigger spelled `border-color` and a longhand
+# does not contain it. Both holes were pre-existing; .input-underline is simply
+# the first rule in the file whose ONLY border is a longhand, so it is the first
+# rule they could swallow.
+#
+# Two patterns, not one, and the split is load-bearing. `_paints` asks "does
+# this block ESTABLISH a border", and a `-color` longhand never does: a colour
+# paints nothing on its own. Folding it in - the obvious way to widen this -
+# makes `.input-underline:focus` count as the border source for
+# `.input-underline:focus`, so the rule satisfies its own resolution and is
+# NEVER flagged no matter what else happens to the field. That was caught by
+# mutation (delete `.input-underline`'s border-bottom, expect section 14 to go
+# red; it stayed silent) and it is exactly the defect this file exists to find,
+# reproduced inside the fix for it. So the scan pattern omits `-color` and the
+# candidate test in main() keeps it.
+BORDER = r"border(?:-(?:top|right|bottom|left))?(?:-(?:style|width|color))?\s*:"
+# The same, minus the colour longhand: a colour cannot establish a border.
+BORDER_PAINT = r"border(?:-(?:top|right|bottom|left))?(?:-(?:style|width))?\s*:"
+
 
 def _paints(body: str) -> bool:
     """True if this declaration block establishes a VISIBLE border.
@@ -21,13 +54,16 @@ def _paints(body: str) -> bool:
       border: 0               -> nothing (width 0)
       border: 1px solid red    -> paints
       border-style: solid     -> paints (width defaults to medium)
+      border-bottom: 1px solid red   -> paints, and so does its -style sibling
       border-width: 1px alone -> NOTHING, style is still none
+      border-bottom-color: red      -> NOTHING (this is the point of BORDER_PAINT)
     """
-    for style, val in re.findall(r"(?:^|;)\s*border(-style)?\s*:([^;]+)", body):
-        val = val.strip().lower()
+    for m in re.finditer(r"(?:^|;)\s*" + BORDER_PAINT + r"([^;]+)", body):
+        prop = m.group(0).split(":")[0].strip().lower()
+        val = m.group(1).strip().lower()
         if val.startswith("none") or val in ("0", "0px"):
             continue
-        if style == "-style" or not re.fullmatch(r"[\d.]+(px|rem|em)?", val):
+        if prop.endswith("-style") or not re.fullmatch(r"[\d.]+(px|rem|em)?", val):
             return True
     return False
 
@@ -50,6 +86,8 @@ def main() -> int:
     #   border: 1px solid red    -> paints
     #   border-style: solid     -> paints (width defaults to medium)
     #   border-width: 1px alone -> NOTHING, style is still none
+    #   border-bottom: 1px solid red -> paints (a per-side longhand is a border)
+    #   border-bottom-color: red     -> NOTHING (a colour establishes nothing)
     provides = set()
     for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
         if _paints(m.group(2)):
@@ -76,9 +114,10 @@ def main() -> int:
         # repeating it. Flagging it would be flagging the mechanism itself.
         if {p.strip() for p in sel.split(",")} <= {"*"}:
             continue
-        if not re.search(r"(^|;)\s*border-color\s*:", body):
-            continue
-        if re.search(r"(^|;)\s*border(-width|-style)?\s*:", body):
+        if not re.search(r"(^|;)\s*" + BORDER, body) \
+           or not re.search(r"border(?:-\w+)*-color\s*:", body):
+            continue  # sets no border at all, or sets no border COLOUR
+        if re.search(r"(^|;)\s*border(?:-(?:width|style))?\s*:", body):
             continue  # declares its own width/style, so it is fine
         classes = re.findall(r"\.([A-Za-z][\w-]*)", sel)
         tags = set(re.findall(r"(?:^|[\s,>+~])([a-z][a-z0-9]*)(?=[\s,:{.#]|$)", sel))

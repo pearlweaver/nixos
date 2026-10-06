@@ -124,23 +124,51 @@ echo
 echo "=== 6. radii derive from a single --radius ==="
 r=$(value_of radius)
 [ -n "$r" ] && ok "--radius is set ($r)" || bad "--radius is set" "no --radius token"
+# The invariant is DERIVATION, not a count. This used to be spelled ">= 4 calc
+# steps", which pinned the SIZE of the scale rather than the property that
+# matters, so it went red when --radius-sm/-2xl/-3xl were retired along with
+# their last consumers - a retirement that was the point of the sweep, not a
+# regression. What has to hold is that no radius step is an independent number:
+# each one either derives from --radius or IS --radius.
 derived=$(grep -cE "calc\(var\(--radius\) \* *[0-9.]+\)" "$CSS")
-[ "$derived" -ge 4 ] && ok "the radius scale derives from it ($derived derived step(s))" \
-  || bad "the radius scale derives from it" "only $derived derived step(s), expected >= 4"
-for step in sm md lg xl 2xl; do
+# ...with a floor, so it cannot pass vacuously on a single derived step.
+[ "$derived" -ge 2 ] && ok "the radius scale derives from it ($derived derived step(s))" \
+  || bad "the radius scale derives from it" "only $derived derived step(s), expected >= 2"
+for step in md lg xl; do
   defines "radius-$step" && ok "--radius-$step exists" || bad "--radius-$step exists" "absent"
 done
+# A radius step carrying its own hard-coded length is the monocraft defect in
+# token form, and it is invisible to the count above. `declared but not derived`
+# is what it looks like.
+#
+# --radius-full is exempt, and necessarily so: it is the "round" role, and 9999px
+# is what makes a circle or a pill. Deriving it from --radius would redefine
+# "round" as "a very round 8px corner" and quietly un-circle every avatar,
+# pill and icon button in the file. It is a terminal value by definition.
+hardcoded=$(sed -n '/:root *{/,/^ *}/p' "$CSS" \
+  | grep -E "^\s*--radius-[a-z0-9]+\s*:" \
+  | grep -vE "calc\(var\(--radius\)|var\(--radius\)|^\s*--radius-full\s*:" || true)
+if [ -z "$hardcoded" ]; then
+  ok "every radius step derives from --radius rather than spelling a length"
+else
+  bad "every radius step derives from --radius" "$(echo "$hardcoded" | tr '\n' ' ')"
+fi
 
 echo
 echo "=== 7. radii are tokenised (circles and micro-elements excepted) ==="
 # Two exemptions, both deliberate:
 #   * a percentage radius is a circle or a pill, not a corner size;
-#   * a value under 4px is a decorative micro-element (hamburger lines, the
-#     voice-wave bars, the mic-stop square) rather than a container corner.
-#     Snapping a 2px-tall bar to the 4.8px `sm` step would round it into a
-#     semicircle, so those stay literal.
+#   * `var(--space-1)` is the micro-element exemption, and it is NOT a radius
+#     step and must not quietly become one. These three used to be bare 3px/2px/
+#     1px and the exemption was a `[0-3]px` pattern; binding them to
+#     --space-1 (2px) instead renders identically - CSS scales corner radii
+#     down to fit the side, so 1px and 2px are the same fully-rounded end on a
+#     1.5px hamburger bar - while keeping the reason they are exempt legible.
+#     --radius-sm (4.8px) is what would round them into pebbles and semicircles.
+#     See the why-comments at .hamburger-lines span, .voice-wave i and
+#     .mic-stop-square.
 mapfile -t radius_literals < <(literals_of "border-radius" \
-  'not p.endswith("%") and p != "0" and not p.startswith("var(--radius") and not re.fullmatch(r"[0-3]px", p)')
+  'not p.endswith("%") and p != "0" and not p.startswith("var(--radius") and p != "var(--space-1)"')
 if [ "${#radius_literals[@]}" -eq 0 ]; then
   ok "every border-radius is on the scale, a percentage, or a micro-element"
 else
@@ -217,6 +245,20 @@ echo "=== 10. bubbles are rounded, and the user's bubble is readable ==="
 # The tail corner is GONE: the user asked for the rounded, solid-fill treatment of
 # the reference screenshot. Section 7's radius rule is what stops a bare pixel
 # value from creeping back in, so the value here has to be the token.
+#
+# Two later changes, both deliberate, and both narrower than they look:
+#
+#   * The token moved from --radius-bubble to --radius-lg. --radius-bubble was a
+#     symmetric 20px, which is a LOT of corner on a short reply - "ok" in a 20px
+#     bubble reads as a visibly lopsided rounded rect, because 20px of radius is
+#     most of the bubble's height. --radius-lg (8px) fixes that and is the same
+#     rung every other control & surface in the file uses.
+#   * A task brief also proposed adding a cut-back tail corner to
+#     .entry-user .entry-bubble, on top of the radius change. That was NOT done:
+#     the "tail corner is GONE" decision above is a user decision, recorded here
+#     precisely so it would survive being re-derived, and re-introducing it
+#     because a plan mentioned it would quietly undo it. The radius change is
+#     independent of the tail and stands on its own.
 bubble_decl() {  # bubble_decl "<selector>" "<property>"  -> value, or "" if absent
   python3 - "$CSS" "$1" "$2" <<'PY'
 import re, sys
@@ -232,7 +274,7 @@ bubble_radius() { bubble_decl "$1" "border-radius"; }
 # All four corners equal AND the value is the token. Checking only "not
 # asymmetric" would happily pass a square 4px box, so both are tested.
 is_rounded() {  # is_rounded "<radius>"
-  [ "$1" = "var(--radius-bubble)" ] || return 1
+  [ "$1" = "var(--radius-lg)" ] || return 1
   local parts=($1) p
   local first="${parts[0]}"
   for p in "${parts[@]}"; do [ "$p" != "$first" ] && return 1; done
@@ -271,7 +313,7 @@ for spec in ".entry-perla .entry-bubble:Perla's" \
   if is_rounded "$r"; then
     ok "$who is fully rounded ($r)"
   else
-    bad "$who is fully rounded" "got '$r' — expected var(--radius-bubble) with all corners equal"
+    bad "$who is fully rounded" "got '$r' — expected var(--radius-lg) with all corners equal"
   fi
 done
 # The typing indicator is the same shape of thing; a square one right above a
@@ -292,23 +334,56 @@ is_rounded "$r" && ok "the typing indicator is rounded too ($r)" \
 # at horizontal distance d from the left edge starts R - sqrt(R^2 - (R-d)^2)
 # below the top edge. Measured against that:
 #     r=9999  ->  40px intrusion at h=176  (the shipped bug)
-#     r=20    ->   0.9px intrusion at any height
+#     r=8     ->   2.7px intrusion at any height  (--radius-lg today)
 # A fixed radius is height-independent, which is exactly why it is safe. The
 # threshold is 3px: a sub-pixel-to-few-pixel bite at the very corner of the
 # padding box is invisible, and tightening it further only rejects radii that
 # render correctly.
+#
+# The radius is RESOLVED THROUGH THE TOKEN CHAIN rather than read as a literal,
+# because there is no literal to read any more: .entry-bubble says
+# var(--radius-lg), which is var(--radius), which is 0.5rem. Reading the token
+# name out of :root the way this used to read --radius-bubble would have gone
+# quiet the moment the middle step was renamed, which is the failure mode this
+# whole section exists to prevent.
+# .entry-bubble's padding is the two-value shorthand `10px 14px`, and both values
+# are still literals: the spacing sweep deliberately adopted only single-value
+# padding/margin/gap declarations, so the horizontal stays 14px. test_primitives.sh
+# section 13 asserts that exact string.
 pad=14          # .entry-bubble horizontal padding
 line=26         # height of the first text line, generously
 tolerance=3     # px of arc intrusion tolerated at the corner
 radius=$(python3 - "$CSS" <<'PY'
 import re, sys
-css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1]).read())
-m = re.search(r"--radius-bubble:\s*([0-9.]+)px", css)
-print(m.group(1) if m else "")
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1], encoding="utf-8").read())
+m = re.search(r":root\s*\{", css); d, i = 1, m.end()
+while d:
+    d += (css[i] == "{") - (css[i] == "}"); i += 1
+decls = dict(re.findall(r"(--[a-z0-9-]+)\s*:\s*([^;}]+)", css[:i]))
+def resolve(tok, depth=0):
+    """Follow var() and calc() references until a length is reached, in px."""
+    v = decls.get(tok, "").strip()
+    if not v or depth > 8:
+        return None
+    ref = re.fullmatch(r"var\(\s*(--[a-z0-9-]+)\s*\)", v)
+    if ref:
+        return resolve(ref.group(1), depth + 1)
+    mult = re.fullmatch(r"calc\(\s*var\(--radius\)\s*\*\s*([0-9.]+)\s*\)", v)
+    if mult:
+        base = resolve("--radius", depth + 1)
+        return base * float(mult.group(1)) if base else None
+    for unit, factor in (("rem", 16.0), ("px", 1.0)):
+        num = re.fullmatch(r"([0-9.]+)" + unit, v)
+        if num:
+            return float(num.group(1)) * factor
+    return None
+r = resolve("--radius-lg")
+print(f"{r:g}" if r else "")
 PY
 )
 if [ -z "$radius" ]; then
-  bad "--radius-bubble is a fixed px value" "not found or not in px"
+  bad "--radius-lg resolves to a fixed px value" \
+      "could not resolve --radius-lg through :root to a length - the bubble radius is unpinned"
 else
   for H in 45 90 176; do
     intrusion=$(python3 -c "
@@ -933,7 +1008,9 @@ else
 fi
 
 # (3) One border around thumbnail + name + size, not just the image.
-if has ".attach-thumb" "border: 1px solid var\(--border\)" && has ".attach-thumb" "padding: 4px"; then
+# The padding is the 4px rung of the spacing scale now, so it is asserted as the
+# token rather than the literal it replaced.
+if has ".attach-thumb" "border: 1px solid var\(--border\)" && has ".attach-thumb" "padding: var\(--space-2\)"; then
   ok "(3) the image card border wraps the thumbnail, name and size"
 else
   bad "(3) the image card border wraps the thumbnail, name and size" ".attach-thumb has no border/padding of its own"
@@ -1139,6 +1216,43 @@ if rule_body ".surface-raised" | grep -q 'box-shadow'; then
   bad "the in-page raised surface has no shadow" "got: $(rule_body ".surface-raised")"
 else
   ok "the in-page raised surface has no shadow (overlays keep theirs)"
+fi
+
+echo
+echo "=== 16. radius and space tokens are USED, not just declared ==="
+# An unused token is dead weight that reads as intent. fonts.nix carries a
+# comment about an installed font nothing referenced; this is the same defect
+# in the stylesheet. A token with no consumer is either a mistake or a scale
+# entry that has not been adopted yet - both are worth failing on.
+#
+# The scale only earns its keep on the call sites, so this is what makes the
+# adoption sweep stick. Deleting the last `var(--space-8)` is invisible to
+# section 7 (which only asks that no *literal* radius appears) and to section 3
+# (which only asks that the palette did not drift), yet it turns the whole
+# spacing ladder back into eight declarations of intent.
+#
+# Mutation: add `--radius-9xl: 99px;` to :root -> red.
+# Mutation: delete the last `var(--space-8)` -> red.
+report=$(python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1], encoding="utf-8").read())
+m = re.search(r":root\s*\{", css); d, i = 1, m.end()
+while d:
+    d += (css[i] == "{") - (css[i] == "}"); i += 1
+root = css[:i]
+declared = set(re.findall(r"(--(?:radius|space)-[a-z0-9-]+)\s*:", root))
+used = set(re.findall(r"var\(\s*(--(?:radius|space)-[a-z0-9-]+)", css))
+unused = sorted(declared - used)
+print(len(unused))
+for u in unused:
+    print(f"#   {u} is declared in :root but never referenced")
+PY
+)
+count=${report%%#*}
+if [ "$count" -eq 0 ]; then
+  ok "every radius/space token has a consumer ($count unused)"
+else
+  bad "every radius/space token has a consumer" "$report"
 fi
 
 echo "=================================="

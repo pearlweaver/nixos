@@ -48,23 +48,56 @@
       --input: #322a36;
 
 
+      /* Four roles, and only four: inline/nested, control & surface, overlay, and
+         round. Anything that wants a corner not on this list wants a new ROLE,
+         not a new step. --radius-sm/-2xl/-3xl and --radius-bubble were retired
+         once the call sites were adopted - each was the last reference in the
+         file - and are deliberately not reinstated. */
       --radius: 0.5rem;
-      --radius-sm: calc(var(--radius) * 0.6);
       --radius-md: calc(var(--radius) * 0.8);
       --radius-lg: var(--radius);
       --radius-xl: calc(var(--radius) * 1.4);
-      --radius-2xl: calc(var(--radius) * 1.8);
-        --radius-3xl: calc(var(--radius) * 2.2);
-
-        --radius-bubble: 20px;
 
         --radius-full: 9999px;
 
 
+      /* Motion, in two families kept in one block each so a retune is one
+         edit. --duration and --duration-slow are the two that already
+         dominated this file when the tokens were introduced (35 and 30 of the
+         78 timings); --duration-slower is the settling tier, for the reveals
+         that should arrive rather than snap. --ease-out is the ONE non-default
+         curve here: its control points (0.2, 0.8) and (0.2, 1) mean it covers
+         most of the distance early and arrives with almost nothing left, so a
+         pop-in or a drawer reads as settling into place instead of running to a
+         stop. `linear` is deliberately still spelled out on the spinner - a
+         rotation at a constant rate is the entire point and easing one would
+         read as a stutter. */
       --duration: 0.15s;
       --duration-slow: 0.2s;
+      --duration-slower: 0.3s;
       --ease: ease;
+      --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 
+
+      /* 4px-based, with the rungs assigned in DESCENDING ORDER OF USE rather
+         than on the grid. Counting the hand-typed single-value padding, margin
+         and gap declarations gave 8px x23, 6px x18, 10px x14, 4px x12, 12px
+         x10, 2px x5, 16px x5, 24px x4 - so --space-4 (8px) is the rung this
+         stylesheet actually lands on most and --space-3 (6px) the second, not
+         the other way round. Every rung holds the literal it replaced, so
+         adoption is pixel-identical; the ladder exists to make those
+         frequencies legible, not to re-round them onto the grid. */
+      --space-1: 2px;
+      --space-2: 4px;
+      --space-3: 6px;
+      --space-4: 8px;
+      --space-5: 10px;
+      --space-6: 12px;
+      --space-7: 16px;
+      --space-8: 24px;
+
+
+      --font-sans: "Inter", "Noto Sans", system-ui, sans-serif;
 
       --font-text: "Noto Serif", "Iowan Old Style", "Palatino Linotype",
         Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
@@ -74,21 +107,44 @@
         Consolas, monospace;
 
 
+      /* Two tiers of type size. --text-2xs..--text-xl are the UI scale, used by
+         chrome and by prose alike; --text-2xl is the page title and is the only
+         size deliberately larger than the reading face. Before this pass the
+         stylesheet carried 38 distinct font-size values against a declared
+         scale that four of whose six tokens had no references at all. */
+      --text-2xs: 0.6875rem;
       --text-xs: 0.75rem;
-      --text-sm: 0.875rem;
-      --text-base: 1rem;
-      --text-lg: 1.125rem;
-      --text-xl: 1.25rem;
-      --text-2xl: 1.5rem;
+      --text-sm: 0.8125rem;
+      --text-md: 0.875rem;
+      --text-lg: 1rem;
+      --text-xl: 1.125rem;
+      --text-2xl: 1.375rem;
 
 
-      --qac-text-title: 0.95rem;
-      --qac-text-label: 0.85rem;
-      --qac-text-sub: 0.8rem;
-      --qac-text-desc: 0.78rem;
-      --qac-text-status: 0.75rem;
-      --qac-text-command: 0.74rem;
-      --qac-text-progress: 0.72rem;
+      /* The question card's scale, ALIASED onto the global one rather than a
+         second ladder. These seven were the only named type scale in the file
+         and the model worth generalising; left independent they became a
+         parallel scale that nothing else could join. test_primitives.sh §17
+         asserts all seven exist and are used, which is why they are kept.
+         The title deliberately stops at --text-lg, the reading face, and NOT
+         --text-xl: this card sits at the same depth as .toast-title and
+         .qa-drawer-title (both 13px, both weight 600, both --foreground), and
+         the three headings genuinely above it anywhere are the page-level ones
+         - .gate-card h1, .welcome h2 and .prose h1, all three now on
+         --text-2xl, which is the rung that exists precisely to sit above the
+         reading face. (.gate-card h1 was 28px and .welcome h2 26px before the
+         scale sweep; .prose h1 was 1.3em of the 17px prose face. All three
+         landing on one rung is the point of having one.) One step larger puts
+         the card title between those card titles and those page headings - an
+         inversion, not a hierarchy - so do not "correct" it upwards to the
+         step that looks more impressive in the ladder. */
+      --qac-text-title: var(--text-lg);
+      --qac-text-label: var(--text-md);
+      --qac-text-sub: var(--text-sm);
+      --qac-text-desc: var(--text-sm);
+      --qac-text-status: var(--text-xs);
+      --qac-text-command: var(--text-2xs);
+      --qac-text-progress: var(--text-2xs);
 
 
       --z-sticky: 5;
@@ -128,8 +184,20 @@
       --btn-height-sm: 32px;
       --btn-height-md: 38px;
 
+      /* The pill's own rung. 34px is not on the xs/sm/md ladder (28/32/38) and
+         never was - it belonged to a class that welded its height to its shape,
+         so it had nowhere to go but into a declaration. It sits with the other
+         HEIGHTS rather than with the radii because that is what it is; the
+         roundness it used to carry is a shape, and shapes are not tokens here
+         (the one role that covers both is --radius-full, declared ABOVE in the
+         four-role radius block - do not go looking for it below). */
+      --btn-height-pill: 34px;
+
 
       --header-height: 56px;
+
+      --sidebar-width: 256px;
+      --sidebar-rail-width: 56px;
 
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -213,6 +281,332 @@
       background: var(--border);
     }
 
+    /* ---------- Sidebar ----------
+       The desktop navigation rail. Built entirely from primitives already in
+       this file - .btn-icon for the collapse control, .input for the filter,
+       .divider-vertical for the footer rule - so it adds no new recipe. The
+       mobile presentation is the SAME markup inside a .sheet; see Layer 2 in
+       the design spec for why that is one implementation and not two. */
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+      width: var(--sidebar-width);
+      flex-shrink: 0;
+      /* The containing block for .sidebar-rail below. Without it that rule
+         resolves against whatever ancestor happens to be positioned, which on
+         the desktop shell is the viewport - so the hairline would sit at the
+         right edge of the screen instead of the sidebar's. Inert on its own:
+         no offsets are set here, so nothing lays out differently. */
+      position: relative;
+      background: var(--muted);
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+      transition: width var(--duration-slow) var(--ease);
+    }
+
+    /* Collapsed state: the rail keeps its rows but drops every label, so the
+       active destination stays identifiable by its icon and aria-current. */
+    .sidebar[data-collapsed="true"] {
+      width: var(--sidebar-rail-width);
+    }
+
+    .sidebar[data-collapsed="true"] .sidebar-group-label,
+    .sidebar[data-collapsed="true"] .sidebar-menu-button span {
+      display: none;
+    }
+
+    /* The hairline down the sidebar's TRAILING edge. Deliberately not
+       .divider-vertical: that is a flex CHILD, living in the gap between two
+       things and taking its height from align-self, whereas this is the
+       sidebar's own boundary and has to sit on the sidebar itself, edge to
+       edge, whether or not anything is beside it.
+
+       The brief listed .sidebar-rail among the primitives this layer produces
+       and registered it in the existence check, but shipped no rule for it -
+       leaving it out would have made that assertion unsatisfiable from the
+       moment it was written.
+
+       WHAT IT IS FOR, HONESTLY: nothing yet. No markup in this redesign carries
+       the class (no consumer in the JS or the HTML), and .sidebar above already
+       draws the same hairline at the same edge with `border-right`. Applied to
+       both, these two draw one line twice - harmless, because it is the same
+       --border over the same --border, and invisible.
+
+       There is exactly one technical difference between them, and it is why
+       this shape exists rather than being a copy: `*` is box-sizing: border-box,
+       so .sidebar's `border-right` is taken OUT of the declared
+       --sidebar-width and the sidebar lays out 1px narrower inside than it
+       measures. An absolutely-positioned overlay costs no layout width at all.
+       That is a real distinction, and it is not a need anyone has yet - a 1px
+       discrepancy in a 256px column is not a defect worth a rule on its own.
+
+       So this is registered-but-unreferenced, and it is kept rather than deleted
+       because the brief put it in the registry and unwiring a registered name
+       is a Task 6 decision, not a de-duplication call. It is also why .sidebar
+       carries `position: relative`, which is otherwise inert: the containing
+       block for this rule and nothing else. Whoever wires the sidebar up must
+       pick ONE of the two hairlines; shipping both is what the pair is being
+       held open for. */
+    .sidebar-rail {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 1px;
+      background: var(--border);
+      /* The line is decoration sitting over the boundary; it must never be the
+         thing a click lands on. */
+      pointer-events: none;
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-3) var(--space-4);
+      flex-shrink: 0;
+      min-height: var(--header-height);
+    }
+
+    .sidebar-content {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: var(--space-2);
+    }
+
+    .sidebar-group {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1);
+      margin-bottom: var(--space-5);
+    }
+
+    .sidebar-group-label {
+      padding: var(--space-2) var(--space-3);
+      font-family: var(--font-sans);
+      font-size: var(--text-2xs);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent-foreground);
+    }
+
+    .sidebar-menu {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1);
+    }
+
+    /* The radius is --radius-lg, the CONTROL & SURFACE role, and the four-role
+       table is what settles it. The brief was written against a five-step
+       ladder in which --radius-sm existed as the small-corner rung; that token
+       was retired along with its last consumer, so there is no "small" step to
+       ask for - and --radius-md, which survives, is the INLINE/NESTED role
+       (the breadcrumb crumb's rung), not a shrunken control.
+
+       Which is also why nothing here grows a tail corner. The plan's radius
+       allowlist used to pre-approve three asymmetric forms built on
+       --radius-sm, commented as "reserved for a bubble tail corner";
+       test_design_tokens.sh section 10 records that the tail was removed AT THE
+       USER'S REQUEST. Do not reintroduce it because a table once had a slot for
+       it. */
+    .sidebar-menu-button {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      width: 100%;
+      padding: var(--space-2) var(--space-3);
+      border: 1px solid transparent;
+      border-radius: var(--radius-lg);
+      background: transparent;
+      color: var(--foreground);
+      font-family: var(--font-sans);
+      font-size: var(--text-sm);
+      text-align: left;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background var(--duration) var(--ease),
+        color var(--duration) var(--ease);
+    }
+
+    .sidebar-menu-button:hover {
+      background: var(--accent);
+    }
+
+    /* aria-current="page" is what actually conveys the active destination to a
+       screen reader; the fill is the visual half of the same signal. */
+    .sidebar-menu-button[aria-current="page"] {
+      background: var(--primary-subtle);
+      color: var(--ring);
+      font-weight: 600;
+    }
+
+    .sidebar-menu-button svg {
+      flex-shrink: 0;
+    }
+
+    .sidebar-footer {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+      padding: var(--space-3) var(--space-4);
+      flex-shrink: 0;
+      border-top: 1px solid var(--border);
+      font-family: var(--font-sans);
+      font-size: var(--text-xs);
+      color: var(--muted-foreground);
+    }
+
+    /* Hidden because the desktop shell always has the sidebar; the media query
+       that reveals it belongs to the shell that lays the grid out, not to a
+       primitive. */
+    .sidebar-trigger {
+      display: none;
+    }
+
+    /* ---------- Sheet ----------
+       The mobile presentation of the sidebar, and the overlay primitive any
+       other transient surface can reuse. z-index comes from the scale. */
+    .sheet-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: var(--z-modal);
+      /* --scrim-crop is NOT a colour. It is a box-shadow value - a 2000px crop
+         used by .crop-box to darken everything outside a drag rectangle - and
+         handed to `background` it does not parse, so the whole declaration is
+         dropped and the overlay renders fully transparent. The scrim idiom
+         this file already uses on its four full-screen scrims (.lightbox, the
+         image editor and two others) is a tint of --scrim over transparent. */
+      background: color-mix(in srgb, var(--scrim) 85%, transparent);
+    }
+
+    .sheet {
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      /* Above .sheet-overlay, not equal to it and not below it. The two rungs
+         are --z-modal (50) and --z-top (110); the load-bearing part of the
+         scale is that ORDER, so a sheet can never end up behind the scrim it
+         is supposed to be sitting on. */
+      z-index: var(--z-top);
+      display: flex;
+      flex-direction: column;
+      background: var(--muted);
+      box-shadow: var(--shadow-lg);
+      width: var(--sidebar-width);
+      max-width: 84vw;
+    }
+
+    /* ---------- Content frame ----------
+       One frame for all four secondary surfaces. Layer 3 replaces four
+       different overlay strategies with this; until then it is unused, which
+       is why no component references it in this layer. */
+    .content-frame {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      height: 100%;
+    }
+
+    .content-frame-header {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      padding: var(--space-3) var(--space-5);
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font-sans);
+      font-size: var(--text-lg);
+      min-height: var(--header-height);
+    }
+
+    /* The same three declarations as .panel-body, and for the same reason: a
+       flex child only scrolls correctly with min-height:0 between flex:1 and
+       the overflow. Restating them here rather than reusing .panel-body is
+       deliberate - the frame's body is not a panel, and the panel shell is
+       removed in Layer 3. */
+    .content-frame-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+    }
+
+    /* ---------- Underline input ----------
+       Two rules - the gate password and the elevate password - each restated
+       the whole recipe: background, border, colour, font, font-size, outline
+       and a focus state. Bordered fields have .input; this is the missing
+       counterpart for fields that sit flush on a surface.
+
+       font-family is --font-text, NOT the --font-sans the brief proposed, and
+       that is a pixel-identity decision rather than a preference: both call
+       sites render serif today (the elevate field names it outright, the gate
+       field inherits it from body through `input { font-family: inherit }`),
+       so --font-sans here would have quietly restyled two live screens to a
+       different face. A chrome field that wants Inter asks for it by name. */
+    .input-underline {
+      flex: 1;
+      min-width: 0;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      /* Flush is the point of this field: it sits on a surface, so a rounded
+         corner would round nothing and only misdescribe the shape. */
+      border-radius: 0;
+      color: var(--foreground);
+      padding: var(--space-2) var(--space-1);
+      font-family: var(--font-text);
+      font-size: var(--text-md);
+      outline: none;
+      transition: border-color var(--duration-slow) var(--ease);
+    }
+
+    .input-underline::placeholder {
+      color: var(--accent-foreground);
+    }
+
+    .input-underline:focus {
+      border-bottom-color: var(--primary);
+    }
+
+    /* ---------- Alert dialog ----------
+       One primitive for the two window.confirm() calls in Quick Actions and the
+       inline-styled confirmation card in the chat. Layer 5 wires it up. */
+    .alert-dialog {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+      padding: var(--space-6);
+      max-width: 420px;
+      background: var(--popover);
+      color: var(--popover-foreground);
+      border: 1px solid var(--border);
+      /* --radius-xl, the OVERLAY role. Same reasoning as the sidebar row, and
+         the same prohibition: --radius-sm no longer exists, and the four-role
+         table is not a menu. */
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-lg);
+      font-family: var(--font-sans);
+    }
+
+    .alert-dialog-title {
+      font-size: var(--text-lg);
+      font-weight: 600;
+    }
+
+    .alert-dialog-description {
+      font-size: var(--text-md);
+      color: var(--muted-foreground);
+    }
+
+    .alert-dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--space-2);
+    }
+
 
     .surface-raised {
       background: var(--card);
@@ -229,7 +623,7 @@
     .panel-header {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: var(--space-5);
       padding: 12px 14px;
       flex-shrink: 0;
       user-select: none;
@@ -279,6 +673,10 @@
       }
     }
 
+    /* A CYCLE LENGTH, not a transition duration, and deliberately not on the
+       duration scale. 0.7s is how fast a 360-degree rotation reads as a spin;
+       --duration-slow (0.2s) would make it a blur. The reduced-motion value is
+       the same axis - it is "slow this right down", not "use another token". */
     .spinner {
       flex-shrink: 0;
       width: 18px;
@@ -307,8 +705,8 @@
 
     .status {
       display: block;
-      margin-top: 8px;
-      font-size: 0.72rem;
+      margin-top: var(--space-4);
+      font-size: var(--text-xs);
       color: var(--muted-foreground);
       font-style: italic;
     }
@@ -327,7 +725,7 @@
       color: var(--foreground);
       padding: 9px 12px;
       font-family: var(--font-text);
-      font-size: 0.9rem;
+      font-size: var(--text-md);
       outline: none;
       transition: border-color var(--duration-slow) var(--ease);
     }
@@ -355,7 +753,7 @@
       border: none;
       color: var(--foreground);
       font-family: var(--font-text);
-      font-size: 17px;
+      font-size: var(--text-lg);
       padding: 6px 4px 10px;
       line-height: 1.4;
       outline: none;
@@ -367,18 +765,19 @@
 
 
     .badge {
+      /* inline / nested: a badge sits inside a row of other controls */
       display: inline-flex;
       align-items: center;
-      font-size: 11px;
+      font-size: var(--text-2xs);
       letter-spacing: 0.04em;
-      border-radius: var(--radius-3xl);
+      border-radius: var(--radius-md);
       flex-shrink: 0;
     }
 
 
     .badge-outline {
       padding: 2px 8px;
-      margin-right: 6px;
+      margin-right: var(--space-3);
       border: 1px solid var(--primary-dim);
       background: color-mix(in srgb, var(--primary) 8%, transparent);
       color: var(--ring);
@@ -389,10 +788,18 @@
 
     .badge-solid {
       padding: 2px 7px;
-      margin-right: 6px;
+      margin-right: var(--space-3);
       background: var(--destructive);
       color: var(--background);
-      font-size: 0.65rem;
+      /* Was 0.65rem (10.4px) against .badge's 11px. The sweep table sends
+         0.65rem to --text-xs (12px) and 11px to --text-2xs (11px), which would
+         make the solid variant one step LARGER than the base it overrides - and
+         the two render side by side in the header (#tierBadge solid,
+         #tierTimer outline), so the inversion is visible rather than
+         theoretical. Held at the base's own rung: the half-point size
+         difference was decorative, and weight 700 + the solid fill + the glow
+         are what actually mark this variant. */
+      font-size: var(--text-2xs);
       font-weight: 700;
       box-shadow: var(--glow-destructive);
     }
@@ -416,7 +823,7 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
+      gap: var(--space-3);
       flex-shrink: 0;
       border: 1px solid transparent;
       border-radius: var(--radius-lg);
@@ -461,16 +868,28 @@
     .btn-md {
       height: var(--btn-height-md);
       padding: 0 14px;
-      font-size: 0.85rem;
+      font-size: var(--text-sm);
     }
 
 
-    .btn-pill {
-      height: 34px;
+    /* A pill is a SHAPE and 34px is a SIZE, and they used to arrive as one
+       class: it carried the height, the padding, the roundness and the font-size
+       together, so it could not compose with .btn-sm or .btn-md and it had to
+       bring an off-scale type size along to do it. Split the way
+       .btn-icon-{20,24,28,30,32,34} plus .btn-icon-square already are - one
+       axis each - so a round button is a SHAPE applied to a size rather than a
+       size of its own. The size axis stays class-based everywhere else; this one
+       control needs a 34px rung the ladder does not have, so the axis is named
+       rather than the shape welded to it. */
+    .btn[data-size="pill"] {
+      height: var(--btn-height-pill);
       padding: 0 14px;
-      border-radius: var(--radius-3xl);
+      font-size: var(--text-sm);
+    }
 
-      font-size: 13px;
+    /* round: a pill is a circle by another name */
+    .btn[data-shape="pill"] {
+      border-radius: var(--radius-full);
     }
 
 
@@ -545,7 +964,7 @@
       border-radius: var(--radius-full);
       background: transparent;
       color: var(--muted-foreground);
-      font-size: 14px;
+      font-size: var(--text-sm);
       line-height: 1;
 
       cursor: pointer;
@@ -627,6 +1046,17 @@
     }
 
 
+    /* Six hit-target boxes, and deliberately NOT --space-*: that ladder is
+       2/4/6/8/10/12/16/24px, so the rungs nearest these are 10px and 16px -
+       binding a 20px button to --space-5 would halve it and a 32px one to
+       --space-7 would halve that too. --space-8 is 24px exactly and would be
+       pixel-identical, but it is a SPACING rung, so a retune of the gap scale
+       would silently resize every icon button in the app. These are sizes, not
+       spacing, and they stay literals - pinned by test_primitives.sh section 18
+       because nothing else in the suite guards THESE SIX: test_scales.sh
+       section 7 covers font-size, durations and border-radius, never a width or
+       a height, and the widths it does pin (.btn-icon-lg, .send-btn svg) are
+       different boxes. */
     .btn-icon-20 { width: 20px; height: 20px; }
     .btn-icon-24 { width: 24px; height: 24px; }
     .btn-icon-28 { width: 28px; height: 28px; }
@@ -673,7 +1103,7 @@
     }
 
     .checkbox {
-      border-radius: var(--radius-sm);
+      border-radius: var(--radius-md);
     }
 
     .radio:checked,
@@ -687,7 +1117,7 @@
       display: block;
       width: 6px;
       height: 6px;
-      margin: 4px;
+      margin: var(--space-2);
       border-radius: var(--radius-full);
       background: var(--background);
     }
@@ -710,18 +1140,19 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 24px;
+      padding: var(--space-8);
       z-index: var(--z-modal);
       background: var(--background);
     }
 
     .gate-card {
+      /* control & surface: a card, not a dialog */
       width: 100%;
       max-width: 340px;
       text-align: center;
       padding: 40px 32px 32px;
       border: 1px solid var(--border);
-      border-radius: var(--radius-2xl);
+      border-radius: var(--radius-lg);
       background: var(--card);
       box-shadow: var(--shadow-xl);
     }
@@ -735,7 +1166,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 24px;
+      font-size: var(--text-2xl);
       color: var(--ring);
       background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 70%);
       overflow: hidden;
@@ -749,29 +1180,31 @@
       display: block;
     }
 
+    /* The gate is a full-screen takeover with one job on it, so its title sits ON
+       --text-2xl deliberately and is the reason that rung exists above the
+       reading face. It was 28px and the sweep lands it at 22px; the point is
+       the rung, not the pixel. Do not "tidy" these down to --text-xl - one step
+       below and the gate title lands in the same band as .welcome h2 and
+       .brand-name, which is the inversion this token was added to prevent. */
     .gate-card h1 {
       margin: 0 0 32px;
-      font-size: 28px;
+      font-size: var(--text-2xl);
       font-weight: 500;
       letter-spacing: 0.02em;
     }
 
+    /* The underline recipe - background, border, the rule itself, colour,
+       font, outline, transition and the focus colour - is .input-underline
+       now. What is left is what is genuinely the GATE's: a full-width centred
+       field with the tracking a masked token needs to read as a row of dots,
+       one rung above the reading face. Its :focus rule went with the recipe;
+       the primitive already sets border-bottom-color: var(--primary). */
     .gate-card input[type="password"] {
       width: 100%;
-      background: transparent;
-      border: none;
-      border-bottom: 1px solid var(--border);
-      color: var(--foreground);
-      font-size: 16px;
+      font-size: var(--text-lg);
       text-align: center;
       padding: 10px 4px;
       letter-spacing: 0.15em;
-      outline: none;
-      transition: border-color var(--duration-slow) var(--ease);
-    }
-
-    .gate-card input[type="password"]:focus {
-      border-bottom-color: var(--primary);
     }
 
 
@@ -782,10 +1215,13 @@
     .gate-error {
       margin: 14px 0 0;
       color: var(--destructive-bright);
-      font-size: 13px;
+      font-size: var(--text-sm);
       letter-spacing: 0.04em;
     }
 
+/* 0.4s is one COMPLETE shake (out, back, out, back) - four keyframe stops
+       inside it. Retiming it changes the number of visible oscillations, not
+       how snappy it feels. */
     .shake {
       animation: shake 0.4s ease;
     }
@@ -878,13 +1314,13 @@
     .header-left {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: var(--space-6);
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: var(--space-5);
     }
 
     .brand-mark {
@@ -895,13 +1331,13 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 15px;
+      font-size: var(--text-md);
       color: var(--ring);
       overflow: hidden;
     }
 
     .brand-name {
-      font-size: 19px;
+      font-size: var(--text-xl);
       letter-spacing: 0.03em;
     }
 
@@ -909,7 +1345,7 @@
     .status-indicator {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: var(--space-2);
     }
 
     .status-dot {
@@ -917,9 +1353,9 @@
       height: 8px;
       border-radius: 50%;
       background: var(--accent-foreground);
-      margin-left: 6px;
+      margin-left: var(--space-3);
       flex-shrink: 0;
-      transition: background 0.3s var(--ease), box-shadow 0.3s var(--ease);
+      transition: background var(--duration-slower) var(--ease), box-shadow var(--duration-slower) var(--ease);
     }
 
     .status-dot.ok {
@@ -961,7 +1397,7 @@
 
     .entry-bubble {
       padding: 10px 14px;
-      border-radius: var(--radius-bubble);
+      border-radius: var(--radius-lg);
     }
 
     .entry-user .entry-bubble {
@@ -1018,7 +1454,7 @@
     .qac {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: var(--space-6);
       padding: 14px;
     }
 
@@ -1047,7 +1483,7 @@
     .qac-option {
       display: flex;
       align-items: flex-start;
-      gap: 10px;
+      gap: var(--space-5);
       padding: 11px 12px;
       background: var(--card);
       border: 1px solid var(--border);
@@ -1075,7 +1511,7 @@
     .qac-text {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: var(--space-1);
       min-width: 0;
     }
 
@@ -1125,7 +1561,7 @@
     .qac-actions {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--space-4);
       flex-wrap: wrap;
     }
 
@@ -1147,14 +1583,14 @@
     }
 
     .entry-fail-label {
-      font-size: 11px;
+      font-size: var(--text-2xs);
       color: var(--destructive-bright);
       white-space: nowrap;
     }
 
     .entry p {
       margin: 0;
-      font-size: 17px;
+      font-size: var(--text-lg);
       line-height: 1.55;
     }
 
@@ -1164,7 +1600,7 @@
 
 
     .prose {
-      font-size: 17px;
+      font-size: var(--text-lg);
       line-height: 1.55;
       color: var(--foreground);
     }
@@ -1188,17 +1624,28 @@
       font-weight: 600;
     }
 
+    /* Prose headings are the one place the sweep does NOT follow "closest token".
+       They were `em`, so their rendered size was a ratio of the 17px prose
+       face: 22.1px, 20.4px and 18.7px. Mapping the STRINGS 1.3em/1.2em/1.1em
+       as a descending run of small tokens lands h1 on 14px - smaller than the
+       16px body it sits in, i.e. the reverse of a hierarchy - so the ems are
+       resolved against the face they were written for and bound to the rungs
+       that hold those sizes: 22px, 18px, 18px. The h2/h3 gap is the one
+       casualty. It was 1.7px, the smallest distinction in the file, and the
+       ladder has no rung between 18 and 22 to keep it; every prose heading
+       still sits strictly above the body, which is the property that matters.
+       Do not "fix" h3 down to --text-lg: that lands it level with the prose. */
     .prose h1 {
-      font-size: 1.3em;
+      font-size: var(--text-2xl);
     }
 
     .prose h2 {
-      font-size: 1.2em;
+      font-size: var(--text-xl);
     }
 
     .prose h3,
     .prose h4 {
-      font-size: 1.1em;
+      font-size: var(--text-xl);
     }
 
     .prose pre {
@@ -1211,16 +1658,20 @@
       overflow-x: auto;
       white-space: pre;
       font-family: var(--font-mono);
-      font-size: 13.5px;
+      font-size: var(--text-sm);
       line-height: 1.5;
     }
 
     .prose code {
       font-family: var(--font-mono);
-      font-size: 0.9em;
+      /* Was 0.9em of the 17px face = 15.3px. Bound to --text-sm rather than the
+         nearest rung (--text-md, 14px) so inline code lands on the SAME token
+         as the block code just above: two spellings of one role must not render
+         at two sizes, and .prose pre was already 13.5px -> --text-sm. */
+      font-size: var(--text-sm);
       background: rgba(0, 0, 0, 0.3);
       border: 1px solid var(--input);
-      border-radius: var(--radius-sm);
+      border-radius: var(--radius-md);
       padding: 1px 5px;
     }
 
@@ -1264,7 +1715,11 @@
     .prose-table {
       border-collapse: collapse;
       width: 100%;
-      font-size: 0.94em;
+      /* 0.94em of the 17px face was 16.0px, and --text-sm is the tabulated
+         target. This is the largest single reduction the sweep makes (-3px on
+         an already-dense 6px/10px padded grid), so it is the first thing to
+         eyeball for wrapped cells in a wide table. */
+      font-size: var(--text-sm);
     }
 
     .prose-table th,
@@ -1313,8 +1768,8 @@
     .entry-meta {
       display: flex;
       align-items: center;
-      gap: 6px;
-      margin-top: 4px;
+      gap: var(--space-3);
+      margin-top: var(--space-2);
       padding: 0 4px;
       height: 18px;
       opacity: 0;
@@ -1338,12 +1793,12 @@
     }
 
     .entry-time {
-      font-size: 11px;
+      font-size: var(--text-2xs);
       color: var(--accent-foreground);
     }
 
     .entry-image-wrap {
-      margin-top: 6px;
+      margin-top: var(--space-3);
       border-radius: var(--radius-xl);
       overflow: hidden;
       border: 1px solid var(--border);
@@ -1422,10 +1877,10 @@
       padding: 10px 14px;
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: var(--radius-3xl);
+      border-radius: var(--radius-lg);
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: var(--space-3);
 
       margin: 0 14px calc(14px + var(--safe-bottom));
     }
@@ -1435,17 +1890,17 @@
       padding: 12px 14px;
       background: var(--card);
       border: 1px solid var(--destructive);
-      border-radius: var(--radius-3xl);
+      border-radius: var(--radius-lg);
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: var(--space-2);
       margin: 0 14px calc(14px + var(--safe-bottom));
     }
 
     .elevate-composer-row {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: var(--space-5);
     }
 
     .elevate-composer-icon {
@@ -1460,37 +1915,31 @@
       background: color-mix(in srgb, var(--destructive-bright) 14%, transparent);
     }
 
+    /* The underline recipe is .input-underline. What stays is the one
+       declaration the primitive cannot know: this composer's own vertical
+       padding, which the primitive's flush 4px would halve. */
     .elevate-composer input[type="password"] {
-      flex: 1;
-      min-width: 0;
-      background: transparent;
-      border: none;
-      border-bottom: 1px solid var(--border);
-      color: var(--foreground);
-      font-family: var(--font-text);
-      font-size: 15px;
       padding: 8px 2px;
-      outline: none;
-      transition: border-color var(--duration-slow) var(--ease);
     }
 
-    .elevate-composer input[type="password"]::placeholder {
-      color: var(--accent-foreground);
-    }
-
+    /* An elevation token that does not validate should say so on its own
+       underline, in the destructor's colour, rather than in the neutral primary
+       .input-underline:focus defaults to. This is the ONLY thing about the
+       elevate field the primitive cannot infer, which is why the field is not
+       simply the bare class. */
     .elevate-composer input[type="password"]:focus {
       border-bottom-color: var(--destructive);
     }
 
 
     .attach-btn {
-      font-size: 20px;
+      font-size: var(--text-xl);
     }
 
     .attach-preview {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: var(--space-4);
       padding: 2px 2px 4px;
     }
 
@@ -1502,7 +1951,7 @@
       flex: 0 0 auto;
       display: flex;
       flex-direction: column;
-      padding: 4px;
+      padding: var(--space-2);
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
       background: var(--card);
@@ -1517,7 +1966,7 @@
       width: 100%;
 
       height: 64px;
-      border-radius: var(--radius-sm);
+      border-radius: var(--radius-md);
       overflow: hidden;
       background: var(--muted);
     }
@@ -1539,7 +1988,7 @@
     }
 
     .attach-thumb-name {
-      font-size: 0.7rem;
+      font-size: var(--text-xs);
       color: var(--foreground);
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1547,7 +1996,7 @@
     }
 
     .attach-thumb-meta {
-      font-size: 0.65rem;
+      font-size: var(--text-xs);
       color: var(--muted-foreground);
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1577,7 +2026,7 @@
     .attach-thumb-remove {
       top: 4px;
       right: 4px;
-      font-size: 11px;
+      font-size: var(--text-2xs);
     }
 
     .attach-thumb-edit {
@@ -1632,7 +2081,7 @@
       flex: 0 0 auto;
       flex-direction: column;
       justify-content: center;
-      gap: 6px;
+      gap: var(--space-3);
       padding: 8px 6px;
       text-align: center;
     }
@@ -1685,13 +2134,13 @@
     .attach-file-text {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: var(--space-1);
       min-width: 0;
       flex: 1 1 auto;
     }
 
     .attach-file-name {
-      font-size: 0.78rem;
+      font-size: var(--text-sm);
       color: var(--foreground);
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1699,7 +2148,7 @@
     }
 
     .attach-file-meta {
-      font-size: 0.7rem;
+      font-size: var(--text-xs);
       color: var(--muted-foreground);
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1712,11 +2161,11 @@
       width: 22px;
       height: 22px;
       line-height: 1;
-      border-radius: var(--radius-sm);
+      border-radius: var(--radius-md);
       border: 1px solid transparent;
       background: transparent;
       color: var(--muted-foreground);
-      font-size: 12px;
+      font-size: var(--text-xs);
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -1738,7 +2187,7 @@
       align-items: center;
       justify-content: center;
       padding: 0;
-      border-radius: var(--radius-sm);
+      border-radius: var(--radius-md);
       border: 1px solid transparent;
       background: transparent;
       color: var(--muted-foreground);
@@ -1784,7 +2233,7 @@
     .attach-file-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: var(--space-4);
       width: 100%;
     }
 
@@ -1796,7 +2245,7 @@
     .entry-attachments {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: var(--space-4);
 
       margin: 8px 0;
     }
@@ -1839,7 +2288,7 @@
     .composer-row {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: var(--space-5);
     }
 
     .composer-row-spacer {
@@ -1875,10 +2324,13 @@
     }
 
     .mic-stop-square {
+      /* micro-element: an 11px glyph inside a button. --space-1 (2px) and not a
+         radius step, because --radius-sm is 4.8px and would round a square icon
+         into a pebble. */
       position: absolute;
       width: 11px;
       height: 11px;
-      border-radius: 3px;
+      border-radius: var(--space-1);
       background: var(--destructive-bright);
       opacity: 0;
       transform: scale(0.4);
@@ -1907,6 +2359,9 @@
       transform: scale(1);
     }
 
+/* 1.8s is the pulse PERIOD and 0.6s the stagger between the two rings - the
+       pair reads as ONE ripple because of that 0.6s offset. Both are cycle
+       axes; --duration-slower (0.3s) here would fire three ripples per breath. */
     .mic-btn.recording .ring-1 {
       animation: pulse-ring 1.8s ease-out infinite;
     }
@@ -1929,10 +2384,10 @@
 
     .mic-timer {
       text-align: center;
-      font-size: 12px;
+      font-size: var(--text-xs);
       color: var(--accent-foreground);
       letter-spacing: 0.04em;
-      margin-top: 4px;
+      margin-top: var(--space-2);
     }
 
     .mic-timer:empty {
@@ -1948,11 +2403,11 @@
     .voice-draft {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
+      gap: var(--space-4);
+      margin-bottom: var(--space-4);
       padding: 6px 8px;
       border-radius: var(--radius-xl);
-      animation: panel-drop 0.18s ease;
+      animation: panel-drop var(--duration-slow) ease;
 
 
       min-height: calc(40px + var(--control-lg));
@@ -1960,7 +2415,7 @@
 
     .voice-draft-time {
       flex-shrink: 0;
-      font-size: 12px;
+      font-size: var(--text-xs);
       color: var(--accent-foreground);
       min-width: 32px;
       text-align: right;
@@ -1975,6 +2430,8 @@
       color: var(--destructive-bright);
     }
 
+/* Cycle: how long the wax blink takes to dim and come back. On the duration
+       scale this would become a 0.3s twitch. */
     .voice-draft-stop {
       color: var(--destructive-bright);
       animation: blink-wax 1.6s ease-in-out infinite;
@@ -2028,7 +2485,7 @@
     .voice-widget {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--space-4);
       min-width: 200px;
     }
 
@@ -2053,14 +2510,14 @@
 
     .voice-duration {
       flex-shrink: 0;
-      font-size: 11px;
+      font-size: var(--text-2xs);
       color: var(--accent-foreground);
       font-variant-numeric: tabular-nums;
     }
 
     .voice-transcript {
-      margin-top: 6px;
-      font-size: 12px;
+      margin-top: var(--space-3);
+      font-size: var(--text-xs);
       color: var(--accent-foreground);
       line-height: 1.35;
     }
@@ -2071,21 +2528,27 @@
       height: 30px;
       display: flex;
       align-items: center;
-      gap: 2px;
+      gap: var(--space-1);
       overflow: hidden;
     }
 
     .voice-wave i {
+      /* micro-element, and a ZERO-change substitution: --space-1 is 2px, the
+         literal it replaces. A radius step would be wrong here - the bar's own
+         height animates from ~3.6px, so anything over 2px eats the bar. */
       flex: 1;
       min-width: 2px;
       height: 12%;
-      border-radius: 2px;
+      border-radius: var(--space-1);
       background: color-mix(in srgb, var(--primary) 28%, transparent);
-      transition: height 0.05s linear;
+      transition: height var(--duration) linear;
     }
 
 
     .thinking {
+      /* Same shape of thing as the Perla message bubble it sits under: it is
+         align-self:flex-start in the same column, so it takes the same radius
+         rather than inventing a fourth one. */
       align-self: flex-start;
       display: inline-flex;
       align-items: center;
@@ -2093,9 +2556,11 @@
       padding: 12px 16px;
       background: var(--card);
       border: none;
-      border-radius: var(--radius-bubble);
+      border-radius: var(--radius-lg);
     }
 
+/* Cycle: the cadence three dots bounce at. 1.1s is the gap between bounces,
+       so it is a rhythm, not a response time. */
     .think-dot {
       width: 7px;
       height: 7px;
@@ -2144,7 +2609,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 26px;
+      font-size: var(--text-2xl);
       color: var(--ring);
       background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 70%);
       overflow: hidden;
@@ -2157,9 +2622,14 @@
       display: block;
     }
 
+    /* The empty state's one line of text. Same role as .gate-card h1 above - a
+       full-width screen's worth of attention - so it holds --text-2xl for the
+       same reason. This is the heading the :root note about --qac-text-title
+       names as genuinely above the card titles; see that comment before
+       touching this one. */
     .welcome h2 {
       margin: 0 0 6px;
-      font-size: 26px;
+      font-size: var(--text-2xl);
       font-weight: 500;
       letter-spacing: 0.02em;
       color: var(--foreground);
@@ -2167,7 +2637,7 @@
 
     .welcome p {
       margin: 0;
-      font-size: 15px;
+      font-size: var(--text-md);
       line-height: 1.5;
       color: var(--accent-foreground);
     }
@@ -2183,8 +2653,8 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 24px;
-      animation: fade-in 0.18s ease;
+      padding: var(--space-8);
+      animation: fade-in var(--duration-slow) ease;
     }
 
 
@@ -2243,11 +2713,12 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 24px;
-      animation: fade-in 0.18s ease;
+      padding: var(--space-8);
+      animation: fade-in var(--duration-slow) ease;
     }
 
     .file-viewer-panel {
+      /* overlay: a sheet over the conversation */
       width: 100%;
       max-width: 720px;
       height: 100%;
@@ -2256,7 +2727,7 @@
       flex-direction: column;
       background: var(--popover);
       border: 1px solid var(--border);
-      border-radius: var(--radius-2xl);
+      border-radius: var(--radius-xl);
       box-shadow: var(--shadow-xl);
       overflow: hidden;
     }
@@ -2264,7 +2735,7 @@
     .file-viewer-header {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: var(--space-5);
       padding: 12px 14px;
       border-bottom: 1px solid var(--input);
       flex-shrink: 0;
@@ -2292,14 +2763,14 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 15px;
+      font-size: var(--text-md);
       color: var(--foreground);
     }
 
     .file-viewer-header-actions {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: var(--space-2);
       flex-shrink: 0;
     }
 
@@ -2307,13 +2778,13 @@
       flex: 1;
       min-height: 0;
       overflow: auto;
-      padding: 16px;
+      padding: var(--space-7);
     }
 
     .file-viewer-body pre {
       margin: 0;
       font-family: var(--font-mono);
-      font-size: 13px;
+      font-size: var(--text-sm);
       line-height: 1.55;
       color: var(--foreground);
       white-space: pre-wrap;
@@ -2338,7 +2809,7 @@
       -webkit-backdrop-filter: blur(6px);
       display: flex;
       flex-direction: column;
-      animation: fade-in 0.18s ease;
+      animation: fade-in var(--duration-slow) ease;
     }
 
 
@@ -2348,7 +2819,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 16px;
+      padding: var(--space-7);
       position: relative;
       touch-action: none;
       overflow: hidden;
@@ -2420,13 +2891,14 @@
 
 
     .editor-float {
+      /* overlay: a floating toolbar */
       position: absolute;
       z-index: var(--z-sticky);
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: var(--space-2);
       padding: 5px;
-      border-radius: var(--radius-3xl);
+      border-radius: var(--radius-xl);
       background: color-mix(in srgb, var(--background) 82%, transparent);
       border: 1px solid var(--border);
       box-shadow: var(--shadow-lg);
@@ -2485,7 +2957,7 @@
     }
 
     .editor-zoom-label {
-      font-size: 11px;
+      font-size: var(--text-2xs);
       color: var(--accent-foreground);
       width: 34px;
       text-align: center;
@@ -2496,7 +2968,7 @@
     .img-editor-colors {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: var(--space-3);
     }
 
     .color-swatch {
@@ -2517,7 +2989,7 @@
     .img-editor-size {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: var(--space-3);
 
       width: auto;
     }
@@ -2530,7 +3002,7 @@
     }
 
     .img-editor-size-label {
-      font-size: 10px;
+      font-size: var(--text-2xs);
       color: var(--accent-foreground);
       width: 26px;
       flex-shrink: 0;
@@ -2611,11 +3083,15 @@
     }
 
     .hamburger-lines span {
+      /* micro-element, and a ZERO-change substitution. The bar is 1.5px tall, so
+         CSS scales the corner radii down to fit the side: 1px and 2px both render
+         as fully-rounded ends. The token is chosen for legibility of intent, not
+         because it changes a pixel. */
       display: block;
       width: 100%;
       height: 1.5px;
       background: currentColor;
-      border-radius: 1px;
+      border-radius: var(--space-1);
       transition: transform var(--duration-slow) var(--ease), opacity var(--duration-slow) var(--ease);
     }
 
@@ -2633,18 +3109,19 @@
 
 
     .floating-menu {
+      /* overlay: a popover menu */
       display: flex;
       flex-direction: column;
-      padding: 8px;
+      padding: var(--space-4);
       background: var(--popover);
       border: 1px solid var(--border);
-      border-radius: var(--radius-2xl);
+      border-radius: var(--radius-xl);
       box-shadow: var(--shadow-lg);
       position: fixed;
       width: 200px;
       max-width: calc(100vw - 40px);
       z-index: var(--z-dropdown);
-      transition: opacity 0.16s var(--ease), transform 0.16s var(--ease);
+      transition: opacity var(--duration-slow) var(--ease), transform var(--duration-slow) var(--ease);
       opacity: 0;
       pointer-events: none;
     }
@@ -2680,14 +3157,14 @@
     .menu-item {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: var(--space-6);
       width: 100%;
       background: transparent;
       border: none;
       border-radius: var(--radius-lg);
       color: var(--foreground);
       font-family: var(--font-text);
-      font-size: 15px;
+      font-size: var(--text-md);
       text-align: left;
       padding: 12px 12px;
       cursor: pointer;
@@ -2710,7 +3187,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 15px;
+      font-size: var(--text-md);
     }
 
     .menu-item-icon svg {
@@ -2725,7 +3202,7 @@
     .dropdown-panel {
       padding: 12px 20px 16px;
       background: transparent;
-      animation: panel-drop 0.18s ease;
+      animation: panel-drop var(--duration-slow) ease;
     }
 
     @keyframes panel-drop {
@@ -2750,7 +3227,7 @@
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
-      gap: 10px;
+      gap: var(--space-5);
     }
 
     .history-daypicker-wrap {
@@ -2816,10 +3293,10 @@
       color: var(--ring);
     }
     .history-day-option-main {
-      font-size: 14px;
+      font-size: var(--text-sm);
     }
     .history-day-option-sub {
-      font-size: 11px;
+      font-size: var(--text-2xs);
       color: var(--accent-foreground);
     }
     .history-day-option.selected .history-day-option-sub {
@@ -2830,7 +3307,7 @@
     .history-tier-filter {
       display: flex;
       align-items: center;
-      gap: 2px;
+      gap: var(--space-1);
       padding: 3px;
       background: var(--card);
       border: 1px solid var(--border);
@@ -2845,14 +3322,14 @@
 
 
     .reminder-section-title {
-      font-size: 11px;
+      font-size: var(--text-2xs);
       letter-spacing: 0.14em;
       text-transform: uppercase;
       color: var(--accent-foreground);
       margin: 0 0 10px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--space-4);
       font-weight: 600;
     }
 
@@ -2867,19 +3344,19 @@
     .reminder-list {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: var(--space-5);
     }
 
     .reminder-card {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: var(--space-6);
       padding: 12px 14px;
       border-radius: var(--radius-xl);
       background: color-mix(in srgb, var(--card) 96%, transparent);
       border: 1px solid var(--border);
       box-shadow: var(--shadow-md), var(--shadow-sm);
-      animation: pop-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+      animation: pop-in var(--duration-slower) var(--ease-out);
     }
 
     .reminder-card.pending {
@@ -2929,13 +3406,13 @@
     }
 
     .reminder-text {
-      font-size: 14px;
+      font-size: var(--text-sm);
       line-height: 1.4;
       color: var(--foreground);
     }
 
     .reminder-meta {
-      font-size: 11px;
+      font-size: var(--text-2xs);
       color: var(--accent-foreground);
       margin-top: 3px;
     }
@@ -2943,9 +3420,9 @@
     .reminder-cadence {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: var(--space-2);
       margin-top: 5px;
-      font-size: 11px;
+      font-size: var(--text-2xs);
       font-weight: 600;
       letter-spacing: 0.06em;
       color: var(--primary-dim);
@@ -2957,7 +3434,7 @@
 
 
     .reminder-dismiss {
-      font-size: 13px;
+      font-size: var(--text-sm);
       color: var(--accent-foreground);
     }
 
@@ -2974,7 +3451,7 @@
     .reminder-composer {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: var(--space-4);
       padding: 4px 2px 6px;
       position: relative;
     }
@@ -3001,7 +3478,7 @@
       border-color: var(--primary-dim);
       background: color-mix(in srgb, var(--primary) 14%, transparent);
       color: var(--ring);
-      transition: transform 0.18s var(--ease),
+      transition: transform var(--duration-slow) var(--ease),
         background var(--duration) var(--ease);
     }
 
@@ -3020,9 +3497,9 @@
     .reminder-composer-menu {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: var(--space-4);
       align-items: center;
-      animation: panel-drop 0.18s ease;
+      animation: panel-drop var(--duration-slow) ease;
     }
 
     .reminder-composer input[type="datetime-local"] {
@@ -3057,9 +3534,9 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: var(--space-6);
       padding: 10px 14px;
-      margin-bottom: 12px;
+      margin-bottom: var(--space-6);
       position: sticky;
       top: 0;
       z-index: var(--z-sticky);
@@ -3072,9 +3549,9 @@
       flex-wrap: nowrap;
       overflow-x: auto;
       scrollbar-width: none;
-      gap: 4px;
+      gap: var(--space-2);
       min-width: 0;
-      font-size: 14px;
+      font-size: var(--text-sm);
       color: var(--muted-foreground);
     }
 
@@ -3086,7 +3563,7 @@
     .drive-breadcrumb-wrap {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: var(--space-3);
       min-width: 0;
       flex: 1;
     }
@@ -3099,7 +3576,7 @@
     .drive-path-edit-row {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--space-4);
       flex: 1;
       min-width: 0;
       padding: 4px 10px 4px 8px;
@@ -3121,7 +3598,7 @@
       border: none;
       color: var(--foreground);
       font-family: var(--font-mono);
-      font-size: 13px;
+      font-size: var(--text-sm);
       padding: 6px 0;
       outline: none;
     }
@@ -3138,7 +3615,7 @@
       border: none;
       color: var(--muted-foreground);
       font-family: var(--font-text);
-      font-size: 14px;
+      font-size: var(--text-sm);
       font-weight: 500;
       padding: 5px 8px;
       border-radius: var(--radius-md);
@@ -3146,7 +3623,7 @@
       white-space: nowrap;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: var(--space-3);
       transition: color var(--duration) var(--ease), background var(--duration) var(--ease);
     }
 
@@ -3168,39 +3645,39 @@
 
     .drive-crumb-sep {
       color: var(--accent-foreground);
-      font-size: 12px;
+      font-size: var(--text-xs);
       padding: 0 2px;
     }
 
     .drive-toolbar-actions {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: var(--space-3);
       flex-shrink: 0;
     }
 
     .drive-new-folder-row {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-bottom: 12px;
+      gap: var(--space-4);
+      margin-bottom: var(--space-6);
       padding: 10px 12px;
-      animation: pop-in 0.18s ease;
+      animation: pop-in var(--duration-slow) ease;
     }
 
     .drive-clipboard-bar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 12px;
+      gap: var(--space-4);
+      margin-bottom: var(--space-6);
       padding: 9px 12px;
       background: var(--muted);
       border: 1px dashed var(--primary-dim);
       border-radius: var(--radius-xl);
-      font-size: 13px;
+      font-size: var(--text-sm);
       color: var(--muted-foreground);
-      animation: pop-in 0.18s ease;
+      animation: pop-in var(--duration-slow) ease;
     }
     .drive-clipboard-bar strong {
       color: var(--foreground);
@@ -3216,7 +3693,7 @@
     .drive-grid {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: var(--space-3);
       width: 100%;
     }
 
@@ -3224,7 +3701,7 @@
     .drive-grid.grid-mode {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-      gap: 10px;
+      gap: var(--space-5);
     }
 
     .drive-item {
@@ -3260,7 +3737,7 @@
       flex-direction: column;
       align-items: center;
       justify-content: flex-start;
-      gap: 8px;
+      gap: var(--space-4);
       padding: 14px 8px 10px;
       text-align: center;
     }
@@ -3282,7 +3759,7 @@
       line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
-      font-size: 12.5px;
+      font-size: var(--text-sm);
     }
     .drive-grid.grid-mode .drive-item-meta-col {
       flex-direction: column;
@@ -3318,7 +3795,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 14px;
+      font-size: var(--text-sm);
       text-align: left;
       color: var(--foreground);
       font-weight: 500;
@@ -3327,20 +3804,20 @@
     .drive-item-meta-col {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: var(--space-7);
       flex-shrink: 0;
     }
 
     .drive-item-meta {
-      font-size: 12px;
+      font-size: var(--text-xs);
       color: var(--muted-foreground);
       flex-shrink: 0;
-      margin-right: 4px;
+      margin-right: var(--space-2);
       font-variant-numeric: tabular-nums;
     }
 
     .drive-item-modified {
-      font-size: 11.5px;
+      font-size: var(--text-2xs);
       color: var(--accent-foreground);
       flex-shrink: 0;
       font-variant-numeric: tabular-nums;
@@ -3372,7 +3849,7 @@
       z-index: var(--z-context);
       display: flex;
       flex-direction: column;
-      padding: 6px;
+      padding: var(--space-3);
       min-width: 170px;
       background: var(--popover);
       border: 1px solid var(--border);
@@ -3383,13 +3860,13 @@
     .drive-item-menu button {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: var(--space-5);
       background: transparent;
       border: none;
       border-radius: var(--radius-lg);
       color: var(--foreground);
       font-family: var(--font-text);
-      font-size: 13.5px;
+      font-size: var(--text-sm);
       text-align: left;
       padding: 9px 10px;
       cursor: pointer;
@@ -3443,6 +3920,9 @@
       position: relative;
     }
     .chat-dropzone-active::after {
+      /* control & surface, not overlay: this marks a REGION of a surface that is
+         already there (inset 8px, dashed outline) rather than floating above
+         anything, so it takes the surface radius and matches what it traces. */
       content: "";
       position: absolute;
       inset: 8px;
@@ -3450,7 +3930,7 @@
       outline: 2px dashed var(--primary);
       outline-offset: -2px;
       background: color-mix(in srgb, var(--primary) 4%, transparent);
-      border-radius: var(--radius-2xl);
+      border-radius: var(--radius-lg);
       z-index: var(--z-raised);
     }
 
@@ -3465,11 +3945,12 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 24px;
-      animation: fade-in 0.18s ease;
+      padding: var(--space-8);
+      animation: fade-in var(--duration-slow) ease;
     }
 
     .file-viewer-modal-card {
+      /* overlay: a dialog */
       width: 100%;
       max-width: 780px;
       height: 100%;
@@ -3478,7 +3959,7 @@
       flex-direction: column;
       background: var(--popover);
       border: 1px solid var(--border);
-      border-radius: var(--radius-2xl);
+      border-radius: var(--radius-xl);
       box-shadow: var(--shadow-xl);
       overflow: hidden;
     }
@@ -3503,19 +3984,19 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 15px;
+      font-size: var(--text-md);
       color: var(--foreground);
     }
 
     .file-viewer-modal-body {
       overflow: auto;
-      padding: 16px;
+      padding: var(--space-7);
     }
 
     .file-viewer-modal-body pre {
       margin: 0;
       font-family: var(--font-mono);
-      font-size: 13px;
+      font-size: var(--text-sm);
       line-height: 1.55;
       color: var(--foreground);
       white-space: pre-wrap;
@@ -3553,7 +4034,7 @@
     }
 
     .reminder-collapsible summary .reminder-section-title {
-      margin-bottom: 10px;
+      margin-bottom: var(--space-5);
     }
 
     .reminder-collapsible summary .disclosure-arrow {
@@ -3586,7 +4067,7 @@
       display: flex;
       flex-direction: column;
       align-items: stretch;
-      gap: 8px;
+      gap: var(--space-4);
       width: min(92vw, 360px);
       pointer-events: none;
     }
@@ -3615,6 +4096,10 @@
 
 
     #qaDrawer {
+      /* Bottom sheet, so the free edges are the TOP ones and the bottom is flush
+         against the viewport (no border-bottom). Keeping the 0 0 tail is the
+         whole point - rounding the two corners that sit on the screen edge would
+         show --background through them. */
       position: fixed;
       left: 0;
       right: 0;
@@ -3626,11 +4111,11 @@
       border-top: 1px solid var(--border);
       border-left: 1px solid var(--border);
       border-right: 1px solid var(--border);
-      border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
       box-shadow: var(--shadow-drawer);
       display: flex;
       flex-direction: column;
-      transition: max-height 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+      transition: max-height var(--duration-slower) var(--ease-out);
       max-height: 46px;
       overflow: hidden;
     }
@@ -3646,18 +4131,24 @@
     .qa-drawer-title {
       display: flex;
       align-items: center;
-      gap: 8px;
-      font-size: 13px;
+      gap: var(--space-4);
+      font-size: var(--text-sm);
       font-weight: 600;
       color: var(--foreground);
     }
 
     .qa-drawer-count {
-      font-size: 11px;
+      /* round: a count badge */
+      /* Was 11px, and --text-2xs is 11px - so this is a zero-change
+         substitution onto the smallest rung, not a resize. A count badge sits
+         below .qa-drawer-title (13px) and .qa-drawer-entry-header (12px) and
+         should keep doing so; binding it to a larger rung to satisfy the sweep
+         table would have inverted that. */
+      font-size: var(--text-2xs);
       font-weight: 600;
       color: var(--ring);
       background: color-mix(in srgb, var(--primary) 14%, transparent);
-      border-radius: var(--radius-3xl);
+      border-radius: var(--radius-full);
       padding: 1px 8px;
       min-width: 18px;
       text-align: center;
@@ -3697,20 +4188,20 @@
     .qa-drawer-entry {
       border: 1px solid var(--input);
       border-radius: var(--radius-xl);
-      margin-bottom: 10px;
+      margin-bottom: var(--space-5);
       overflow: hidden;
       background: rgba(0, 0, 0, 0.15);
-      animation: pop-in 0.18s ease;
+      animation: pop-in var(--duration-slow) ease;
     }
 
     .qa-drawer-entry-header {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--space-4);
       padding: 8px 12px;
       background: rgba(255, 255, 255, 0.02);
       border-bottom: 1px solid var(--input);
-      font-size: 12px;
+      font-size: var(--text-xs);
     }
 
     .qa-drawer-entry-status {
@@ -3748,7 +4239,7 @@
     .qa-drawer-entry-body pre {
       margin: 0;
       font-family: var(--font-mono);
-      font-size: 12px;
+      font-size: var(--text-xs);
       line-height: 1.5;
       white-space: pre-wrap;
       word-break: break-word;
@@ -3773,25 +4264,25 @@
     .qa-container {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: var(--space-7);
     }
 
     .qa-section {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: var(--space-5);
     }
 
     .qa-section-title {
-      font-size: 11px;
+      font-size: var(--text-2xs);
       letter-spacing: 0.12em;
       text-transform: uppercase;
       color: var(--accent-foreground);
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--space-4);
       font-weight: 600;
-      padding-bottom: 4px;
+      padding-bottom: var(--space-2);
       border-bottom: 1px solid var(--input);
     }
 
@@ -3803,24 +4294,25 @@
     .qa-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
-      gap: 10px;
+      gap: var(--space-5);
     }
 
     .qa-btn {
+      /* control & surface: a button */
       position: relative;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: var(--space-4);
       padding: 14px 6px;
       min-height: 88px;
-      border-radius: var(--radius-2xl);
+      border-radius: var(--radius-lg);
       border: 1px solid var(--border);
       background: var(--card);
       color: var(--foreground);
       font-family: var(--font-text);
-      font-size: 12px;
+      font-size: var(--text-xs);
       text-align: center;
       cursor: pointer;
       user-select: none;
@@ -3839,7 +4331,7 @@
     .qa-btn:active {
       background: var(--accent);
       border-color: var(--ring);
-      transition-duration: 0.06s;
+      transition-duration: var(--duration);
     }
 
     .qa-btn:disabled {
@@ -3856,6 +4348,10 @@
       pointer-events: none;
     }
 
+/* Cycle length, not a transition: a rotation rate is read as a spin only at a
+       certain speed, and the 0.7s/0.8s/1s used here are three sizes of icon
+       spinning at deliberately different rates. Putting any of them on
+       --duration would retime a spin, not a transition. */
     .qa-btn.is-loading .qa-icon {
       animation: perla-spin 0.8s linear infinite;
     }
@@ -3936,18 +4432,18 @@
     .qa-input-row {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-bottom: 12px;
+      gap: var(--space-4);
+      margin-bottom: var(--space-6);
       padding: 10px 12px;
       box-shadow: var(--shadow-md);
-      animation: pop-in 0.18s ease;
+      animation: pop-in var(--duration-slow) ease;
     }
 
 
     .toast {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: var(--space-6);
       padding: 11px 14px;
       border-radius: var(--radius-xl);
       background: color-mix(in srgb, var(--card) 96%, transparent);
@@ -3955,8 +4451,8 @@
       -webkit-backdrop-filter: blur(14px);
       border: 1px solid var(--border);
       box-shadow: var(--shadow-lg), var(--shadow-sm);
-      animation: pop-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
-      transition: opacity 0.25s var(--ease), transform 0.25s var(--ease);
+      animation: pop-in var(--duration-slower) var(--ease-out);
+      transition: opacity var(--duration-slower) var(--ease), transform var(--duration-slower) var(--ease);
     }
 
     .toast.closing {
@@ -4003,6 +4499,10 @@
       color: var(--foreground);
     }
 
+/* Cycle length, not a transition: a rotation rate is read as a spin only at a
+       certain speed, and the 0.7s/0.8s/1s used here are three sizes of icon
+       spinning at deliberately different rates. Putting any of them on
+       --duration would retime a spin, not a transition. */
     .toast.loading .toast-icon {
       color: var(--ring);
       background: color-mix(in srgb, var(--primary) 14%, transparent);
@@ -4025,23 +4525,23 @@
     }
 
     .toast-title {
-      font-size: 13px;
+      font-size: var(--text-sm);
       font-weight: 600;
       color: var(--foreground);
       line-height: 1.3;
     }
 
     .toast-meta {
-      font-size: 11px;
+      font-size: var(--text-2xs);
       color: var(--accent-foreground);
-      margin-top: 2px;
+      margin-top: var(--space-1);
     }
 
 
     .toast-actions {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: var(--space-3);
       flex-shrink: 0;
     }
 
@@ -4060,7 +4560,7 @@
       border: 1px solid var(--border);
       background: var(--card);
       box-shadow: var(--shadow-md);
-      animation: pop-in 0.22s ease;
+      animation: pop-in var(--duration-slower) ease;
     }
 
     .qa-screenshot-header {
@@ -4070,7 +4570,7 @@
       padding: 8px 12px;
       background: var(--popover);
       border-bottom: 1px solid var(--input);
-      font-size: 11.5px;
+      font-size: var(--text-2xs);
       color: var(--muted-foreground);
     }
 
@@ -4099,7 +4599,7 @@
       border-radius: var(--radius-md);
       background: rgba(0, 0, 0, 0.7);
       color: var(--foreground);
-      font-size: 10.5px;
+      font-size: var(--text-2xs);
       backdrop-filter: blur(4px);
     }
 
@@ -4115,14 +4615,14 @@
 
       .qa-grid {
         grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
+        gap: var(--space-4);
       }
 
       .qa-btn {
         min-height: 78px;
         padding: 10px 4px 8px;
         border-radius: var(--radius-xl);
-        gap: 6px;
+        gap: var(--space-3);
       }
 
       .qa-icon {
@@ -4137,7 +4637,7 @@
       }
 
       .qa-label {
-        font-size: 10.5px;
+        font-size: var(--text-2xs);
       }
     }
 

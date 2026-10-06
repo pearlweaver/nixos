@@ -23,7 +23,7 @@
     pinta
     blanket
     qimgv
-    # wine
+    wine
     nocturne
     proton-vpn
     protontricks
@@ -115,7 +115,7 @@
     papirus-icon-theme
     dxvk
     winetricks
-    wine64
+    # wine64
   ];
 
   xdg.dataFile."vulkan/implicit_layer.d/VkLayer_LS_frame_generation.json".source =

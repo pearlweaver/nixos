@@ -132,7 +132,7 @@ fi
 
 # A stack that is entirely generic, or a self-reference, would satisfy the above
 # while naming no installable face at all.
-for t in font-text font-mono; do
+for t in font-text font-sans font-mono; do
   stack=$(token_value "$t")
   if [ -z "$stack" ]; then
     bad "--$t is defined" "absent from :root"
@@ -209,6 +209,28 @@ for t in shadow-sm shadow-md shadow-lg shadow-xl shadow-drawer \
     ok "--$t is defined"
   else
     bad "--$t is defined" "absent from :root"
+  fi
+done
+
+# The rest of Task 1's tokens, same shape of check. These are the ones a
+# refactor could quietly drop: nothing renders them yet, or their only consumer
+# is one hand-written rule, so a missing declaration shows up as an empty
+# var() rather than a visibly wrong pixel.
+#
+# Mutation: delete `--space-6` from :root -> red.
+# Mutation: rename `--duration-slower` -> red.
+for t in duration-slower ease-out sidebar-width sidebar-rail-width; do
+  if [ -n "$(token_value "$t")" ]; then
+    ok "--$t is defined"
+  else
+    bad "--$t is defined" "absent from :root"
+  fi
+done
+for t in 1 2 3 4 5 6 7 8; do
+  if [ -n "$(token_value "space-$t")" ]; then
+    ok "--space-$t is defined"
+  else
+    bad "--space-$t is defined" "absent from :root"
   fi
 done
 
@@ -352,6 +374,287 @@ if [ "$count" -eq 0 ]; then
   ok "every var() resolves to :root or to a runtime setProperty ($count checked)"
 else
   bad "every var() resolves to :root or to a runtime setProperty" "$report"
+fi
+
+echo
+echo "=== 7. no hand-typed size, duration or radius left in the stylesheet ==="
+# The three scales only hold if nothing bypasses them. Before this pass the
+# stylesheet carried 38 distinct font-size values (against a declared scale
+# whose larger half had zero references), 6 durations outside the two tokens,
+# and 8 border-radius values plus 3 literals (1px/2px/3px) across four different
+# corner languages - which is why message bubbles and attachment chips each
+# ended up with their own rounding.
+#
+# Mutation: change any `font-size: 13px` back to a raw value -> red.
+# Mutation: change any `transition: ... 0.18s` to 0.2s -> red.
+# Mutation: write `border-radius: 3px` anywhere -> red.
+#
+# The scale's VALUES are load-bearing and used to be unguarded. Before the
+# adoption sweep only a handful of rules read a --text-* token, so a typo in
+# one of the seven values would have moved two or three labels and nothing
+# would have noticed. After the sweep roughly 35 hand-typed literals are bound
+# to these seven tokens, so every one of the ~570 assertions in this repo can
+# see a refactor but none of them can see a changed number. The numbers are
+# pinned here in the same spirit as test_design_tokens.sh section 3, which locks
+# the ten palette hex values for exactly the same reason: a rename layer is not
+# a licence to restyle.
+#
+# Mutation: change --text-sm from 0.8125rem to 0.8rem -> red.
+# Mutation: swap the --text-xs and --text-sm values -> red.
+for spec in "text-2xs:0.6875rem" "text-xs:0.75rem" "text-sm:0.8125rem" \
+            "text-md:0.875rem" "text-lg:1rem" "text-xl:1.125rem" \
+            "text-2xl:1.375rem"; do
+  tok="${spec%%:*}"; want="${spec#*:}"; got=$(token_value "$tok")
+  if [ "$got" = "$want" ]; then
+    ok "--$tok is $want"
+  else
+    bad "--$tok is $want" "got '$got' - every rule on this rung moves with it"
+  fi
+done
+
+report=$(python3 - "$CSS" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1], encoding="utf-8").read())
+
+# --- font-size: allowed values are inherit, 0, 1em, the scale tokens, and the
+# --- handful of ICON-relative sizes which are a different axis entirely.
+FONT_OK = {
+    "inherit", "0", "1em",
+    "var(--text-2xs)", "var(--text-xs)", "var(--text-sm)", "var(--text-md)",
+    "var(--text-lg)", "var(--text-xl)", "var(--text-2xl)",
+    "var(--qac-text-title)", "var(--qac-text-label)", "var(--qac-text-sub)",
+    "var(--qac-text-desc)", "var(--qac-text-status)", "var(--qac-text-command)",
+    "var(--qac-text-progress)",
+}
+bad_font = [m.group(1).strip() for m in
+            re.finditer(r"font-size\s*:\s*([^;}]+)", css)
+            if m.group(1).strip() not in FONT_OK]
+
+# --- duration: a timing value is one of the three tokens, or a CYCLE length.
+# --- A cycle length is how long one repetition of a LOOPING animation takes - a
+# --- rotation, a breath, a blink - and it is not a response time. Binding it to
+# --- --duration would retime the loop rather than the transition, and the damage
+# --- is not subtle: perla-spin at 0.2s is a blur rather than a spin, and
+# --- pulse-ring at 0.3s fires three ripples per breath instead of one.
+# ---
+# --- The allowance is keyed on the ANIMATION NAME, never on a bare list of
+# --- numbers. Numbers made it two separate holes: `animation: fade-in 2s ease`
+# --- sailed through on the strength of the one reduced-motion spinner, and a
+# --- TRANSITION could carry a cycle length at all - a category error, since a
+# --- transition has no repetition to be a cycle OF. So a `transition` may only
+# --- use the tokens, and a literal time on an animation must be one this file
+# --- has already justified at that animation's own call site.
+# ---
+# --- Note this is STRICTER than the allowlist it replaces, which also waved
+# --- through bare 0.15/0.22/0.3s - those are precisely the values of the three
+# --- tokens, so accepting them let a transition bypass the scale by spelling
+# --- out the number the scale already says.
+DUR_TOKENS = ("var(--duration)", "var(--duration-slow)", "var(--duration-slower)")
+CYCLE_OK = {
+    "perla-spin":   {"0.7", "0.8", "1"},   # rotation rate; slower on bigger icons
+    "shake":        {"0.4"},              # one COMPLETE shake, 4 keyframe stops
+    "pulse-ring":   {"1.8", "0.6"},       # 1.8 breath period, 0.6 ring stagger
+    "blink-wax":    {"1.6"},              # dim-and-return cadence
+    "think-bounce": {"1.1"},              # the gap between bounces
+}
+bad_dur = []
+# Byte ranges of the prefers-reduced-motion bodies, so the single longhand cycle
+# allowance below can be scoped to the rule that actually needs it.
+reduced = []
+for m in re.finditer(r"@media\s*\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)\s*\{", css):
+    d, i = 1, m.end()
+    while d:
+        d += (css[i] == "{") - (css[i] == "}"); i += 1
+    reduced.append((m.start(), i))
+in_reduced = lambda pos: any(a <= pos < b for a, b in reduced)
+
+# A transition is a RESPONSE time, so the tokens are its only legal value - no
+# exceptions. The longhand is checked too: a shorthand-only scan cannot see
+# `transition-duration: 0.09s` at all.
+for m in re.finditer(r"(transition|transition-duration)\s*:\s*([^;}]+)", css):
+    for d in re.findall(r"(\d*\.?\d+)m?s", m.group(2)):
+        if d not in DUR_TOKENS:
+            bad_dur.append(f"{m.group(1)}: {d}s")
+# An animation may additionally carry a cycle length, but only one its own name
+# is entitled to.
+for m in re.finditer(r"animation\s*:\s*([^;}]+)", css):
+    parts = m.group(1).split()
+    name = parts[0] if parts else ""
+    allowed = set(CYCLE_OK.get(name, set())) | set(DUR_TOKENS)
+    for d in re.findall(r"(\d*\.?\d+)m?s", m.group(1)):
+        if d not in allowed:
+            bad_dur.append(f"animation {name or '<empty>'}: {d}s")
+# `animation-duration` names no animation, so it cannot be keyed on one. There is
+# exactly one of them in the file - .spinner's reduced-motion slow-down - and the
+# allowance is scoped to that block, so the same number anywhere else still
+# fails.
+for m in re.finditer(r"animation-duration\s*:\s*([^;}]+)", css):
+    for d in re.findall(r"(\d*\.?\d+)m?s", m.group(1)):
+        if d not in DUR_TOKENS and not (d == "2" and in_reduced(m.start())):
+            bad_dur.append(f"animation-duration: {d}s")
+
+# --- border-radius: exactly the four roles, plus the micro-elements and the one
+# --- compound the file actually argues for at its own call site.
+# --- Deliberately NOT allowlisted: any asymmetric form built on --radius-sm.
+# --- There were three such slots here, commented as "reserved for a bubble tail
+# --- corner", and they pre-approved a shape that test_design_tokens.sh section
+# --- 10 records as having been removed AT THE USER'S REQUEST. A future editor
+# --- reading this section first would have found the slots waiting with no
+# --- explanation; read section 10 before proposing one.
+RAD_OK = (
+    "var(--radius-md)", "var(--radius-lg)", "var(--radius-xl)", "var(--radius-full)",
+    "50%", "9999px", "0",
+    # #qaDrawer is a bottom sheet: top corners lifted, bottom flush with the
+    # viewport. Tokenised from radius-2xl without moving which corners round.
+    "var(--radius-lg) var(--radius-lg) 0 0",
+    # --space-1 is NOT a radius step and is not used as one: it is the three
+    # decorative micro-elements (11px mic-stop square, 2px wave bars, 1.5px
+    # hamburger lines) whose own dimensions are ~2px. Binding those to
+    # --radius-sm (4.8px) would round them into pebbles and semicircles.
+    "var(--space-1)",
+)
+bad_rad = [m.group(1).strip() for m in
+           re.finditer(r"border-radius\s*:\s*([^;}]+)", css)
+           if m.group(1).strip() not in RAD_OK]
+
+total = len(bad_font) + len(bad_dur) + len(bad_rad)
+print(total)
+for v in sorted(set(bad_font)):
+    print(f"#   font-size: {v}")
+for v in sorted(set(bad_dur)):
+    print(f"#   duration: {v}")
+for v in sorted(set(bad_rad)):
+    print(f"#   border-radius: {v}")
+PY
+)
+count=${report%%#*}
+if [ "$count" -eq 0 ]; then
+  ok "no off-scale font-size, duration or border-radius ($count defects)"
+else
+  bad "no off-scale font-size, duration or border-radius" "$report"
+fi
+
+echo
+echo "=== 8. the stylesheet is structurally sound ==="
+# Every other section here is text/regex based, which is exactly why destroyed
+# declarations shipped green: section 7 regex-matches `property: value` on text a
+# browser throws away. CSS error recovery discards a malformed declaration AND
+# the next one up to its `;`, so in-rule why-comments written without their
+# `/* */` markers silently took out real declarations - #qaDrawer's
+# `position: fixed` (the Quick-Actions bottom sheet became in-flow document
+# content), .chat-dropzone-active::after's `content: ""` (which deletes the
+# dropzone highlight outright - a ::after with no `content` generates no box at
+# all), and .floating-menu's `display: flex`.
+#
+# So there are TWO things to reject, and the first round only had the first:
+#
+#   1. a fragment that is not shaped like `property: value` at all, where
+#      property is a plain identifier or a custom property. This catches prose
+#      that happens to start with a word and no colon.
+#   2. a fragment whose VALUE contains a second `identifier:` pair. This is the
+#      one that matters, because an unmarked comment reading
+#      `overlay: a dialog` SATISFIES rule 1 - it really is `word: text` - and so
+#      sailed through a clean report while eating the `width: 100%` after it.
+#      A real declaration's value never carries a second colon-separated
+#      identifier.
+#
+# @keyframes is excluded because its inner blocks are percentage STOPS
+# (`0%, 80% { ... }`), which are not declarations.
+#
+# KNOWN LIMIT, stated so nobody assumes otherwise: a value carrying a URL with a
+# scheme - `url(data:image/svg+xml,...)` or `url(https://...)` - WOULD trip rule
+# 2, because the scheme's colon looks like a second identifier. Neither exists in
+# this stylesheet (no `url(` at all), and the failure would be a confusing red
+# rather than a wrong pass. If a data-URI background is ever added, narrow rule 2
+# to skip inside `url(...)` then; do not weaken it for anything else.
+#
+# Mutation: remove the `/* */` from any one in-rule why-comment -> red.
+# Mutation: drop a comment's closing `*/` -> red on the marker-count assertion.
+report=$(python3 - "$CSS" <<'PY'
+import re, sys
+raw = open(sys.argv[1], encoding="utf-8").read()
+# Blank comments while PRESERVING OFFSETS, so a stray body fragment still shows
+# up in the parsed text AND keeps its real line number for the report.
+css = re.sub(r"/\*[\s\S]*?\*/", lambda m: " " * (m.end() - m.start()), raw)
+PROP = re.compile(r"\A-{0,2}[A-Za-z][A-Za-z0-9-]*\s*:")
+# A second colon-separated identifier inside an already-matched value.
+SECOND_IDENT = re.compile(r"[A-Za-z][A-Za-z0-9-]*\s*:")
+# Byte ranges of every @keyframes body, which the declaration rule does not apply to.
+kf = []
+for m in re.finditer(r"@keyframes\s+[\w-]+\s*\{", css):
+    d, i = 1, m.end()
+    while d:
+        d += (css[i] == "{") - (css[i] == "}"); i += 1
+    kf.append((m.start(), i))
+bad, scanned = [], 0
+for m in re.finditer(r"([^{}]*)\{([^{}]*)\}", css):
+    if any(a <= m.start() < b for a, b in kf):
+        continue
+    sel = " ".join(m.group(1).split())
+    for frag in m.group(2).split(";"):
+        f = frag.strip()
+        if not f:
+            continue
+        scanned += 1
+        mm = PROP.match(f)
+        if not mm:
+            # Not shaped like a declaration at all: prose that never reached a colon.
+            bad.append((raw.count("\n", 0, m.start()) + 1, sel[:40],
+                        "unmarked text: " + " ".join(f.split())[:48]))
+        elif SECOND_IDENT.search(f[mm.end():]):
+            # Shaped like one, but the value carries a second `identifier:` - which
+            # is what an unmarked comment like `overlay: a dialog` looks like once
+            # the declaration it swallowed is glued onto the end of it.
+            bad.append((raw.count("\n", 0, m.start()) + 1, sel[:40],
+                        "second identifier in value: " + " ".join(f.split())[:40]))
+print(len(bad))
+# The floor is what stops this passing by scanning nothing. It sits far below
+# the real figure but far above zero, so deleting most of the stylesheet, or
+# breaking the parser so it matches no bodies, is caught rather than reported
+# as "clean".
+print(f"# scanned={scanned} keyframes_excluded={len(kf)}")
+if scanned < 1500:
+    print(f"# SCAN FLOOR: only {scanned} fragments scanned, expected >= 1500")
+for ln, sel, f in bad[:8]:
+    print(f"#   line {ln}: {sel} -> \"{f}\"")
+PY
+)
+scanned=$(printf '%s\n' "$report" | sed -n 's/^# scanned=\([0-9]*\) .*/\1/p' | head -1)
+if printf '%s\n' "$report" | grep -q "^# SCAN FLOOR"; then
+  bad "every rule body is nothing but declarations" \
+      "$(printf '%s\n' "$report" | grep "^#" | head -2)"
+elif [ "${report%%#*}" -eq 0 ]; then
+  ok "every rule body is nothing but declarations ($scanned fragments scanned)"
+else
+  bad "every rule body is nothing but declarations" "$report"
+fi
+
+# An unpaired comment marker is the other way this defect shows up, and it is
+# worse: an unclosed `/*` comments out everything after it, leaving section 7
+# scanning an empty file and cheerfully reporting zero defects. So the marker
+# counts are asserted, which is what keeps section 8 from passing vacuously.
+report=$(python3 - "$CSS" <<'PY'
+import re, sys
+raw = open(sys.argv[1], encoding="utf-8").read()
+opens, closes = len(re.findall(r"/\*", raw)), len(re.findall(r"\*/", raw))
+# A `/*` inside an already-open comment is invalid CSS and swallows the closer.
+nested = [m.start() for m in re.finditer(r"/\*[\s\S]*?\*/", raw) if m.group(0).count("/*") > 1]
+# `opens` and `closes` are already ints from len(), so the imbalance is
+# `opens - closes` - calling len() on either raised TypeError and took the
+# detail line below with it. The branch still failed closed, but a diagnostic
+# that cannot execute is not a diagnostic.
+print(opens - closes if opens != closes else (len(nested) or 0))
+if opens != closes:
+    print(f"#   {opens} '/*' vs {closes} '*/' - an unclosed comment swallows the rest of the file")
+for p in nested[:3]:
+    print(f"#   nested '/*' inside an open comment at line {raw.count(chr(10), 0, p) + 1}")
+PY
+)
+count=${report%%#*}
+if [ "$count" -eq 0 ]; then
+  ok "every comment is opened and closed exactly once"
+else
+  bad "every comment is opened and closed exactly once" "$report"
 fi
 
 echo

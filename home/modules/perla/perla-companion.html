@@ -25,7 +25,7 @@
     <div class="gate-card">
       <div id="gateMark" class="gate-mark">P</div>
       <h1>Perla</h1>
-      <input id="gatePassword" type="password" placeholder="password" autocomplete="off" inputmode="text" />
+      <input id="gatePassword" class="input-underline" type="password" placeholder="password" autocomplete="off" inputmode="text" />
       <button id="gateSubmit" class="btn btn-md btn-primary btn-block">Unlock</button>
       <p id="gateError" class="gate-error" hidden>Wrong password.</p>
     </div>
@@ -695,7 +695,7 @@
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
             </svg>
           </span>
-          <input id="elevateInput" type="password" placeholder="Elevation token to unlock Full Mode"
+          <input id="elevateInput" class="input-underline" type="password" placeholder="Elevation token to unlock Full Mode"
             autocomplete="off" />
           <button id="elevateSubmit" class="btn btn-md btn-destructive">Activate</button>
         </div>
@@ -846,12 +846,12 @@
         </div>
       </div>
       <div class="editor-float editor-context-float bare" id="cropOptionsRow" hidden>
-        <button class="btn btn-pill btn-solid" id="applyCrop">Apply crop</button>
+        <button class="btn btn-solid" data-size="pill" data-shape="pill" id="applyCrop">Apply crop</button>
       </div>
 
       <!-- Bottom-right: save -->
       <div class="editor-float editor-save-float bare">
-        <button class="btn btn-pill btn-solid" id="editorSave">Save</button>
+        <button class="btn btn-solid" data-size="pill" data-shape="pill" id="editorSave">Save</button>
       </div>
     </div>
   </div>
