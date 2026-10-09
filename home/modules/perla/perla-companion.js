@@ -62,6 +62,17 @@
     // reload within the same gate-unlock doesn't lose either conversation,
     // but a fresh gate unlock always starts clean at Tier 1 per spec.
     let activeTier = parseInt(sessionStorage.getItem("perla_active_tier") || "1", 10);
+    // The tier the user was LAST using, which is what the Chat nav row returns
+    // to. Recorded in switchTier and nowhere else, so there is one writer and no
+    // second copy to drift; seeded from activeTier rather than a literal because
+    // activeTier is RESTORED from sessionStorage, and setDestination("chat") runs
+    // during initialisation (initAppState -> updateTierButtonHighlight). Seeded
+    // with a literal 1, that call would find lastActiveTier disagreeing with
+    // activeTier, miss switchTier's early-return exit, and commit Tier 1 over a
+    // reload that had restored Tier 2. The two agree by construction until a
+    // switch says otherwise, which is the point: they are the same fact, and this
+    // one is the user's CHOICE rather than a derived piece of app state.
+    let lastActiveTier = activeTier;
     let isElevated = sessionStorage.getItem("perla_elevated") === "1";
     let tier1Unread = sessionStorage.getItem("perla_tier1_unread") === "1";
     let tier2Unread = sessionStorage.getItem("perla_tier2_unread") === "1";
@@ -98,7 +109,53 @@
     // Declared here (not where first used) so addEntry, defined below, can
     // reference activeOverlay without relying on hoisting/call-order luck.
     let liveOutputHTML = null;
-    let activeOverlay = null;  // "history" | "reminders" | null
+    let activeOverlay = null;  // "history" | "reminders" | "quick-actions" | "drive" | null
+
+    // ---------- Overlay stack ----------
+    // Escape walks this top-down, so the topmost layer closes first and exactly
+    // one layer closes per press. There were two `document` keydown listeners -
+    // one for the image editor / lightbox / file viewer and one for the
+    // file-viewer modal - and because both ran on the same press, a single
+    // Escape closed the lightbox AND the modal sitting behind it. Layer 9 pushes
+    // its own layers here.
+    let overlayStack = [];
+
+    // Focus is captured on the way in and handed back on the way out. A modal
+    // that opens without remembering where focus came from strands it on the
+    // document, so closing it puts the caret at the top of the page.
+    //
+    // The `[hidden]` filter is load-bearing, not tidiness. openSidebarSheet hides
+    // #sidebarCollapse (the FIRST focusable in the nodes it moves into the sheet)
+    // BEFORE calling this, and a browser treats focus() on a display:none element
+    // as a no-op. Focusing it anyway would leave focus OUTSIDE an element
+    // carrying aria-modal="true": a screen reader has been told the rest of the
+    // page is inert, focus is not in the dialog, and Tab walks into content the
+    // user was told does not exist. querySelector finds hidden descendants happily;
+    // only the filter knows they are not focusable. jsdom sets activeElement
+    // regardless of visibility, so a jsdom harness reports this green either way -
+    // which is exactly why the guard is asserted from source in nav_dom_test.js.
+    function pushOverlay(el, onClose) {
+      const prev = document.activeElement;
+      overlayStack.push({ el: el, prev: prev, onClose: onClose });
+      el.hidden = false;
+      const first = Array.from(el.querySelectorAll(
+        "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"))
+        .find((n) => !n.closest("[hidden]"));
+      if (first) first.focus();
+    }
+
+    function popOverlay() {
+      const top = overlayStack.pop();
+      if (!top) return false;
+      if (top.onClose) top.onClose();
+      if (top.el) top.el.hidden = true;
+      if (top.prev && typeof top.prev.focus === "function") top.prev.focus();
+      return true;
+    }
+
+    function closeTopOverlay() {
+      return popOverlay();
+    }
 
     // ---------- Gate ----------
     const gate = document.getElementById("gate");
@@ -115,7 +172,6 @@
     if (authToken) {
       gate.style.display = "none";
       app.hidden = false;
-      checkConnection();
     }
 
     function initAppState(freshUnlock) {
@@ -131,7 +187,12 @@
         sessionStorage.setItem("perla_elevated", "0");
         sessionStorage.setItem("perla_tier1_unread", "0");
         sessionStorage.setItem("perla_tier2_unread", "0");
-        activeTier = 1;
+        // lastActiveTier rides along: this reset is the app choosing Tier 1, and
+        // updateTierButtonHighlight() two lines below reaches setDestination("chat")
+        // -> switchTier(lastActiveTier). Leave lastActiveTier holding the value
+        // activeTier had before this reset and that call commits the old tier over
+        // the fresh unlock, which is the one thing a fresh unlock must not do.
+        activeTier = lastActiveTier = 1;
         isElevated = false;
         tier1Unread = false;
         tier2Unread = false;
@@ -141,7 +202,10 @@
         }
       }
       setElevated(isElevated);
-      tierBadge.textContent = "T" + activeTier;
+      // No tierBadge.textContent here any more. It wrote the "T1"/"T2" pill
+      // into #tierBadge, which the user asked to remove; the active tier is
+      // still announced by the tier ROW's own .active highlight and by
+      // aria-current on the Chat destination, both below.
       updateTierButtonHighlight();
       updateTier2UnreadBadge();
       const savedLog = getChatLog(activeTier);
@@ -202,7 +266,6 @@
         sessionStorage.setItem("perla_session_token", authToken);
         gate.style.display = "none";
         app.hidden = false;
-        checkConnection();
         initAppState(true);
       } catch (e) {
         gateError.hidden = false;
@@ -221,63 +284,340 @@
     });
 
     // ---------- Status ----------
-    const statusDot = document.getElementById("statusDot");
-    function setStatusText(text) {
-      statusDot.title = text;
-    }
+    //
+    // #statusDot is GONE, at the user's request, and with it this whole block:
+    // setStatusText, checkConnection and the two calls to it at unlock. The
+    // reason they are deleted rather than left writing into nothing is that
+    // every one of them existed ONLY to paint that dot - there is no second
+    // consumer of the health result, so a surviving checkConnection() would be a
+    // fetch whose answer is discarded, which is worse than no probe.
+    //
+    // WHAT IS LOST, stated plainly because it is a capability change rather than
+    // a deletion of decoration: there is no longer an ambient "is the daemon
+    // reachable" signal anywhere in the UI. What is NOT lost is the case that
+    // actually matters - an unreachable daemon fails every send, and
+    // sendTextTurn's retry path already raises a toast saying exactly that
+    // ("Couldn't reach Perla. Check the connection."), as does the voice path.
+    // So the failure is loud; only the standing green light is gone.
+    //
+    // A minimal non-pill surface was considered and rejected: the brief was to
+    // remove the green dot and the T# pill, and inventing a replacement
+    // indicator is new UI the user did not ask for.
 
-    async function checkConnection() {
-      if (!CONFIG.ENDPOINT) {
-        statusDot.className = "status-dot";
-        setStatusText("not linked");
-        return;
-      }
-      try {
-        const res = await fetch(CONFIG.ENDPOINT + CONFIG.HEALTH_PATH, {
-          headers: { Authorization: "Bearer " + authToken },
-        });
-        if (res.ok) {
-          statusDot.className = "status-dot ok";
-          setStatusText("connected");
+    // ---------- Sidebar ----------
+    // The shell's only navigation. #menuBtn and #appMenu are gone, and the eleven
+    // closeAppMenu() call sites that went with them were found first: four rows
+    // became DESTINATIONS, the tier switcher and the status line moved to the
+    // footer, and Clear chat / Check session / Restart service became the Session
+    // group. Nothing #appMenu could reach is unreachable now.
+    const sidebar = document.getElementById("sidebar");
+    const sidebarTrigger = document.getElementById("sidebarTrigger");
+    const sidebarSheet = document.getElementById("sidebarSheet");
+    const sidebarOverlay = document.getElementById("sidebarOverlay");
+    let sidebarCollapsed = sessionStorage.getItem("perla_sidebar_collapsed") === "1";
+
+    // Which nav row an open overlay means. activeOverlay is the OVERLAY's own
+    // name and the nav row's key is the DESTINATION's, and the two spellings are
+    // not the same word in one case (`quick-actions` vs `actions`) - which is
+    // precisely the kind of near-miss that leaves a nav row stuck claiming
+    // aria-current for a surface that is not on screen.
+    const DESTINATION_FOR_OVERLAY = {
+      history: "history",
+      reminders: "reminders",
+      drive: "drive",
+      "quick-actions": "actions",
+    };
+
+    // The ONE writer of aria-current, across both presentations. A second writer
+    // - one on click and one derived from state - is how the highlight starts
+    // lying the first time a surface is opened by anything other than its own
+    // nav row, so the click handlers below deliberately do not touch this
+    // attribute. Layer 3 replaces the body of this switch with the frame swap.
+    function setDestination(name) {
+      document.querySelectorAll("[data-destination]").forEach((b) => {
+        if (b.getAttribute("data-destination") === name) {
+          b.setAttribute("aria-current", "page");
         } else {
-          throw new Error("bad status");
+          b.removeAttribute("aria-current");
         }
-      } catch (e) {
-        statusDot.className = "status-dot err";
-        setStatusText("unreachable");
+      });
+      // Chat is the one destination with no surface of its own to open - the other
+      // four rows each hand over to their overlay's open/close - so "go to Chat" is
+      // "put back the tier the user was actually using", which is switchTier's job.
+      // lastActiveTier, not a literal: arriving here from History while on Tier 2
+      // and being dropped into Tier 1 would throw away the conversation they were
+      // reading.
+      //
+      // LAST in the body, deliberately. switchTier re-enters this function through
+      // updateTierButtonHighlight - twice, on the overlay path - and the loop above
+      // is the ONE writer of aria-current, so it has to be the last thing to run
+      // rather than something a re-entrant call can pre-empt. That is safe because
+      // switchTier sees lastActiveTier still holding the OLD tier while it is
+      // closing the overlay, so the nested call matches `wasSameTier && !hadOverlay`
+      // and returns without doing anything.
+      if (name === "chat") switchTier(lastActiveTier);
+    }
+
+    // The Chat row is the one destination row with nothing to open, which is
+    // exactly why it had no handler: unlike Drive/History/Reminders/Quick Actions
+    // there is no panel for it to hand over to. Bound here, beside the router it
+    // routes through, and looked up by its data-destination like the other four -
+    // so it also travels into #sidebarSheet on a phone and needs no second
+    // binding there. Routing through setDestination rather than calling
+    // switchTier directly keeps aria-current in one place, and leaves Layer 3 a
+    // single place to swap frames.
+    const chatBtn = sidebar.querySelector('[data-destination="chat"]');
+    if (chatBtn) chatBtn.addEventListener("click", () => { setDestination("chat"); });
+
+    // The ONE writer of the collapsed state, on BOTH elements that carry it, and
+    // they have to be written together: `grid-template-columns` on #app is what
+    // lets the content column keep the full viewport width once the rail leaves
+    // the grid, and there is no selector that could derive one from the other
+    // without :has(). Two elements, one function, so they cannot disagree.
+    function applySidebarCollapsed() {
+      if (!sidebar) return;
+      const flag = String(sidebarCollapsed);
+      sidebar.dataset.collapsed = flag;
+      const app = document.getElementById("app");
+      if (app) app.dataset.collapsed = flag;
+      const btn = document.getElementById("sidebarCollapse");
+      if (btn) {
+        const verb = sidebarCollapsed ? "Expand" : "Collapse";
+        btn.setAttribute("aria-label", verb + " navigation");
+        btn.setAttribute("title", verb + " navigation");
+        // aria-expanded tracks the PERSISTENT state and nothing else. The rail
+        // also opens on hover and on :focus-within, and neither can be operated
+        // from the keyboard, so promising "expanded" for a pointer gesture would
+        // be a lie to a screen reader that had no way to act on it. This says the
+        // one thing a keyboard user can actually change.
+        btn.setAttribute("aria-expanded", String(!sidebarCollapsed));
       }
     }
 
-    // ---------- Hamburger menu ----------
-    const menuBtn = document.getElementById("menuBtn");
-    const appMenu = document.getElementById("appMenu");
-
-    function closeAppMenu() {
-      appMenu.classList.remove("open");
-      appMenu.setAttribute("aria-hidden", "true");
-      menuBtn.classList.remove("active");
-      menuBtn.setAttribute("aria-expanded", "false");
+    function toggleSidebar() {
+      sidebarCollapsed = !sidebarCollapsed;
+      sessionStorage.setItem("perla_sidebar_collapsed",
+        sidebarCollapsed ? "1" : "0");
+      // THE HOVER LOCK, set on the COLLAPSE direction and only then, and only
+      // when the pointer is actually over the rail. It is Item 4's fix, and the
+      // reason it lives here rather than in the focus half below is that focus was
+      // never what was holding the column open - see releaseSidebarFocus's comment
+      // and the measurement in ux-fix-5.
+      //
+      // WHAT WAS HAPPENING, measured in Firefox 156 with real pointer input
+      // rather than inferred: pressing the collapse control flipped
+      // data-collapsed, releaseSidebarFocus moved focus to <main> exactly as
+      // designed (document.activeElement really was MAIN and
+      // :focus-within really was false), and the column slid straight back out
+      // anyway - because the pointer was still sitting on the sidebar, on the
+      // control just pressed. `.sidebar[data-collapsed="true"]:hover` matched on
+      // the next recalculation. The user is not asked to move the mouse to make a
+      // button work.
+      //
+      // WHY data-hover-suppressed RATHER THAN A GRACE PERIOD. A timeout would have
+      // to be guessed at (how long is long enough?), it would have to be cleared
+      // when the user collapses twice, and it would still pop the column open
+      // under a pointer that never moved - the original bug, just later. "The
+      // pointer must LEAVE and come back" is the condition that actually matches
+      // the intent, it needs no constant, and it is a state a test can assert.
+      //
+      // ONLY WHEN :hover, because the flag means "the pointer is on the rail and
+      // must leave before it counts as a hover". Setting it on a keyboard collapse
+      // with the pointer elsewhere would leave a stale flag with nothing to clear
+      // it - no pointerleave ever fires for a pointer that was never inside - and
+      // the rail would then refuse to open on the next real hover.
+      //
+      // ON EXPAND the flag is left alone rather than deleted: expanding puts the
+      // column open at full width, where the rail's hover rules do not apply at
+      // all, and if the pointer was still over the sidebar the next collapse will
+      // re-arm it anyway. Deleting it here would only add a way for the two
+      // halves to disagree.
+      if (sidebarCollapsed && sidebar && sidebar.matches(":hover")) {
+        sidebar.dataset.hoverSuppressed = "true";
+      }
+      applySidebarCollapsed();
+      // Focus leaves on the COLLAPSE direction only, and the asymmetry is the
+      // point rather than an oversight. Collapsing from inside the sidebar is the
+      // only way to reach this, and the collapsed rail's `:focus-within` arm
+      // opens the column for as long as anything inside it holds focus - so the
+      // control just pressed is what kept the rail open. Expanding must NOT move
+      // focus: the user is reaching for that same control in the rail, focus
+      // inside the sidebar is precisely how the column re-opens, and a focus move
+      // here would collapse the column behind the button they are holding.
+      //
+      // This is still load-bearing after the hover lock, and it is the KEYBOARD
+      // half: a keyboard collapse has no pointer over the rail, so nothing sets
+      // data-hover-suppressed, and the `:focus-within` arm would open the column
+      // again on its own. Measured: with focus parked on #sidebarCollapse and the
+      // flag absent, :focus-within is true and the column is open.
+      if (sidebarCollapsed) releaseSidebarFocus();
     }
 
-    function toggleAppMenu() {
-      const opening = !appMenu.classList.contains("open");
-      if (opening) closeAttachMenu();
-      appMenu.classList.toggle("open", opening);
-      appMenu.setAttribute("aria-hidden", String(!opening));
-      menuBtn.classList.toggle("active", opening);
-      menuBtn.setAttribute("aria-expanded", String(opening));
+    // THE FLAG'S ONLY CLEARER. pointerleave - not pointerout, and not a timer -
+    // because it is the event that means exactly the thing being waited for: the
+    // pointer has left the sidebar and everything inside it. `pointerout` would
+    // also fire when the pointer crosses from the rail onto one of its rows,
+    // which is not leaving at all.
+    //
+    // A NAMED function rather than an inline arrow, for no reason that is about
+    // this file's tests rather than about JavaScript: the effect harness compiles
+    // shipped functions out of the source and runs them, and an inline handler at
+    // top level is not a function it can extract, so the clearing would be the one
+    // part of the fix nothing could exercise.
+    function clearHoverLock() {
+      if (sidebar) delete sidebar.dataset.hoverSuppressed;
     }
 
-    menuBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleAppMenu();
-    });
+    // Bound ONCE, here. A listener added inside toggleSidebar would accumulate
+    // one per press, and the second press's listener would go on clearing a flag
+    // the first press had never set.
+    if (sidebar) sidebar.addEventListener("pointerleave", clearHoverLock);
 
+    // WHY FOCUS HAS TO LEAVE AT ALL, since `data-collapsed` was true throughout
+    // and the rail was still open: the bug is not in the state, it is in the two
+    // states being in the same place. `.sidebar[data-collapsed="true"]
+    // :focus-within` matches while ANY descendant holds focus, and #sidebarCollapse
+    // - inside the sidebar - is what a click or an Enter leaves focused. So the
+    // press set the flag, the focus-within arm opened the column, and nothing
+    // appeared to happen until the user clicked elsewhere.
+    //
+    // THE `:not(:has(.sidebar-menu-button:focus-visible))` THIS USED TO QUOTE has
+    // been removed from the rule, and it is worth being precise about why that
+    // does not undo the fix. The carve-out existed so that tabbing onto a ROW
+    // would show that row's chip instead of opening the column - the chip is
+    // retired, so the carve-out went with it, and focus on a row now opens the
+    // column like everything else. But the collapse control was never a
+    // `.sidebar-menu-button` and still is not, so the `:not()` never applied to it
+    // in the first place: it saved the row case and never the button case. The
+    // guard that mattered was always releaseSidebarFocus, and that is unchanged.
+    //
+    // THIS IS THE KEYBOARD HALF ONLY, and ux-fix-5 measured that the mouse half
+    // had a second, independent cause: with a real pointer, the `:hover` arm
+    // re-opened the column after this function had already done its job. Hence
+    // data-hover-suppressed in toggleSidebar, which does not affect this path at
+    // all - a keyboard collapse never sets it.
+    //
+    // THE TARGET IS THE TRANSCRIPT, and `blur()` was rejected for a reason worth
+    // keeping: blurring drops focus on <body>, so the next Tab restarts at the top
+    // of the document. A keyboard user who collapsed the nav would be thrown back
+    // to the top-left, and Tab from there walks into the rail and re-opens it -
+    // the fix would trade a stuck-open column for a lost place. <main
+    // class="page"> is the region that just took the space the sidebar gave up,
+    // it is not a text field so this cannot summon an on-screen keyboard on a
+    // phone, and it is where forward navigation belongs. It carries
+    // tabindex="-1" for exactly this: programmatically focusable, not a stop in
+    // the Tab order.
+    //
+    // ONLY WHEN FOCUS IS ACTUALLY INSIDE. Reaching this function means the
+    // control was used, so it normally is - but the guard is what stops a
+    // transcript stealing the caret from a half-typed composer, and a caret is
+    // worth more than the collapsed column.
+    //
+    // THE FALLBACK IS NOT DEFENSIVE PROGRAMMING, it is the invariant. If <main>
+    // is renamed or removed and the only thing standing between a collapse and
+    // the original bug is one querySelector, the bug comes back silently. So the
+    // one job - focus is not inside the sidebar afterwards - does not depend on
+    // the target existing.
+    function releaseSidebarFocus() {
+      const active = document.activeElement;
+      if (!active || !active.closest(".sidebar")) return;
+      const landing = document.querySelector("main");
+      if (landing && typeof landing.focus === "function") landing.focus();
+      else if (typeof active.blur === "function") active.blur();
+    }
+
+    // THE HOVER SLIDE-OUT IS NOT ON THE OVERLAY STACK, deliberately, and this
+    // is where that decision is written down.
+    //
+    // pushOverlay/popOverlay exist to model a THING THE USER OPENED AND CAN CLOSE:
+    // it takes focus, marks the layer aria-modal, and Escape pops the top of the
+    // stack. The rail's hover slide-out is none of those. The user did not open
+    // it - they moved a pointer across a strip of icons - and they cannot close
+    // it with Escape any more than they opened it with the keyboard; the pointer
+    // leaving does it. Putting it on the stack would mean every Escape press
+    // consumed by something the user never asked for: a sheet open behind it
+    // would have to be dismissed twice, and an Escape with an empty stack would
+    // silently close the nav instead of doing nothing.
+    //
+    // :focus-within is the one case that DOES put focus inside the sidebar, and it
+    // closes itself when focus leaves - which is the same thing Escape would have
+    // done, reached the way a keyboard user reaches it. So the affordance is
+    // intact and the stack stays clean.
+
+    // Everything that has to change together when the sheet opens or closes, in
+    // one routine because there are three callers - open, close, and Escape
+    // through the stack - and they must never disagree about what is on screen.
+    function syncSidebarSheetState(open) {
+      if (sidebarTrigger) sidebarTrigger.setAttribute("aria-expanded", String(open));
+      if (sidebarOverlay) sidebarOverlay.hidden = !open;
+      // Collapse is a DESKTOP-rail control and the sheet shows the same nodes,
+      // so without this the phone gets a rail-only button that silently remembers
+      // a collapse for the next desktop load.
+      const collapse = document.getElementById("sidebarCollapse");
+      if (collapse) collapse.hidden = open;
+    }
+
+    // The sheet holds the sidebar's OWN nodes, moved in and back out - NOT a
+    // clone, which is what this replaced. A clone (sidebarSheet.innerHTML =
+    // sidebar.innerHTML) would duplicate every id in the sidebar: #tier1Btn,
+    // #tier1Badge, #brandMark and the rest. On a phone the persistent
+    // sidebar is display:none inside the grid, so document.getElementById would
+    // keep resolving to the INVISIBLE copy and the sheet would show a tier badge
+    // that never updates, and a collapse button with no click handler at all.
+    // Moving keeps one element per id, one set of handlers, and therefore one
+    // implementation rather than two.
+    //
+    // #tierBadge and #statusDot are named no longer, having been removed from
+    // the markup; #tier1Badge and #tier2Badge are the same class of problem and
+    // are still live, which is why they are named here instead.
+    function parkSidebarRows() {
+      if (sidebar && sidebarSheet) {
+        while (sidebarSheet.firstChild) sidebar.appendChild(sidebarSheet.firstChild);
+      }
+      syncSidebarSheetState(false);
+    }
+
+    function openSidebarSheet() {
+      if (!sidebarSheet || !sidebar) return;
+      while (sidebar.firstChild) sidebarSheet.appendChild(sidebar.firstChild);
+      syncSidebarSheetState(true);
+      pushOverlay(sidebarSheet, parkSidebarRows);
+    }
+
+    function closeSidebarSheet() {
+      // Everything - a chosen destination, the scrim, Escape - funnels through
+      // the stack, so parkSidebarRows runs exactly once per open.
+      popOverlay();
+    }
+
+    if (sidebarTrigger) {
+      sidebarTrigger.addEventListener("click", () => {
+        if (sidebarSheet && !sidebarSheet.hidden) closeSidebarSheet();
+        else openSidebarSheet();
+      });
+    }
+    if (sidebarOverlay) sidebarOverlay.addEventListener("click", closeSidebarSheet);
+
+    // Choosing anything from the sheet dismisses it. Delegated on the DOCUMENT,
+    // and that is load-bearing rather than tidy: the rows MOVE into #sidebarSheet
+    // when it opens, so a listener bound to #sidebar would not see the click at
+    // all - which is the entire interaction on a phone, and the reason the first
+    // version of this bound to #sidebar and left the sheet open on every tap.
+    // Delegated rather than per-row because one node has to work in two places.
+    // The containment check keeps it to the nav: .sidebar-menu-button is also
+    // what the tier rows use, so a bare class test would dismiss the sheet for
+    // an unrelated control elsewhere on the page.
     document.addEventListener("click", (e) => {
-      if (appMenu.classList.contains("open") && !appMenu.contains(e.target) && e.target !== menuBtn && !menuBtn.contains(e.target)) {
-        closeAppMenu();
+      const row = e.target.closest(".sidebar-menu-button");
+      if (!row) return;
+      if ((sidebar && sidebar.contains(row)) ||
+          (sidebarSheet && sidebarSheet.contains(row))) {
+        closeSidebarSheet();
       }
     });
+
+    const sidebarCollapse = document.getElementById("sidebarCollapse");
+    if (sidebarCollapse) sidebarCollapse.addEventListener("click", toggleSidebar);
 
     // ---------- Elevation (Tier 2) ----------
     // Tier 2's chat is always viewable (including its history) whether or
@@ -293,8 +633,10 @@
     const elevateInput = document.getElementById("elevateInput");
     const elevateSubmit = document.getElementById("elevateSubmit");
     const elevateStatus = document.getElementById("elevateStatus");
-    const tierBadge = document.getElementById("tierBadge");
-    const statusIndicator = document.getElementById("statusIndicator");
+    // #tierBadge and #statusIndicator are gone from the markup, and so are their
+    // two consts here. Nothing else in this file read them: the only writers
+    // were the "T" + tier writes and the one hidden toggle in
+    // updateComposerMode, all of which are removed with them.
 
     elevateSubmit.addEventListener("click", async () => {
       const token = elevateInput.value.trim();
@@ -318,12 +660,13 @@
 
           const until = Date.now() + (data.expires_in || 0) * 1000;
           sessionStorage.setItem("perla_elevate_until", String(until));
-          startTierTimer(until);
 
+          // This timeout - not the deleted countdown - is what expires Full
+          // Mode, and it is why removing the countdown changes nothing about the
+          // elevation's lifetime. It re-locks Tier 2 and posts the notice.
           clearTimeout(window._elevateExpiryTimer);
           window._elevateExpiryTimer = setTimeout(() => {
             sessionStorage.removeItem("perla_elevate_until");
-            stopTierTimer();
             setElevated(false);
             if (activeTier === 2) {
               notify("error", "Full Mode expired, Tier 2 is locked again.");
@@ -1986,15 +2329,21 @@
       URL.revokeObjectURL(url);
     });
 
+    // ---------- Escape ----------
+    // ONE dispatcher, and one layer per press. The stack goes first because it is
+    // top-down and because a sheet can be open over the lightbox; the fixed
+    // overlays then unwind by z-index, which is the order the image editor
+    // comment used to describe but did not enforce - the old handler checked
+    // imgEditor, lightbox, fileViewer while the file-viewer modal sat at the SAME
+    // rung as the editor and was handled by a second listener entirely.
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
-      // Image editor sits above the lightbox/file viewer (z-index 110 vs
-      // 100) — if more than one were somehow open, Escape backs out of the
-      // topmost one first.
-      if (!imgEditor.hidden) {
-        closeImageEditor();
+      if (closeTopOverlay()) {
+        e.preventDefault();
         return;
       }
+      if (!imgEditor.hidden) { closeImageEditor(); return; }
+      if (!fileViewerModal.hidden) { closeFileViewerModal(); return; }
       if (!lightbox.hidden) { closeLightbox(); return; }
       if (!fileViewer.hidden) { closeFileViewer(); return; }
     });
@@ -2124,46 +2473,43 @@
       renderTierBadges();
     }
 
-    // ---------- Full Mode live countdown ----------
-    const tierTimerEl = document.getElementById("tierTimer");
-    let tierTimerInterval = null;
-    let tierTimerUntil = 0;
+    // ---------- Full Mode live countdown: GONE ----------
+    //
+    // #tierTimer was the ONLY surface of the live countdown, and it was removed
+    // from the markup at the user's request along with the tier pill and the
+    // status dot. So startTierTimer / tickTierTimer / stopTierTimer went with it
+    // rather than being left writing into a detached node on a 500ms interval -
+    // which is the alternative, and it is a worse outcome than either keeping or
+    // removing them, because a timer nobody can see is indistinguishable from a
+    // timer that is broken.
+    //
+    // WHAT SURVIVES, and it is the part that matters: the elevation still EXPIRES
+    // on exactly the same schedule and still re-locks Tier 2 and still posts the
+    // "Full Mode expired" notice, because none of that lived here. It lived in
+    // window._elevateExpiryTimer, armed where it always was (see the elevate
+    // handler and relockSession), and that is untouched.
+    //
+    // WHAT IS LOST, plainly, because it is a capability change and not a deletion
+    // of decoration: there is no longer anything counting down. The user is told
+    // Full Mode lasts 5 minutes, is told when it ends, and sees nothing in
+    // between. sessionStorage "perla_elevate_until" is still written and still
+    // read at load, because it is what decides whether a RELOAD lands inside or
+    // outside the elevation window - see the deferred init at the foot of this
+    // file, which still calls setElevated(false) when the stored window has
+    // passed.
 
-    function stopTierTimer() {
-      if (tierTimerInterval) {
-        clearInterval(tierTimerInterval);
-        tierTimerInterval = null;
-      }
-      tierTimerEl.hidden = true;
-    }
-
-    function tickTierTimer() {
-      const remain = Math.max(0, Math.round((tierTimerUntil - Date.now()) / 1000));
-      if (remain <= 0) {
-        stopTierTimer();
-        return;
-      }
-      const m = Math.floor(remain / 60);
-      const s = remain % 60;
-      tierTimerEl.textContent = m + ":" + String(s).padStart(2, "0");
-      tierTimerEl.hidden = false;
-    }
-
-    function startTierTimer(until) {
-      tierTimerUntil = until;
-      stopTierTimer();
-      tickTierTimer();
-      tierTimerInterval = setInterval(tickTierTimer, 500);
-    }
-
-    // Tier 1/2 sidebar buttons should only show "active" when that tier's
-    // plain chat is actually on screen — not while History/Reminders (or any
-    // future overlay) is showing over it. Centralized here and called from
-    // every place that changes activeTier or activeOverlay, so the two
-    // buttons and the overlay buttons are never highlighted at the same time.
+    // The tier rows should only show "active" when that tier's plain chat is
+    // actually on screen — not while History/Reminders (or any future overlay)
+    // is showing over it — and the nav row for the surface that IS on screen has
+    // to say so through aria-current. Both halves are DERIVED from activeTier /
+    // activeOverlay rather than remembered from the last click, which is what
+    // keeps them honest when a surface is opened from somewhere other than its
+    // own nav row. Centralized here and called from every place that changes
+    // either, so no two rows are ever highlighted at once.
     function updateTierButtonHighlight() {
       tier1Btn.classList.toggle("active", activeOverlay === null && activeTier === 1);
       tier2Btn.classList.toggle("active", activeOverlay === null && activeTier === 2);
+      setDestination(activeOverlay === null ? "chat" : DESTINATION_FOR_OVERLAY[activeOverlay]);
     }
 
     // Disables the actual input controls (not just hiding the composer's
@@ -2188,13 +2534,25 @@
     // setComposerDisabled elsewhere) — this only decides between the normal
     // composer and the elevate bar for the plain-chat case.
     function updateComposerMode() {
-      // The tier pill, session countdown and status dot only describe the
-      // live conversation, so they go away with the composer when an
-      // overlay is up. Done here rather than at each open/close so a new
-      // overlay can't forget it — this is the one function all eight
-      // activeOverlay assignments already route through. Above the
-      // activeOverlay early-return below, deliberately.
-      statusIndicator.hidden = activeOverlay !== null;
+      // The line that used to be here -
+      //   statusIndicator.hidden = activeOverlay !== null;
+      // - is gone with #statusIndicator, and with it the ordering guarantee it
+      // was written to carry. It sat ABOVE the `activeOverlay !== null` early
+      // return on purpose, so that no future overlay could forget to hide the
+      // tier pill, the countdown and the status dot. That guarantee existed to
+      // protect a hiding, and there is nothing left to hide: all three of those
+      // elements have been removed from the markup at the user's request, so
+      // the ordering question is now vacuous rather than merely satisfied.
+      //
+      // It is recorded here rather than left in the HTML comment alone because
+      // test_primitives.sh section 6 used to pin that line's position and its
+      // exact text, and a reader comparing against that report needs to know the
+      // pin went with the element rather than being quietly loosened.
+      //
+      // The composer's own two lines below - composer.hidden and
+      // setComposerDisabled - are INSIDE the early return, which is correct and
+      // unchanged: they describe the composer rather than something that has to
+      // be cleared on the way past it.
       if (activeOverlay !== null) {
         // A read-only overlay (History/Reminders) wins over both — hide
         // the real composer and the elevate bar alike, and make sure the
@@ -2241,8 +2599,20 @@
       if (!hadOverlay) setChatLog(activeTier, output.innerHTML);
 
       activeTier = tier;
+      // Recorded HERE, beside the assignment it mirrors and AFTER the overlay
+      // closes above, and the position is load-bearing rather than cosmetic. The
+      // close calls updateTierButtonHighlight, which reaches
+      // setDestination("chat"), which calls switchTier(lastActiveTier) - so this
+      // line decides what that nested call sees. Below the closes it still holds
+      // the OLD tier, so the nested call matches `wasSameTier && !hadOverlay` and
+      // returns having done nothing. Above them it would already hold the new tier,
+      // the nested call would miss that early return, and one tap on Tier 2 would
+      // commit and repaint twice.
+      lastActiveTier = tier;
       sessionStorage.setItem("perla_active_tier", String(tier));
-      tierBadge.textContent = "T" + tier;
+      // The "T" + tier pill write that used to sit here is gone with
+      // #tierBadge; updateTierButtonHighlight() below is what marks the active
+      // tier now, on the tier row itself.
 
       updateTierButtonHighlight();
       updateComposerMode();
@@ -2266,8 +2636,8 @@
       restoreTierDraft(tier);
     }
 
-    tier1Btn.addEventListener("click", () => { closeAppMenu(); switchTier(1); });
-    tier2Btn.addEventListener("click", () => { closeAppMenu(); switchTier(2); });
+    tier1Btn.addEventListener("click", () => { switchTier(1); });
+    tier2Btn.addEventListener("click", () => { switchTier(2); });
 
     // Shared copy-to-clipboard logic (Clipboard API with a hidden-textarea
     // fallback for non-secure contexts) — used by the per-message copy
@@ -3220,10 +3590,6 @@
 
     function toggleAttachMenu() {
       const opening = !attachMenu.classList.contains("open");
-      // Only one floating menu open at a time — the hamburger menu shares
-      // the same visual language, so leaving both open at once looks like
-      // a UI glitch rather than two independent controls.
-      if (opening) closeAppMenu();
       if (opening) positionAttachMenu();
       attachMenu.classList.toggle("open", opening);
       attachMenu.setAttribute("aria-hidden", String(!opening));
@@ -3845,9 +4211,11 @@
           tier: requestTier,
         });
         if (reason === "offline") {
+          // The toast IS the connection report now. It used to be followed by
+          // two more lines painting #statusDot red, and those are gone with the
+          // dot - so this branch deliberately keeps its toast and loses nothing
+          // else, which is why the block was narrowed rather than deleted.
           notify("error", "Couldn't reach Perla. Check the connection.");
-          statusDot.className = "status-dot err";
-          setStatusText("unreachable");
         }
       };
 
@@ -3920,8 +4288,6 @@
           notify("error", data.file_warnings.join(" · "));
         }
         renderReplyResult(data, requestTier);
-        statusDot.className = "status-dot ok";
-        setStatusText("connected");
         return { ok: true };
       } catch (e) {
         // Network error, timeout, or a non-JSON body — the message may or
@@ -4389,12 +4755,9 @@
           return;
         }
         renderReplyResult(data, requestTier);
-        statusDot.className = "status-dot ok";
-        setStatusText("connected");
       } catch (e) {
+        // The toast is the whole of the report, as in sendTextTurn above.
         notify("error", "Couldn't reach Perla. Check the connection.");
-        statusDot.className = "status-dot err";
-        setStatusText("unreachable");
         // Put the take back as a draft so the recording isn't lost.
         if (voiceDraftBlob) {
           setDraftState("draft");
@@ -4579,7 +4942,11 @@
     }
 
     // ---------- History (view-only past conversations) ----------
-    const historyBtn = document.getElementById("historyBtn");
+    // The four surface rows used to be #appMenu items and keep their ids; only
+    // their parent changed, so the handlers below are untouched. Looked up
+    // through the sidebar rather than by id so that a row which ever moves again
+    // is a one-line change here instead of four.
+    const historyBtn = sidebar.querySelector('[data-destination="history"]');
     const historyPanel = document.getElementById("historyPanel");
     const historyDayBtn = document.getElementById("historyDayBtn");
     const historyDayBtnLabel = document.getElementById("historyDayBtnLabel");
@@ -4628,7 +4995,6 @@
     function toggleHistoryDayMenu() {
       const opening = !historyDayMenu.classList.contains("open");
       if (opening) {
-        closeAppMenu();
         closeAttachMenu();
         positionHistoryDayMenu();
       }
@@ -4799,7 +5165,6 @@
     }
 
     historyBtn.addEventListener("click", () => {
-      closeAppMenu();
       if (activeOverlay === "history") {
         closeHistoryPanel();
       } else {
@@ -4876,7 +5241,7 @@
     }
 
     // ---------- Reminders (view-only, status-grouped) ----------
-    const remindersBtn = document.getElementById("remindersBtn");
+    const remindersBtn = sidebar.querySelector('[data-destination="reminders"]');
     const remindersBar = document.getElementById("remindersBar");
     const remindersStatus = document.getElementById("remindersStatus");
 
@@ -4934,7 +5299,6 @@
     }
 
     remindersBtn.addEventListener("click", () => {
-      closeAppMenu();
       if (activeOverlay === "reminders") {
         closeRemindersPanel();
       } else {
@@ -5054,7 +5418,7 @@
     // see _drive_exclude_roots in perla-companion.py) is enforced entirely
     // on the backend; the client has no knowledge of what's hidden and
     // doesn't need any — an excluded path just never appears in a listing.
-    const driveBtn = document.getElementById("driveBtn");
+    const driveBtn = sidebar.querySelector('[data-destination="drive"]');
     const drivePanel = document.getElementById("drivePanel");
     const contentWrap = document.querySelector(".content-wrap");
     const driveBreadcrumbs = document.getElementById("driveBreadcrumbs");
@@ -5544,7 +5908,6 @@
     }
 
     driveBtn.addEventListener("click", () => {
-      closeAppMenu();
       if (activeOverlay === "drive") {
         closeDrivePanel();
       } else {
@@ -5888,9 +6251,6 @@
     fileViewerModal.addEventListener("click", (e) => {
       if (e.target === fileViewerModal) closeFileViewerModal();
     });
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !fileViewerModal.hidden) closeFileViewerModal();
-    });
     fileViewerModalDownload.addEventListener("click", () => {
       if (!fileViewerCurrentPath) return;
       const name = fileViewerModalName.textContent || "file";
@@ -6039,7 +6399,7 @@
     // "send me my screen" sometimes got a confabulated text description
     // instead of an actual screenshot). A fixed menu removes the model
     // from the decision entirely: tap a button, run the fixed action, done.
-    const quickActionsBtn = document.getElementById("quickActionsBtn");
+    const quickActionsBtn = sidebar.querySelector('[data-destination="actions"]');
     const quickActionsPanel = document.getElementById("quickActionsPanel");
     const qaResult = document.getElementById("qaResult");
 
@@ -6085,7 +6445,6 @@
     }
 
     quickActionsBtn.addEventListener("click", () => {
-      closeAppMenu();
       if (activeOverlay === "quick-actions") {
         closeQuickActionsPanel();
       } else {
@@ -6697,7 +7056,6 @@
       sessionStorage.removeItem("perla_tier1_unread");
       sessionStorage.removeItem("perla_tier2_unread");
       authToken = null;
-      stopTierTimer();
       app.hidden = true;
       gate.style.display = "";
       gateError.hidden = false;
@@ -6713,7 +7071,6 @@
     const clearChatBtn = document.getElementById("clearChatBtn");
 
     clearChatBtn.addEventListener("click", () => {
-      closeAppMenu();
       // Back out of an overlay first so the chat transcript is the thing
       // on screen — otherwise the wipe would silently apply to the chat
       // hidden underneath the history/reminders view.
@@ -6745,7 +7102,6 @@
     const checkSessionBtn = document.getElementById("checkSessionBtn");
 
     checkSessionBtn.addEventListener("click", async () => {
-      closeAppMenu();
       if (!CONFIG.ENDPOINT) {
         notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
         return;
@@ -6781,7 +7137,6 @@
     const restartServiceBtn = document.getElementById("restartServiceBtn");
 
     restartServiceBtn.addEventListener("click", async () => {
-      closeAppMenu();
       if (!CONFIG.ENDPOINT) {
         notify("error", "Not linked to Perla yet, set CONFIG.ENDPOINT.");
         return;
@@ -6823,13 +7178,18 @@
     // "already had a session token" auto-unlock path from earlier in this
     // script, restoring saved tier/chat state for that case.
     updateComposerState();
+    applySidebarCollapsed();
     if (authToken) {
       initAppState(false);
-      // Resume the Full Mode countdown across a reload, if it's still running.
+      // Was: resume the Full Mode countdown across a reload. With the countdown
+      // gone there is nothing to resume, but the OTHER half of that block is
+      // load-bearing and is kept verbatim - a reload that lands after the
+      // elevation window closed must drop Tier 2 back to locked, or a stale
+      // "perla_elevated" flag would leave the composer showing the real one and
+      // every send failing. The first branch is therefore gone and this one is
+      // not, and that asymmetry is the whole of what remains of the pair.
       const existingUntil = parseInt(sessionStorage.getItem("perla_elevate_until") || "0", 10);
-      if (isElevated && existingUntil > Date.now()) {
-        startTierTimer(existingUntil);
-      } else if (isElevated && existingUntil <= Date.now()) {
+      if (isElevated && existingUntil <= Date.now()) {
         sessionStorage.removeItem("perla_elevate_until");
         setElevated(false);
       }

@@ -9,6 +9,7 @@ let
     "app.zen_browser.zen"
     "app.fluxer.Fluxer"
     "org.vinegarhq.Vinegar"
+    "fr.handbrake.ghb"
   ];
 in {
   system.userActivationScripts.flatpakManagement = {

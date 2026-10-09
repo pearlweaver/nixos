@@ -33,115 +33,231 @@
 
   <div id="app" class="app" hidden>
     <div id="globalNotifications" class="toast-stack" aria-live="polite"></div>
+
+    <!-- ============ The shell ============
+         .app is a two-column grid: this sidebar and .app-content. The sidebar
+         is the app's ONLY navigation - the hamburger and its #appMenu are gone -
+         so every row that menu could reach is here, and nothing was dropped:
+         four of them became DESTINATIONS (the key is data-destination, and the
+         text labels are free to change), the tier switcher and the status line
+         moved to the footer, and the last three became a "Session" group.
+         Those three are ACTIONS, not destinations: they carry no
+         data-destination, so they never take aria-current and setDestination()
+         never touches them. -->
+    <aside class="sidebar" id="sidebar" aria-label="Main">
+      <div class="sidebar-header">
+        <!-- #brandMark, not a new <img>: loadAvatar() writes the fetched avatar
+             into it by id, so moving this node into the sidebar keeps the async
+             avatar working with no JS change at all. The brief's
+             <img id="sidebarAvatar" src=""> would have needed a second loader,
+             and an empty src re-requests the page URL in several browsers. -->
+        <span id="brandMark" class="brand-mark">P</span>
+        <span class="brand-name">Perla</span>
+        <!-- The ONE collapse control, in both states: this is where it lives
+             expanded (trailing edge, opposite the brand), and when the sidebar is
+             collapsed the rail IS the top-left of the content area, so the same
+             button is still the top-left of the content area - there is no second
+             button and no second id. aria-expanded tracks the persistent collapsed
+             state, NOT the hover: the slide-out is a pointer affordance that
+             cannot be operated by keyboard, so promising it here would be a lie
+             to a screen reader. applySidebarCollapsed() is the one writer. -->
+        <button class="btn-icon btn-icon-24 sidebar-collapse" id="sidebarCollapse" type="button"
+          aria-label="Collapse navigation" title="Collapse navigation" aria-controls="sidebar" aria-expanded="true">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+            stroke-linejoin="round" width="15" height="15">
+            <polyline points="14 17 7 11 14 5" />
+            <line x1="17" y1="19" x2="21" y2="19" />
+          </svg>
+        </button>
+      </div>
+      <div class="sidebar-content scroll-area">
+        <div class="sidebar-group">
+          <!-- data-short is the RAIL form of this label, and the only reason the
+               element carries a second string. Measured in Firefox 156 at
+               --text-2xs uppercase with its 0.06em of tracking, "NAVIGATE" is
+               59.3px wide against the collapsed rail's 55px content box, so the
+               full word cannot render there at any rung on the declared type
+               scale - it is a WIDTH fact, not a size choice. The rail paints
+               the ::after form instead; the full word stays in the DOM and in
+               the accessibility tree for the 256px column, and for the sheet.
+               nav_dom_test.js asserts the two agree, the same way it keeps
+               data-tooltip and each row's own label in step. -->
+          <div class="sidebar-group-label" data-short="Nav">Navigate</div>
+          <nav class="sidebar-menu" aria-label="Destinations">
+            <button class="sidebar-menu-button" type="button" data-destination="chat" aria-current="page" data-tooltip="Chat">
+              <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                stroke-linejoin="round" width="19" height="19">
+                <path d="M4 4.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H9l-4.5 3.5V15.5H4A1.5 1.5 0 0 1 2.5 14V6A1.5 1.5 0 0 1 4 4.5z" />
+              </svg><span>Chat</span>
+            </button>
+            <button class="sidebar-menu-button" type="button" id="driveBtn" data-destination="drive" data-tooltip="Drive">
+              <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                stroke-linejoin="round" width="19" height="19">
+                <rect x="2" y="4" width="18" height="14" rx="2" />
+                <line x1="2" y1="13" x2="20" y2="13" />
+                <circle cx="16" cy="16" r="1" />
+              </svg><span>Drive</span>
+            </button>
+            <button class="sidebar-menu-button" type="button" id="historyBtn" data-destination="history" data-tooltip="History">
+              <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                stroke-linejoin="round" width="19" height="19">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg><span>History</span>
+            </button>
+            <button class="sidebar-menu-button" type="button" id="remindersBtn" data-destination="reminders" data-tooltip="Reminders">
+              <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                stroke-linejoin="round" width="19" height="19">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg><span>Reminders</span>
+            </button>
+            <button class="sidebar-menu-button" type="button" id="quickActionsBtn" data-destination="actions" data-tooltip="Quick Actions">
+              <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                stroke-linejoin="round" width="19" height="19">
+                <polygon points="11 2 3 13 10 13 9 20 19 9 12 9 13 2" />
+              </svg><span>Quick Actions</span>
+            </button>
+          </nav>
+        </div>
+        <div class="sidebar-group">
+          <!-- The second label, and the same two-string arrangement as Navigate
+               above: "SESSION" measures 52.1px in the rail's own type against a
+               55px box, so it fits only just and not with its own 6px of side
+               padding. "SES" is 22.7px. -->
+          <div class="sidebar-group-label" data-short="Ses">Session</div>
+          <nav class="sidebar-menu" aria-label="Session">
+            <button class="sidebar-menu-button" type="button" id="clearChatBtn" data-tooltip="Clear chat">
+              <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                stroke-linejoin="round" width="19" height="19">
+                <path d="M3 6h18" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                <line x1="10" y1="11" x2="10" y2="17" />
+                <line x1="14" y1="11" x2="14" y2="17" />
+              </svg><span>Clear chat</span>
+            </button>
+            <button class="sidebar-menu-button" type="button" id="checkSessionBtn" data-tooltip="Check session">
+              <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                stroke-linejoin="round" width="19" height="19">
+                <path d="M20 6L9 17l-5-5" />
+              </svg><span>Check session</span>
+            </button>
+            <button class="sidebar-menu-button" type="button" id="restartServiceBtn" data-tooltip="Restart service">
+              <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                stroke-linejoin="round" width="19" height="19">
+                <polyline points="1 4 1 10 7 10" />
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+              </svg><span>Restart service</span>
+            </button>
+          </nav>
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <!-- The tier switcher is a CHOICE between two conversations, not a
+             destination, so its rows take .active rather than aria-current="page"
+             and exactly one nav row is ever "the current page". -->
+        <div class="sidebar-tier" id="sidebarTier" role="group" aria-label="Conversation tier">
+          <button id="tier1Btn" class="sidebar-menu-button" type="button" data-tooltip="Tier 1 chat">
+            <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+              stroke-linejoin="round" width="19" height="19">
+              <path
+                d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+            </svg>
+            <span>Tier 1 chat</span>
+            <span class="badge badge-label" id="tier1Badge"></span>
+          </button>
+          <button id="tier2Btn" class="sidebar-menu-button" type="button" data-tooltip="Tier 2 chat">
+            <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+              stroke-linejoin="round" width="19" height="19">
+              <polyline points="4 17 10 11 4 5" />
+              <line x1="12" y1="19" x2="20" y2="19" />
+            </svg>
+            <span>Tier 2 chat</span>
+            <span class="badge badge-label" id="tier2Badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
+              <rect x="4" y="11" width="16" height="11" rx="2" ry="2" />
+              <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+            </svg></span>
+          </button>
+        </div>
+        <!-- THE STATUS ROW IS GONE, at the user's request, and it took three
+             live things with it. Recorded here rather than deleted silently,
+             because each was the ONLY surface of something that still happens:
+
+               #tierBadge   wrote "T" + tier. The active tier is still
+                            announced, by the tier ROW's own .active highlight
+                            (updateTierButtonHighlight) and by aria-current on
+                            the Chat destination - a 256px-column row saying
+                            "Tier 1 chat" in bold is a clearer statement of the
+                            same fact than a 20px pill in the corner.
+
+               #tierTimer   the Full Mode countdown. THE ONLY VISIBLE SURFACE of
+                            it: startTierTimer/stopTierTimer/tickTierTimer are
+                            GONE, so the elevation still expires on exactly the
+                            same schedule (window._elevateExpiryTimer is
+                            untouched, and it is what actually re-locks Tier 2
+                            and posts the "Full Mode expired" notice) but there
+                            is now nothing counting down. The user is told it
+                            lasted 5 minutes and told when it ended, and nothing
+                            in between. THAT IS A CAPABILITY CHANGE, taken
+                            knowingly, not an oversight - see ux-fix-5.
+
+               #statusDot   ok/err, plus the title tooltip set by setStatusText.
+                            checkConnection() and every statusDot.className
+                            write are GONE with it, so there is NO ambient
+                            "is the daemon reachable" signal anywhere in the UI
+                            now. A failed send still says so, loudly, in a
+                            toast ("Couldn't reach Perla. Check the
+                            connection."), which is the case that matters; what
+                            is lost is the standing green light. Also a
+                            capability change, taken knowingly.
+
+             The footer is therefore the tier switcher alone, and .status-
+             indicator / .status-dot / .badge-solid / .badge-outline have no
+             consumer left in the stylesheet either - test_design_tokens.sh
+             section 16 is what would have caught it, and --glow-success and
+             --glow-destructive each still have their .qa-drawer-entry-status
+             consumer. -->
+      </div>
+    </aside>
+
+    <!-- The content column. The header is absolutely positioned against THIS,
+         not against the viewport: as position:fixed it spanned the whole window
+         and painted straight over the nav column. -->
+    <div class="app-content">
     <header class="app-header">
       <div class="app-header-inner">
         <div class="header-left">
-          <button id="menuBtn" class="btn-icon btn-icon-30 menu-btn" aria-label="Menu" aria-expanded="false" title="Menu">
-            <span class="hamburger-lines"><span></span><span></span><span></span></span>
+          <!-- Desktop has the sidebar; below 640px these same rows are
+               presented as a sheet and this is the only way in. One affordance,
+               not two - the hamburger it replaced was reachable on a phone, but
+               the menu behind it was the only navigation a phone had, which is
+               the problem the sheet fixes rather than repeats. -->
+          <button class="btn-icon btn-icon-28 sidebar-trigger" id="sidebarTrigger" type="button"
+            aria-label="Open navigation" title="Navigation" aria-controls="sidebar" aria-expanded="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round" width="20" height="20">
+              <line x1="4" y1="6" x2="20" y2="6" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="18" x2="20" y2="18" />
+            </svg>
           </button>
-          <div class="brand">
-            <span id="brandMark" class="brand-mark">P</span>
-            <span class="brand-name">Perla</span>
-          </div>
-        </div>
-        <!-- Chat-only. The T1/T2 pill, the session countdown and the
-             status dot all describe the *conversation* on screen, so they
-             are hidden whenever an overlay (History, Reminders, Drive,
-             Quick Actions) covers it — see updateComposerMode(). -->
-        <div class="status-indicator" id="statusIndicator">
-          <span id="tierBadge" class="badge badge-solid">T1</span>
-          <span id="tierTimer" class="badge badge-outline" hidden></span>
-          <span class="status-dot" id="statusDot"></span>
         </div>
       </div>
     </header>
 
-    <nav id="appMenu" class="floating-menu app-menu" aria-hidden="true">
-      <button id="tier1Btn" class="menu-item">
-        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6"
-            stroke-linecap="round" stroke-linejoin="round" width="19" height="19">
-            <path
-              d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-          </svg></span>
-        <span class="menu-item-label">Tier 1 chat</span>
-        <span class="badge badge-label" id="tier1Badge"></span>
-      </button>
-      <button id="tier2Btn" class="menu-item">
-        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6"
-            stroke-linecap="round" stroke-linejoin="round" width="19" height="19">
-            <polyline points="4 17 10 11 4 5" />
-            <line x1="12" y1="19" x2="20" y2="19" />
-          </svg></span>
-        <span class="menu-item-label">Tier 2 chat</span>
-        <span class="badge badge-label" id="tier2Badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
-            <rect x="4" y="11" width="16" height="11" rx="2" ry="2" />
-            <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-          </svg></span>
-      </button>
-      <div class="divider"></div>
-      <button id="quickActionsBtn" class="menu-item">
-        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6"
-            stroke-linecap="round" stroke-linejoin="round" width="19" height="19">
-            <polygon points="11 2 3 13 10 13 9 20 19 9 12 9 13 2" />
-          </svg></span>
-        <span class="menu-item-label">Quick Actions</span>
-      </button>
-      <button id="remindersBtn" class="menu-item">
-        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6"
-            stroke-linecap="round" stroke-linejoin="round" width="19" height="19">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-          </svg></span>
-        <span class="menu-item-label">Reminders</span>
-      </button>
-      <button id="driveBtn" class="menu-item">
-        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6"
-            stroke-linecap="round" stroke-linejoin="round" width="19" height="19">
-            <rect x="2" y="4" width="18" height="14" rx="2" />
-            <line x1="2" y1="13" x2="20" y2="13" />
-            <circle cx="16" cy="16" r="1" />
-          </svg></span>
-        <span class="menu-item-label">System</span>
-      </button>
-      <button id="historyBtn" class="menu-item">
-        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6"
-            stroke-linecap="round" stroke-linejoin="round" width="19" height="19">
-            <circle cx="12" cy="12" r="10" />
-            <polyline points="12 6 12 12 16 14" />
-          </svg></span>
-        <span class="menu-item-label">History</span>
-      </button>
-      <button id="clearChatBtn" class="menu-item">
-        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6"
-            stroke-linecap="round" stroke-linejoin="round" width="19" height="19">
-            <path d="M3 6h18" />
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            <line x1="10" y1="11" x2="10" y2="17" />
-            <line x1="14" y1="11" x2="14" y2="17" />
-          </svg></span>
-        <span class="menu-item-label">Clear chat</span>
-      </button>
-      <div class="divider"></div>
-      <button id="checkSessionBtn" class="menu-item">
-        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6"
-            stroke-linecap="round" stroke-linejoin="round" width="19" height="19">
-            <path d="M20 6L9 17l-5-5" />
-          </svg></span>
-        <span class="menu-item-label">Check session</span>
-      </button>
-      <button id="restartServiceBtn" class="menu-item">
-        <span class="menu-item-icon"><svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6"
-            stroke-linecap="round" stroke-linejoin="round" width="19" height="19">
-            <polyline points="1 4 1 10 7 10" />
-            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-          </svg></span>
-        <span class="menu-item-label">Restart service</span>
-      </button>
-    </nav>
+    <!-- The card. The shell (.app) is a full-bleed two-column grid; THIS is the
+         window, centred in the content column at a readable measure. It wraps all
+         six of the column's in-flow surfaces rather than .content-wrap alone, so
+         opening History or Drive does not change the page's shape - and
+         #quickActionsPanel and .content-wrap stay siblings inside it, which is
+         what `#quickActionsPanel:not([hidden]) ~ .content-wrap` depends on.
 
-
+         It carries no background or border-radius on purpose: see the rule's
+         why-comment for the two bubble colours that make that the only safe
+         answer. -->
+    <div class="app-card">
     <div id="historyPanel" class="dropdown-panel" hidden>
       <div class="history-toolbar">
         <div class="history-daypicker-wrap">
@@ -604,7 +720,16 @@
     </div>
 
     <div class="content-wrap">
-      <main class="page scroll-area">
+      <!-- tabindex="-1" so the transcript can be FOCUSED, and only focused:
+           programmatically, never as a stop in the Tab order. Collapsing the
+           sidebar has to move focus off it, because the collapsed rail's
+           :focus-within arm opens the column again for as long as anything
+           inside the sidebar holds focus - and the collapse control that was
+           just pressed is inside it. The transcript is where that focus goes:
+           it is the region that just took the sidebar's space, it is not a text
+           field, and it keeps a keyboard user's place, which blur() on
+           document.body would not. See releaseSidebarFocus() in the JS. -->
+      <main class="page scroll-area" tabindex="-1">
         <div id="output" class="output" aria-live="polite"></div>
       </main>
 
@@ -733,7 +858,19 @@
         </button>
       </nav>
     </div>
+    </div>
+    </div>
   </div>
+
+  <!-- The sheet: the SAME nav rows, presented as a drawer. A sibling of #app,
+       never a child of it - it covers the viewport, so it cannot also be one of
+       the grid's columns. Its contents are not authored here on purpose:
+       openSidebarSheet() MOVES the sidebar's own nodes in and
+       closeSidebarSheet() moves them back, which is what keeps the two
+       presentations from drifting apart AND keeps every id in the document
+       unique. See the why-comment on openSidebarSheet(). -->
+  <div class="sheet-overlay" id="sidebarOverlay" hidden></div>
+  <nav class="sheet" id="sidebarSheet" role="dialog" aria-modal="true" aria-label="Navigation" hidden></nav>
 
   <audio id="responseAudio" hidden></audio>
 

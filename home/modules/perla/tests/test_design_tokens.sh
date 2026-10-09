@@ -159,14 +159,17 @@ echo "=== 7. radii are tokenised (circles and micro-elements excepted) ==="
 # Two exemptions, both deliberate:
 #   * a percentage radius is a circle or a pill, not a corner size;
 #   * `var(--space-1)` is the micro-element exemption, and it is NOT a radius
-#     step and must not quietly become one. These three used to be bare 3px/2px/
-#     1px and the exemption was a `[0-3]px` pattern; binding them to
+#     step and must not quietly become one. This used to be three bare 3px/2px/
+#     1px cases and the exemption was a `[0-3]px` pattern; binding them to
 #     --space-1 (2px) instead renders identically - CSS scales corner radii
 #     down to fit the side, so 1px and 2px are the same fully-rounded end on a
-#     1.5px hamburger bar - while keeping the reason they are exempt legible.
+#     1.5px bar - while keeping the reason they are exempt legible.
 #     --radius-sm (4.8px) is what would round them into pebbles and semicircles.
-#     See the why-comments at .hamburger-lines span, .voice-wave i and
-#     .mic-stop-square.
+#     See the why-comments at .voice-wave i and .mic-stop-square.
+#
+#     TWO, not three: the hamburger's bars used to be a third case, and went with
+#     #menuBtn when the sidebar shell replaced it - the trigger is an SVG now, so
+#     the micro-element exemption has two users rather than three.
 mapfile -t radius_literals < <(literals_of "border-radius" \
   'not p.endswith("%") and p != "0" and not p.startswith("var(--radius") and p != "var(--space-1)"')
 if [ "${#radius_literals[@]}" -eq 0 ]; then

@@ -34,18 +34,41 @@ m = re.search(r"--" + re.escape(sys.argv[2]) + r"\s*:\s*([^;}]+)", css)
 print(m.group(1).strip() if m else "")
 PY
 }
-# Resolve one declaration for one selector, reading the cascade.
-rule_decl() { # rule_decl <selector> <property>
-  python3 - "$CSS" "$1" "$2" <<'PY'
+# Resolve every declaration of one selector, reading the cascade: how many there
+# are, and each body in source order. NOT a first-match read, which breaks on the
+# FIRST rule and CSS applies the LAST - so a media-scoped copy was invisible to it
+# and an assertion written through it scored the rule a later one overrides.
+# Section 4 needs the whole list, because `.sidebar-trigger` is legitimately
+# declared twice and the ORDER of those two bodies is the behaviour.
+py_all_decls() { # py_all_decls <selector>
+  python3 - "$CSS" "$1" <<'PYA'
 import re, sys
 css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1], encoding="utf-8").read())
-for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
-    if sys.argv[2] in [s.strip() for s in m.group(1).split(",")]:
-        d = re.search(re.escape(sys.argv[3]) + r"\s*:\s*([^;}]+)", m.group(2))
-        if d:
-            print(d.group(1).strip())
-            break
-PY
+want = sys.argv[2]
+bodies = [" ".join(m.group(2).split())
+          for m in re.finditer(r"([^{}]*)\{([^{}]*)\}", css)
+          if {s.strip() for s in m.group(1).split(",")} == {want}]
+print(len(bodies))
+for b in bodies:
+    print("#   " + b)
+PYA
+}
+# The value a property resolves to in the LAST body of a selector, with the
+# declaration COUNT on the line above it. The count used to be unassertable from
+# here: `rule_decl` took the first match and could not see a second declaration
+# at all, and every call site in section 4 now pairs the two questions rather
+# than assuming one of them.
+py_last_decl() { # py_last_decl <selector> <property>
+  python3 - "$CSS" "$1" "$2" <<'PYB'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1], encoding="utf-8").read())
+bodies = [m.group(2) for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", css)
+          if sys.argv[2] in [s.strip() for s in m.group(1).split(",")]]
+print(len(bodies))
+if bodies:
+    hits = re.findall(re.escape(sys.argv[3]) + r"\s*:\s*([^;}]+)", bodies[-1])
+    print(hits[-1].strip() if hits else "")
+PYB
 }
 
 echo "=== 1. every font the stylesheet PROMISES is actually installed ==="
@@ -235,31 +258,249 @@ for t in 1 2 3 4 5 6 7 8; do
 done
 
 echo
-echo "=== 4. the header's height is stated, and .app reserves the same one ==="
+echo "=== 4. the header's height is stated, and the CARD reserves the same one ==="
 # This is the assertion that earns the token. .app-header used to size itself
 # (14px padding + content) while .app reserved a literal 58px. They agreed only
 # while the type scale left the content at 30px - and the mobile keyboard
-# handler rewrites .app's height from visualViewport on the assumption they
+# handler rewrites the shell's height from visualViewport on the assumption they
 # agree. jsdom has no layout engine, so this reads the cascade instead, the
 # same approach selection_dom_test.js uses for geometry.
-# Mutation: drop `height:` from .app-header, or point .app's padding-top at a
-# literal -> red.
+#
+# WHAT CHANGED IN LAYER 2, and why the reservation moved off .app. The shell is
+# now a two-column grid, and reserving the band on the grid container would push
+# the whole sidebar down by --header-height and leave an empty strip above the nav
+# column, which is not a thing a sidebar shell does.
+#
+# WHAT CHANGED AGAIN, and why the reservation moved off .app-content. The content
+# column now holds a CARD (.app-card) centred in it - the chat is a window again
+# rather than a column running edge to edge. .app-content is the grid item and the
+# containing block for the absolutely-positioned header and Drive panel; it is not
+# the thing that has to clear the header. The card is. So the pair that has to
+# agree is .app-header's own height and .app-card's margin-top, and BOTH former
+# carriers are asserted NOT to reserve the band: `padding-top` back on .app leaves
+# the strip above the nav, and `padding-top` left on .app-content alongside the
+# card's margin-top would reserve it twice.
+#
+# The mobile keyboard path is the reason this section is here rather than being
+# folded into test_primitives.sh: keyboardResize() (an IIFE in the JS) rewrites
+# #app's INLINE height from window.visualViewport, rAF-debounced, ignoring
+# pinch-zoom via `vv.scale > 1.01`. Two halves have to hold together. The inline
+# height must still land on #app - the GRID - because .app-content is a grid item
+# that stretches to the row: bounding the content column instead would leave the
+# sidebar running past the bottom of the visible area once the keyboard is up,
+# which is exactly the situation the handler exists for. And .app must still
+# DECLARE a CSS height, because that is the declaration the inline value
+# overrides; without it the fallback is the UA's `auto` and the shell can grow
+# taller than the viewport.
+#
+# The card sitting INSIDE .app-content does not change any of that: #app is still
+# the grid whose height is written, the grid is still what a 100dvh fallback
+# bounds, and the card is a flex item that fills what is left. The one thing the
+# card does add is the assertion immediately below this one - the collapsed grid.
+#
+# Mutation: drop `height:` from .app-header -> red.
+# Mutation: point .app-card's margin-top at a literal -> red.
+# Mutation: put padding-top back on .app -> red.
+# Mutation: put padding-top back on .app-content -> red.
+# Mutation: retarget keyboardResize at .app-content instead of #app -> red.
+# Mutation: drop .app's `height: 100dvh` -> red.
+# Mutation: drop `position: fixed` from the 640px .app rule -> red (the
+#            visualViewport offsetTop would then be written to a static element).
+# Mutation: append a THIRD .app rule -> red, on the count.
+# Mutation: delete `.app[data-collapsed="true"]` -> red.
+# Mutation: change its single column to a literal var() -> red.
 hh=$(token_value header-height)
 if [ -n "$hh" ]; then
   ok "--header-height is defined ($hh)"
 else
   bad "--header-height is defined" "absent from :root"
 fi
-for sel in .app-header .app; do
-  prop=height; [ "$sel" = ".app" ] && prop=padding-top
-  got=$(rule_decl "$sel" "$prop")
-  if [ "$got" = "var(--header-height)" ]; then
-    ok "$sel { $prop } resolves to --header-height"
+
+for spec in ".app-header|height" ".app-card|margin-top"; do
+  sel="${spec%%|*}"; prop="${spec#*|}"
+  out="$(py_last_decl "$sel" "$prop")"
+  n="${out%%$'\n'*}"; got="$(printf '%s\n' "$out" | tail -n +2)"
+  if [ "$n" -eq 1 ] && [ "$got" = "var(--header-height)" ]; then
+    ok "$sel { $prop } resolves to --header-height (declared once)"
   else
     bad "$sel { $prop } resolves to --header-height" \
-        "got '$got' - the header and the space reserved for it can disagree"
+        "got '$got' across $n declaration(s) - the header and the space reserved for it can disagree"
   fi
 done
+
+# A LIST of selectors, not a `selector|selector` string split on `|`. The `|` form
+# was the bug: `${spec%%|*}` strips at the FIRST `|`, so `".app|.app-content"`
+# yielded ".app" on BOTH iterations and `.app-content` was dead text - the loop ran
+# twice, checked the same element twice, and its own `# Mutation:` line claiming
+# re-adding `padding-top` to .app-content goes red was FALSE. It was green.
+# `sel="${spec%%|*}"` made the repetition invisible, because the printed message
+# came from the same wrong value.
+for sel in ".app" ".app-content"; do
+  out="$(py_last_decl "$sel" "padding-top")"
+  n="${out%%$'\n'*}"; got="$(printf '%s\n' "$out" | tail -n +2)"
+  if [ -z "$got" ]; then
+    ok "$sel no longer reserves the header band - that reservation is .app-card's"
+  else
+    bad "$sel no longer reserves the header band" \
+        "padding-top: $got on ${sel#.} leaves a --header-height strip above the sidebar, or reserves it twice alongside the card"
+  fi
+done
+
+# .app is the one selector here with TWO declarations, and that is deliberate:
+# the root rule is the desktop grid and the second is the 640px phone override.
+# Both are asserted by position, because the cascade means the last one wins and a
+# reader that only ever looked at the top-level rule would miss the phone case
+# entirely (which is the first-match bug this section's helper was rewritten for).
+#
+# The root body must declare height: 100dvh - that is the declaration
+# keyboardResize's inline pixel value overrides, and without it the shell has no
+# bound at all before the first viewport event.
+all_app="$(py_all_decls ".app")"
+app_n="${all_app%%#*}"
+app_first="$(printf '%s\n' "$all_app" | sed -n '2s/^#   //p')"
+app_last="$(printf '%s\n' "$all_app" | tail -n 1 | sed 's/^#   //')"
+if [ "$app_n" -eq 2 ]; then
+  ok ".app has exactly two declarations (the desktop grid and the 640px override)"
+else
+  bad ".app has exactly two declarations" \
+      "found $app_n - a third is a duplicate nobody meant; see the bodies above"
+fi
+if printf '%s' "$app_first" | grep -q 'height: 100dvh'; then
+  ok "the root .app declares height: 100dvh - the fallback keyboardResize's inline value overrides"
+else
+  bad "the root .app declares height: 100dvh" \
+      "got: ${app_first:-<no rule>} - with no declared height the shell can grow past the viewport before the first viewport event"
+fi
+if printf '%s' "$app_first" | grep -q 'grid-template-columns: var(--sidebar-width) 1fr'; then
+  ok "the root .app is the two-column grid the sidebar sits in"
+else
+  bad "the root .app is the two-column grid" "got: ${app_first:-<no rule>}"
+fi
+if printf '%s' "$app_last" | grep -q 'position: fixed' && \
+   printf '%s' "$app_last" | grep -q 'inset: 0'; then
+  ok "the 640px .app is fixed to the viewport, so the visualViewport offsetTop has a box to move"
+else
+  bad "the 640px .app is fixed to the viewport" \
+      "got: ${app_last:-<no rule>} - keyboardResize's \`top\` would be written to a static element"
+fi
+
+# The COLLAPSED grid, which is the whole of the shift fix. The collapsed rail
+# leaves the grid (see .sidebar[data-collapsed="true"]), so this rule is what stops
+# .app-content auto-placing into the vacated FIRST track - which would trade a
+# 200px shift left for a 256px shift right.
+#
+# A DIFFERENT SELECTOR SET from `.app`, which is why the count above still reads
+# two: `py_all_decls` keys on the exact set, so `.app[data-collapsed="true"]` is
+# not a second `.app` and .app's own two declarations are untouched. That is also
+# why the 100dvh fallback keyboardResize overrides is still the root rule and not
+# something buried behind an attribute selector.
+#
+# The literal `1fr` is load-bearing and the reason `:has()` was not used: an `auto`
+# track is sized by max-content, so one overlong `white-space: nowrap` nav row
+# would silently widen the column, which is the same class of bug as the fixed
+# 256px track this file already had.
+# Mutation: delete the rule -> red.
+# Mutation: `1fr` back to `var(--sidebar-width) 1fr` -> red.
+# Mutation: a SECOND `.app[data-collapsed="true"]` rule -> red, on the count.
+out="$(py_last_decl '.app[data-collapsed="true"]' "grid-template-columns")"
+n="${out%%$'\n'*}"; got="$(printf '%s\n' "$out" | tail -n +2)"
+if [ "$n" -eq 1 ] && [ "$got" = "1fr" ]; then
+  ok 'the collapsed grid is ONE 1fr column, declared exactly once'
+else
+  bad 'the collapsed grid is ONE 1fr column' \
+      "got '$got' across $n declaration(s) - with the rail out of the flow the content column would auto-place into the vacated first track"
+fi
+
+# The DELETED half of that query: the desktop letterbox. It used to carry TWO
+# things and only one of them was guarded. `.app { height: calc(100dvh - 56px) }`
+# is caught above, because `height: 100dvh` on the root rule is the thing the
+# keyboard path depends on. The `body` half was unguarded, and restoring it
+# verbatim leaves every suite green while producing `body { display: flex;
+# align-items: center; justify-content: center }` around a `.app` that is now
+# 100dvh: a vertically-centred full-height shell with 28px of padding and, since
+# html/body carry `overflow: hidden`, no scroll escape at all. Very visible, and
+# the kind of regression that gets reported as "the layout looks odd" rather than
+# traced.
+#
+# Asserted as the ABSENCE of a declaration for body inside that query, not as the
+# absence of the query itself - the query itself is not the problem, and blocking
+# a future legitimate `min-width` rule would be the wrong guard. py_all_decls
+# cannot see at-rule nesting (it flattens the prelude), so this reads the query's
+# byte range separately and asks only about `body`.
+#
+# SCOPE, and it is by NAME rather than by property - deliberately, and this is the
+# guard's known limit rather than an oversight. It matches ANY media prelude
+# carrying `min-width: 641px` (a `@media[^{]*` prefix, so `@media screen and
+# (min-width: 641px)` counts - an earlier `\(\s*` version missed that spelling
+# entirely, verified by mutation) and then asks what that query does to `body`.
+# It does NOT follow the property: a letterbox re-planted at
+# `@media (min-width: 900px)` is outside this guard, as is any other breakpoint.
+# That is the right trade. The deleted block WAS 641px, and this refuses to
+# resurrect THAT block in any spelling - which is the regression this section
+# exists for. Guessing at a general "no media query may style body" rule would
+# block a legitimate one on a later task, and guessing at the letterbox's
+# "equivalent" breakpoint would be inventing a fact about a block that no longer
+# exists. Whoever changes the mobile breakpoint should update the number here in
+# the same commit, the same way nav_dom_test.js's at-rule list has to be updated.
+# Mutation: restore the whole @media (min-width: 641px) block -> red.
+# Mutation: restore it as `@media screen and (min-width: 641px)` -> red.
+# Mutation: restore only its `.app` half -> red above, on `height`.
+desktop_body="$(python3 - "$CSS" <<'PYD'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1], encoding="utf-8").read())
+found = []
+for m in re.finditer(r"@media[^{]*\(\s*min-width:\s*641px\s*\)", css):
+    # The match ends at the closing paren, not at the brace, so skip to the `{`
+    # and count from THERE. A depth counter started at m.end() would be reading
+    # the prelude and would run past the query.
+    start = css.index("{", m.end()) + 1
+    depth, i = 1, start
+    while depth:
+        depth += (css[i] == "{") - (css[i] == "}")
+        i += 1
+    inner = css[start:i - 1]
+    # `[^{}]` splits each rule out of the query body. `body` is matched as a
+    # WHOLE selector among the rule's comma-separated parts, so `html, body`
+    # counts (it is this file's own idiom - see the `html,\n body` rule near the
+    # top) while `#body`, `.body` and `body.foo` do not. Matching the SET rather
+    # than the list was tried first and missed the `html, body` spelling
+    # entirely: verified by mutation.
+    for r in re.finditer(r"([^{}]*)\{([^{}]*)\}", inner):
+        if "body" in {s.strip() for s in r.group(1).split(",")}:
+            found.append(" ".join(r.group(2).split()))
+print(len(found))
+for b in found:
+    print("#   " + b)
+PYD
+)"
+desktop_body_n="${desktop_body%%#*}"
+if [ "$desktop_body_n" -eq 0 ]; then
+  ok "no (min-width: 641px) query declares anything for body (the deleted letterbox)"
+else
+  bad "no (min-width: 641px) query declares anything for body" \
+      "$(printf '%s\n' "$desktop_body" | grep '^#' | tr '\n' ' ') - body is flex-centred with padding around a 100dvh shell, and html/body are overflow:hidden, so the page cannot scroll out from under it"
+fi
+
+# The JS half of the same invariant. Asserted on the source because the handler's
+# whole job is a side effect on window; there is no DOM to run it against here.
+if grep -q 'const appEl = document.getElementById("app");' "$JS"; then
+  ok "keyboardResize resolves #app - the grid - and not a grid item"
+else
+  bad "keyboardResize resolves #app - the grid" \
+      "the handler no longer finds #app by id, so the visual viewport height lands on nothing or on a column"
+fi
+if grep -q 'appEl.style.height = height + "px";' "$JS"; then
+  ok "keyboardResize writes the visual viewport height inline, scaling-guard and all"
+else
+  bad "keyboardResize writes the visual viewport height inline" \
+      "expected 'appEl.style.height = height + \"px\";' - the keyboard path is what keeps the composer above the on-screen keyboard"
+fi
+if grep -q 'const height = vv.scale > 1.01 ? window.innerHeight : vv.height;' "$JS"; then
+  ok "keyboardResize still ignores pinch-zoom (vv.scale > 1.01 takes the layout height)"
+else
+  bad "keyboardResize still ignores pinch-zoom" \
+      "expected the vv.scale > 1.01 guard - without it a pinch shrinks the shell to the zoomed visual viewport"
+fi
 
 echo
 echo "=== 5. a colour is only spelled out inside :root ==="

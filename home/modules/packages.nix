@@ -13,7 +13,9 @@
     qbittorrent
     uget
     vscodium
-    prismlauncher
+    (prismlauncher.override {
+      additionalLibs = with pkgs; [ libxrender libxtst libxi libx11 libxext ];
+    })
     nwg-look
     adw-gtk3
     komikku

@@ -183,10 +183,12 @@ for t in divider divider-vertical scroll-area spinner empty status \
          btn btn-xs btn-sm btn-md btn-block \
          btn-primary btn-outline btn-ghost btn-solid btn-destructive \
          btn-destructive-flat \
-         badge badge-outline badge-solid badge-label \
-         sidebar sidebar-rail sidebar-header sidebar-content sidebar-group \
+         badge badge-label \
+         sidebar sidebar-header sidebar-content sidebar-group \
          sidebar-group-label sidebar-menu sidebar-menu-button sidebar-footer \
-         sidebar-trigger \
+         sidebar-trigger sidebar-tier sidebar-collapse \
+         sidebar-menu-button.active \
+         app-card \
          sheet sheet-overlay input-underline content-frame content-frame-header \
          content-frame-body alert-dialog alert-dialog-title \
          alert-dialog-description alert-dialog-actions; do
@@ -211,13 +213,13 @@ for t in divider divider-vertical scroll-area spinner empty status \
   # .alert-dialog-description and .alert-dialog-actions. Each is a rule with no
   # consumer and no other guard, which is precisely the shape that goes missing.
   #
-  # KNOWN LIMIT of this loop, found by mutation - deleting each of the fifty-five
-  # registered names' base rules one at a time and watching this loop - and NOT
-  # fixable with a better pattern: it asks whether `.name` occurs anywhere as a
-  # whole token, so a DESCENDANT selector, a STATE or PSEUDO selector, a second
-  # declaration of the same selector, or a SELECTOR LIST keeps a name alive after
-  # its own rule is gone. Only a name's own BASE rule going missing looks like
-  # this, and that is a strictly smaller question than "is this primitive real".
+  # KNOWN LIMIT of this loop, found by mutation - deleting each registered name's
+  # base rules one at a time and watching this loop - and NOT fixable with a
+  # better pattern: it asks whether `.name` occurs anywhere as a whole token, so
+  # a DESCENDANT selector, a STATE or PSEUDO selector, a second declaration of the
+  # same selector, or a SELECTOR LIST keeps a name alive after its own rule is
+  # gone. Only a name's own BASE rule going missing looks like this, and that is
+  # a strictly smaller question than "is this primitive real".
   #
   # Of the twenty names this layer added, EXACTLY THREE stay green:
   #
@@ -230,19 +232,24 @@ for t in divider divider-vertical scroll-area spinner empty status \
   # name-based check. Section 19 catches all three, because it keys on the exact
   # selector set rather than on the name. The other seventeen go red here.
   #
-  # ACROSS ALL FIFTY-FIVE, deleting each name's base rule in turn: 36 red / 19
-  # green on the stripped copy this loop reads. The same measurement against the
-  # RAW file - which is what it used to read, and what let a mention in prose
-  # stand in for a rule - is 29 red / 26 green. (It was 30 / 25 before the
-  # .sidebar-rail why-comment landed; that comment names .sidebar, so the raw
-  # reading rescues one more name. Re-measure after editing anything here rather
-  # than carrying either pair of figures forward.)
-  # The seven that changed are .divider-vertical, .btn-icon-square, .btn-sm,
-  # .btn-md, .sidebar, .sidebar-rail and .sheet-overlay - every one of them
-  # alive only because a why-comment named it. That is the whole value of reading
-  # the stripped copy: a mention in prose is not a rule.
+  # ACROSS ALL FIFTY-EIGHT, deleting each name's base rule in turn: 33 red / 25
+  # green. RE-MEASURED, not carried forward, and the previous figures in this
+  # comment (fifty-five names, 36/19 stripped and 29/26 raw) were stale: the F7
+  # round added three names without touching the count, and this round removed
+  # `.sidebar-rail` and added `.app-card`. The script is
+  # /tmp/opencode/uxfix2/sweep2.py and its method is the one stated in the
+  # comment above it - it deletes a rule whose WHOLE selector set is `{.name}`,
+  # so a name whose only rule is part of a selector list is not counted as
+  # having one to delete. Re-run it rather than editing any number here.
   #
-  # The other sixteen green names are all pre-existing, and all the same three
+  # The STRIPPED and RAW measurements now AGREE (33/25 each), where they used to
+  # differ by six. The reason is structural rather than a fix: this loop has read
+  # `$STRIPPED_CSS` since the pipefail fix, so the RAW figure was describing a
+  # reader that no longer exists, and the gap it recorded - names kept alive
+  # only by a why-comment naming them - is a property of the old reader rather
+  # than of these rules.
+  #
+  # The twenty-two green names are all pre-existing, and all the same three
   # shapes: a state or pseudo rule on the name (.scroll-area::-webkit-scrollbar,
   # .input:focus, .textarea::placeholder, .status:empty, .radio:checked, and the
   # :hover / :active / :disabled rules behind the nine green names of the button
@@ -254,7 +261,18 @@ for t in divider divider-vertical scroll-area spinner empty status \
   # has exactly ONE single-part rule of its own, and each also appears inside
   # `.radio, .checkbox` and `.radio:checked, .checkbox:checked`, so deleting the
   # single-part rule leaves the list occurrence and the `:checked` pseudo rules
-  # to match). Not one of the nineteen is held up by prose.
+  # to match).
+  #
+  # Three more are green for a fourth reason, and they are the three this layer
+  # added later: .sidebar, .sidebar-header, .sidebar-collapse, .sidebar-trigger
+  # and .sheet are each named by some OTHER selector that shares the leading
+  # token - `.sidebar-header`, `.sidebar-collapse`, `.sidebar-trigger` and
+  # `.sheet-overlay` - so a whole-token search for `.sidebar` matches
+  # `.sidebar-header` and the deletion of `.sidebar`'s own rule leaves the name
+  # alive. That is the same known limit above, not a fourth kind of defect, and
+  # it is why `.sidebar` and `.sheet` have their full recipes pinned in
+  # section 19 while this loop cannot see them at all. Not one of the
+  # twenty-five is held up by prose.
   if grep -qE "(^|[ ,])\.$t([ ,:{]|$)" "$STRIPPED_CSS"; then
     ok ".$t is defined"
   else
@@ -517,7 +535,16 @@ done
 report=$(python3 - "$HTML" <<'PY'
 import re, sys
 html = open(sys.argv[1], encoding="utf-8").read()
-SIZES = {"btn-icon-28", "btn-icon-30", "btn-icon-32", "btn-icon-34", "btn-icon-lg"}
+# The full ladder, and not the five this used to list. .btn-icon-20 and
+# .btn-icon-24 have always had rules here - the stylesheet's own comment names the
+# ladder as .btn-icon-{20,24,28,30,32,34} plus .btn-icon-lg - but nothing carried
+# them, so the set below only ever saw the five that were in use. The sidebar's
+# collapse control is the first .btn-icon-24 in the markup, and it was reported as
+# unsized. An allowlist that only knows the rungs something happens to use today
+# cannot catch a button that drops its size, which is what this section is for.
+# Mutation: drop btn-icon-24 from #sidebarCollapse -> red.
+SIZES = {"btn-icon-20", "btn-icon-24", "btn-icon-28", "btn-icon-30",
+         "btn-icon-32", "btn-icon-34", "btn-icon-lg"}
 bad = []
 for m in re.finditer(r"<button\b([^>]*)>", html):
     attrs = m.group(1)
@@ -863,22 +890,55 @@ for legacy in '.tier-badge' '.tier-timer' '.menu-item-badge' \
     bad "$legacy has no rule left in the stylesheet" "$n rule(s) remain"
   fi
 done
+# `badge-outline` and `badge-solid` were in that registry and are not any more:
+# each was the only consumer of one element (#tierTimer, #tierBadge), both were
+# removed at the user's request, and both of their rules went with them. The names
+# are gone from the list rather than left in it, because the list's own comment
+# says what it is for - making a registered primitive invisible to this suite is
+# worse than having one fewer primitive - and a name left behind with no rule and
+# no element is the exact state that list exists to detect.
+#
 # Counted per variant rather than with one alternation: `grep -E` with
 # `badge (a|b|c)` counted 0 against correct markup, because the class attribute
 # here is followed by more classes and by the tag's own ">" - a single-line
 # anchored alternation is the wrong tool for "does this element carry any of
 # these three". Summed instead.
+#
+# TWO OF THE THREE COUNTS ARE NOW ZERO, and that is the removal rather than a
+# loosened expectation. badge-outline was the Full Mode countdown (#tierTimer) and
+# badge-solid was the tier pill (#tierBadge); the user asked for both to go, and
+# both elements are gone from the markup. The counts are kept at zero rather than
+# the variants dropped from the loop, because a loop that no longer mentions a
+# variant cannot notice it COMING BACK - and "the countdown is back" is exactly
+# the regression a reader of this section would want to be told about, since the
+# whole section is about badges not silently changing shape.
 for v in badge-outline badge-solid badge-label; do
   n=$(grep -c "class=\"badge $v\"" "$HTML" || true)
   case "$v" in
-    badge-outline) want=1 ;;
-    badge-solid)   want=1 ;;
+    # ZERO, not one: both belonged to #tierTimer and #tierBadge, removed at the
+    # user's request. The .badge rules for both variants are also gone from the
+    # stylesheet, since a variant with no element is a shape nothing renders.
+    badge-outline) want=0 ;;
+    badge-solid)   want=0 ;;
     badge-label)   want=2 ;;
   esac
   if [ "$n" -eq "$want" ]; then
     ok "$n element(s) carry .$v"
   else
-    bad "the .$v badges are all converted" "found $n, want $want"
+    bad "the .$v badge count is what it should be" \
+        "found $n, want $want - badge-outline and badge-solid were the countdown and the tier pill, both removed at the user's request, and badge-label is the two live tier-row badges"
+  fi
+done
+# ...and the two dead variants' RULES are gone too, which is the other half of the
+# same removal: a `.badge-solid { … }` with no element wearing it is dead weight
+# that reads as intent, and it is what this suite exists to catch elsewhere. Note
+# that `.badge` itself is still there and still has two consumers - it is the
+# geometry (.badge-label is inline-flex) that both live badges inherit.
+for v in badge-outline badge-solid; do
+  if [ -z "$(rule_body ".$v")" ]; then
+    ok ".$v has no rule left - it had exactly one element and that element was removed"
+  else
+    bad ".$v has no rule left" "still declared: $(rule_body ".$v")"
   fi
 done
 # ...and no element carries a bare .badge with no variant, which would render as
@@ -909,60 +969,107 @@ else
   bad "the countdown is hidden by the global [hidden] rule" \
       "the countdown would be visible before Full Mode is elevated - got: $(rule_body "[hidden]")"
 fi
-# The countdown uses tabular figures so the numbers do not jitter as they tick.
-if rule_body ".badge-outline" | grep -q 'tabular-nums'; then
-  ok ".badge-outline uses tabular figures (no jitter while counting down)"
+# === The status row is GONE ===
+# Three assertions, and all three are about the REMOVAL rather than about the
+# styling of something that is still there. They replace the four that pinned
+# `class="status-indicator" id="statusIndicator"` and the position of
+# `statusIndicator.hidden = activeOverlay !== null` relative to updateComposerMode's
+# early return - all four of which described a hiding, and there is nothing left to
+# hide.
+#
+# The pin that WAS worth its weight is kept in its new form. Those assertions
+# existed because a JS line writes to an element by id: if the id and the element
+# ever disagreed, the JS wrote into nothing. That risk did not go away when the
+# elements were removed - it inverted. Now the failure is the reverse direction,
+# and it is a CRASH rather than a silent miss: the JS used to write
+# `tierBadge.textContent`, `tierTimerEl.hidden` and `statusDot.className`, so
+# putting any of the three ids back in the markup without its writer - or leaving
+# a writer behind after removing the element - is a TypeError on the first unlock.
+#
+# So what is asserted is that neither half exists: no element, and no writer. Both
+# directions are named in the failure message, because "the element is back" and
+# "the writer is back" need different fixes and a reader who only sees one of them
+# has to work out which happened.
+# Mutation: restore `<div class="status-indicator" id="statusIndicator">` -> red.
+# Mutation: restore `statusDot.className = "status-dot ok";` -> red.
+# Mutation: restore `tierBadge.textContent = "T" + tier;` -> red.
+gone_ids=0
+for id in tierBadge tierTimer statusDot statusIndicator; do
+  if grep -q "id=\"$id\"" "$HTML" || grep -qE "class=\"[^\"]*\b$id\b" "$HTML"; then
+    gone_ids=$((gone_ids + 1))
+  fi
+done
+if [ "$gone_ids" -eq 0 ]; then
+  ok "the status row's four elements are gone from the markup (tier pill, Full Mode countdown, status dot, and the wrapper)"
 else
-  bad ".badge-outline uses tabular figures" "the countdown visibly jitters as digits change"
+  bad "the status row's elements are gone from the markup" \
+      "$gone_ids of 4 id(s) are back - each had exactly one JS writer, so an element without its writer renders nothing and a writer without its element throws on the first unlock"
 fi
-
-# === Chat-only status indicator ===
-# T1/T2, the session countdown and the status dot describe the live
-# conversation, so they hide when an overlay covers it. The same [hidden]
-# trap as the countdown, and worse: `.status-indicator` sets `display: flex`,
-# and an author display beats the user-agent [hidden] rule outright whatever
-# the specificity - so the attribute alone does nothing.
-# Mutation: delete the [hidden] rule -> red.
-# Was `.status-indicator[hidden]`, added earlier in this migration with the
-# comment "an author display beats the user-agent [hidden] rule outright". True,
-# and beside the point: the global rule is an AUTHOR rule too, and being
-# !important it wins. The badges hide because of the global rule.
-if [ "$(rule_body "[hidden]")" = "display: none !important;" ] && \
-   [ -z "$(rule_body ".status-indicator[hidden]")" ]; then
-  ok "the status indicator relies on the global [hidden] rule, not a private copy"
+# STRIPPED OF COMMENTS FIRST, and that is the whole difficulty here. Every one of
+# these names is named in a why-comment that explains WHY it was removed - which is
+# exactly the history the removal should leave behind - so a grep over the raw
+# source finds nine hits and reports a failure for a file in exactly the state it
+# should be in. Grepping the raw source would make this assertion argue against
+# the documentation, which is the opposite of what a suite is for.
+#
+# The distinction matters: a name in a comment is inert, and a name in code is a
+# writer with no element. So the check runs over a comment-stripped copy. It is
+# the same strip the stylesheet registry two sections up already builds, applied to
+# the JS - and note that it must handle BOTH comment forms, since the JS uses
+# `/* … */` blocks throughout and `//` line comments elsewhere.
+JS_NO_COMMENTS="$(mktemp)"
+trap 'rm -f "$STRIPPED_CSS" "$JS_NO_COMMENTS"' EXIT
+python3 -c "import re,sys;src=open(sys.argv[1],encoding='utf-8').read();src=re.sub(r'/\*[\s\S]*?\*/','',src);open(sys.argv[2],'w',encoding='utf-8').write(re.sub(r'//[^\n]*','',src))" "$JS" "$JS_NO_COMMENTS"
+gone_writers=""
+for w in 'statusIndicator' 'tierTimerEl' 'statusDot' 'tierBadge' \
+         'startTierTimer' 'stopTierTimer' 'tickTierTimer' 'setStatusText' 'checkConnection'; do
+  if grep -q "$w" "$JS_NO_COMMENTS"; then gone_writers="$gone_writers $w"; fi
+done
+if [ -z "$gone_writers" ]; then
+  ok "and every JS writer and helper for them is gone from the CODE too - nothing can be left pointing at a removed element (the names survive only in why-comments, which are what record the removal)"
 else
-  bad "the status indicator relies on the global [hidden] rule" \
-      "a private copy has crept back (global: $(rule_body "[hidden]"))"
+  bad "the JS writers for the removed status row are gone" \
+      "still present in code:$gone_writers - a writer with no element throws on the first unlock, and a helper with no caller is dead code that reads as live"
 fi
-# The element the JS hides must be addressable. Mutation: drop the id -> red.
-if grep -q 'class="status-indicator" id="statusIndicator"' "$HTML"; then
-  ok "#statusIndicator is on the status-indicator div (the JS hides by id)"
+# ...and the two classes are gone from the stylesheet too. `.status-indicator` and
+# `.status-dot` had no other consumer, and a rule for an element that does not
+# exist is the dead weight this file exists to catch. `.status` is a DIFFERENT
+# class - it is the inline status line the overlay panels use, and it is still
+# very much alive - so it is named in the message to keep the two apart.
+#
+# ANY SELECTOR CONTAINING the class, not just the bare one. `.status-dot.ok` and
+# `.status-dot.err` were real rules and were deleted with the rest, so an exact
+# selector-set match would have called this green with half the family's rules
+# back in the file - which is what mutation f04 did on the first run of this
+# section. `rule_body` is the wrong helper here precisely because of this: it
+# matches the whole selector SET, so it cannot see `.status-dot.ok`.
+# Mutation: restore `.status-dot { ... }` -> red.
+# Mutation: restore `.status-dot.ok { ... }` -> red.
+# Mutation: restore `.status-indicator { ... }` -> red.
+gone_rules=$(python3 - "$CSS" <<'PYGONE'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1], encoding="utf-8").read())
+# Pull CLASS TOKENS OUT of each selector rather than splitting the selector on
+# its non-class characters. The split version was tried first and it was wrong in
+# a way that made this assertion vacuous: `re.split(r"[^\w-]+", ".status-dot.ok")`
+# yields ['status', 'dot', 'ok'] - the leading dots are separators, so the tokens
+# compared against ".status-dot" never match anything and the section reported
+# PASS with the rule sitting right there in the file. A test that cannot fail is
+# worse than no test, because it is a false report of coverage.
+left = []
+for m in re.finditer(r"([^{}]+)\{", css):
+    for sel in m.group(1).split(","):
+        for token in re.findall(r"\.[A-Za-z_][\w-]*", sel):
+            if token in (".status-dot", ".status-indicator"):
+                left.append(sel.strip())
+print("|".join(sorted(set(left))))
+PYGONE
+)
+if [ -z "$gone_rules" ]; then
+  ok "and .status-indicator / .status-dot have no rule left - both had one element between them and neither shares a name with .status, which is the overlay panels' own line and is still in use"
 else
-  bad "#statusIndicator is on the status-indicator div" \
-      "the JS toggle has no element to hide - the badges show over every overlay"
-fi
-# The toggle has to sit ABOVE updateComposerMode's `if (activeOverlay !== null)`
-# early return. Below it, the overlay branch returns first and the badges never
-# hide on exactly the views they should. Asserted positionally, because that
-# ordering is the whole correctness of this change and nothing else covers it.
-# Mutation: move the assignment below the return -> red.
-toggle_at="$(grep -n 'statusIndicator.hidden = activeOverlay !== null' "$JS" | head -1 | cut -d: -f1)"
-guard_at="$(grep -n 'if (activeOverlay !== null)' "$JS" | head -1 | cut -d: -f1)"
-if [ -n "$toggle_at" ] && [ -n "$guard_at" ] && [ "$toggle_at" -lt "$guard_at" ]; then
-  ok "the status-indicator toggle precedes the activeOverlay early return"
-elif [ -z "$toggle_at" ]; then
-  bad "the status-indicator toggle precedes the activeOverlay early return" \
-      "no line sets 'statusIndicator.hidden = activeOverlay !== null' - the toggle was removed or its condition changed"
-else
-  bad "the status-indicator toggle precedes the activeOverlay early return" \
-      "toggle at line $toggle_at is below the return at $guard_at, so the overlay branch skips it"
-fi
-# Mutation: change the condition to `===` -> red.
-if grep -q 'statusIndicator.hidden = activeOverlay !== null;' "$JS"; then
-  ok "the toggle keys off 'an overlay is open', not 'an overlay is named'"
-else
-  bad "the toggle keys off 'an overlay is open'" \
-      "a future overlay value would leave the badges on screen"
+  bad ".status-indicator / .status-dot have no rule left" \
+      "rules remain for elements that no longer exist: $gone_rules (note: .status is a different, live class)"
 fi
 
 # The gate's CTA needs room to breathe. Its margin lived on `.gate-card button`
@@ -1272,6 +1379,7 @@ echo "=== 7. no undeclared property override ==="
 # selector | property | why the override is intentional
 DECLARED_OVERRIDES="
 body|background|the radial accent gradient is layered over the plain fill on purpose
+.sidebar[data-collapsed=\"true\"] .sidebar-menu-button::after|content|content: none deletes the rail chip's generated box, which is how the chip is retired from the UX at the user's request while every one of its rules is retained verbatim. It is the one override on this selector in the file, and it is load-bearing in the direction that matters: a later `opacity` on the same pseudo-element cannot bring back a box that is not generated, so the four rules above it are inert by construction rather than by a specificity race. Deleting this line restores the chip whole.
 "
 collisions=$(python3 - "$CSS" "$DECLARED_OVERRIDES" <<'PY'
 import re, sys
@@ -2449,24 +2557,152 @@ echo "=== 19. the shell primitives declare what they claim ==="
 # Mutation: delete .sidebar-group-label's rule -> red here (section 2 misses it).
 # Mutation: delete .alert-dialog-actions' rule -> red on both.
 # Mutation: declare any selector below twice -> red, on the count alone.
+# Mutation: append a THIRD .sidebar-trigger declaration -> red, on the count.
 # Process substitution, not a pipe: `py_axis_rules ... | while ... done` runs
 # the body in a SUBSHELL, so every ok/bad inside it would increment counters
 # this shell never sees and the section would report 0/0 while printing
 # failures.
+#
 while IFS='|' read -r sel n body; do
+  # Reset per iteration, inside the loop: set once before it, the exception below
+  # leaks into every name that follows and the whole section reports them all as
+  # duplicates. Verified by mutation - the leak is invisible in a green run and
+  # only shows up as a wall of reds, which is at least loud.
+  expect_n=1
   case "$sel" in
     '.sheet-overlay')
       want="position: fixed; inset: 0; z-index: var(--z-modal); background: color-mix(in srgb, var(--scrim) 85%, transparent);" ;;
+    # .sheet is the SECOND selector here legitimately declared twice, for the same
+    # structural reason as .sidebar-trigger below: it gained a
+    # `prefers-reduced-motion { .sheet { animation: none } }` override, and an
+    # override cannot live inside the declaration that names the keyframes.
+    #
+    # `want` is therefore the LAST body - `animation: none`, the one the cascade
+    # applies inside the query - and the ROOT body is pinned separately below,
+    # because the ORDER is the whole behaviour: swapped, the phone drawer would
+    # animate for everyone except the people who asked it not to. A third
+    # declaration still fails on the count alone.
     '.sheet')
-      want="position: fixed; top: 0; bottom: 0; left: 0; z-index: var(--z-top); display: flex; flex-direction: column; background: var(--muted); box-shadow: var(--shadow-lg); width: var(--sidebar-width); max-width: 84vw;" ;;
+      expect_n=2
+      want="animation: none;" ;;
     '.sidebar')
-      want="display: flex; flex-direction: column; gap: var(--space-2); width: var(--sidebar-width); flex-shrink: 0; position: relative; background: var(--muted); border-right: 1px solid var(--border); overflow: hidden; transition: width var(--duration-slow) var(--ease);" ;;
+      want="display: flex; flex-direction: column; gap: var(--space-2); width: var(--sidebar-width); flex-shrink: 0; background: var(--muted); border-right: 1px solid var(--border); overflow: hidden; transition: padding-left var(--duration-slow) var(--ease), transform var(--duration-slow) var(--ease);" ;;
+    # The collapsed rail LEAVES THE GRID, which is the whole of the shift fix: a
+    # width on a var(--sidebar-width) track only moved the content column, and
+    # the paired `.app[data-collapsed="true"]` rule takes the grid to one column.
+    # Every one of these five is load-bearing and dropping any is a visible
+    # regression: without `position: fixed` the rail becomes a grid item again;
+    # without the three offsets it is pinned to nothing; without the width there
+    # is no rail; without `z-index: var(--z-raised)` the content column paints
+    # over it (it declares no z-index of its own) and the slide-out is invisible;
+    # without `overflow: visible` the rail tooltips are clipped in half by the
+    # base `overflow: hidden`.
     '.sidebar[data-collapsed="true"]')
-      want="width: var(--sidebar-rail-width);" ;;
+      want="position: fixed; top: 0; left: 0; bottom: 0; width: var(--sidebar-width); padding-left: calc(var(--sidebar-width) - var(--sidebar-rail-width)); transform: translateX(calc(-1 * (var(--sidebar-width) - var(--sidebar-rail-width)))); z-index: var(--z-raised); overflow: visible;" ;;
     '.sidebar-menu-button[aria-current="page"]')
       want="background: var(--primary-subtle); color: var(--ring); font-weight: 600;" ;;
+    # THE SECOND CLIPPER, and the one that shipped eight of the ten rail chips
+    # invisible. `.sidebar-content` declares `overflow-y: auto`, and per CSS
+    # Overflow a `visible` on the other axis computes to `auto` whenever that axis
+    # is not visible - so this box clipped horizontally as well as vertically, and
+    # every chip whose row lives inside it (all but the two tier rows, which are in
+    # .sidebar-footer) was cut off at its inner edge. `overflow: visible` on the
+    # collapsed state is the whole fix, and it is pinned here because a third
+    # clipper added later is invisible to an assertion that names the two that
+    # already exist; nav_dom_test.js now asks the general question instead.
+    # Mutation: delete `overflow: visible` from this rule -> red.
+    #
+    # `width` joined them, and it is the fix for the reported "the icons jump when
+    # the sidebar is hovered". While collapsed, this box - and .sidebar-header and
+    # .sidebar-footer - is pinned to the RAIL's width instead of stretching to the
+    # panel's content box, which the animated `padding-left` carries continuously
+    # between 55px and 255px. Anything that places itself from the width rather
+    # than from the left edge then moves with it, and `justify-content: center` on
+    # a row is exactly that: measured in Firefox 156 with real pointer input, the
+    # icon centre used to travel 127.5 -> 27.5 on the way back out of the slide, and
+    # the collapse control 235 -> 27.5. `width` is read by nothing in this repo
+    # (see the count-only list below), so the pin is the only thing that can see
+    # this declaration disappear.
+    # Mutation: delete `width: calc(…)` from this rule -> red.
+    '.sidebar[data-collapsed="true"] .sidebar-content')
+      want="overflow: visible; width: calc(var(--sidebar-rail-width) - 1px);" ;;
     '.content-frame-body')
       want="flex: 1; min-height: 0; overflow-y: auto;" ;;
+    # .app-content is the desktop shell's second grid column AND the CONTAINING
+    # BLOCK for both .app-header and .drive-panel, so its whole recipe is pinned
+    # rather than left count-only. It is the one rule in this section where
+    # dropping a declaration moves a whole surface across the page: remove
+    # `position: relative` and both absolutely-positioned children resolve against
+    # the viewport, so the header paints over the nav column again - precisely the
+    # bug Layer 2 fixed. nav_dom_test.js asserts the same mechanism by effect, so
+    # the two suites do not lean on each other for it.
+    #
+    # It no longer carries `padding-top`. The header band moved to .app-card
+    # below, and the pin says so rather than going quiet: a padding-top here
+    # would reserve the band TWICE, and test_scales.sh section 4 pairs
+    # `.app-header { height }` with `.app-card { margin-top }` precisely so the
+    # two numbers cannot drift.
+    '.app-content')
+      want="display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative;" ;;
+    # .app-card is the window: the measure and the centring, and nothing else.
+    # It deliberately declares NO background and NO border-radius - see the rule's
+    # why-comment for the two bubble colours that make that the only safe answer -
+    # so what this pin actually protects is the nine declarations that ARE here:
+    # drop `flex: 1` or `min-height: 0` and the transcript stops scrolling inside
+    # the card; drop either margin and it stops being a centred column below the
+    # header; drop `max-width` and the card is edge to edge again, which is the
+    # bug this whole layer exists to fix.
+    #
+    # `width: 100%` joined them, and it is the one whose ABSENCE is invisible to
+    # the seven above. `margin-inline: auto` suppresses cross-axis stretch, so the
+    # box was fit-content: `max-width` was a ceiling nothing reached and the chat
+    # measured 264px empty against 790px after one reply, never the 820px the
+    # other six declarations are there to deliver. Every one of the seven reads as
+    # correct with this missing - which is why the pin carries all nine and why
+    # nav_dom_test.js RESOLVES the card's width rather than reading this string.
+    '.app-card')
+      want="display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; margin-inline: auto; margin-top: var(--header-height); max-width: 820px; width: 100%;" ;;
+    # ONE selector here legitimately declared TWICE for the same reason
+    # writing down because "exactly once" was this file's blanket rule until this
+    # one needed an exception. The mobile shell has to HIDE the trigger on a
+    # desktop - the sidebar is already there - and SHOW it below 640px, and `display`
+    # cannot say both in one declaration: `none` at the root plus `inline-flex`
+    # inside the query is two declarations whichever way round it goes.
+    # What the count alone would NOT catch is the ORDER, and order is the whole
+    # behaviour here: with the two bodies swapped, the trigger is invisible on a
+    # phone and visible on a desktop - two navigation affordances at once, which
+    # is the regression this layer exists to remove. So the first body is pinned
+    # separately below, and `want` is the LAST one, because that is the one the
+    # cascade applies. A third declaration still fails on the count alone.
+    #
+    # WHAT THIS PIN STILL CANNOT SEE, and it is the bug that shipped: both bodies
+    # are correct and `.sidebar-trigger { display: none }` still lost, to
+    # `.btn-icon { display: inline-flex }` further down the sheet on a
+    # specificity tie. Every assertion in this section - this one included - reads
+    # what the trigger declares, not what the cascade resolves to. The rule now
+    # sits after `.btn-icon` for that reason, and nav_dom_test.js resolves
+    # `display` for #sidebarTrigger and requires `none`, which is the only
+    # assertion in the repo that can see this class of failure. The relocation is
+    # invisible here by design: the selector set and both bodies are unchanged, so
+    # this pin is still true and still not sufficient.
+    '.sidebar-trigger')
+      expect_n=2
+      want="display: inline-flex;" ;;
+    # Pinned in full rather than count-only, because these three arrived in the
+    # same layer as the shell and each is the whole reason a thing renders where
+    # it does. `.sidebar-tier` and `.sidebar-collapse` are single-declaration
+    # rules, so "states its whole recipe" costs nothing and closes a hole: their
+    # only other guard was a grep for the class name, which a SECOND
+    # .sidebar-collapse rule saying something contradictory would satisfy while
+    # rendering. `.sidebar-menu-button.active` is three declarations and is the
+    # tier rows' entire highlight - it is what stops "Tier 2 is selected" from
+    # being indistinguishable from "you are here".
+    '.sidebar-tier')
+      want="display: flex; flex-direction: column; gap: var(--space-1);" ;;
+    '.sidebar-collapse')
+      want="margin-left: auto;" ;;
+    '.sidebar-menu-button.active')
+      want="background: var(--primary-subtle); color: var(--ring); font-weight: 600;" ;;
     # Declared exactly once, body not pinned here.
     #
     # WHY the body is left open, stated narrowly enough to be true. Two other
@@ -2499,9 +2735,9 @@ while IFS='|' read -r sel n body; do
     # second thing to forget. The COUNT is the half nothing else sees: a second
     # `.alert-dialog` renders and takes precedence, and no other section would
     # say so.
-    '.sidebar-menu-button'|'.input-underline'|'.alert-dialog'|'.sidebar-rail'|\
+    '.sidebar-menu-button'|'.input-underline'|'.alert-dialog'|\
     '.sidebar-header'|'.sidebar-content'|'.sidebar-group'|'.sidebar-group-label'|\
-    '.sidebar-menu'|'.sidebar-footer'|'.sidebar-trigger'|'.content-frame'|\
+    '.sidebar-menu'|'.sidebar-footer'|'.content-frame'|\
     '.content-frame-header'|'.alert-dialog-title'|'.alert-dialog-description'|\
     '.alert-dialog-actions')
       want="" ;;
@@ -2510,29 +2746,92 @@ while IFS='|' read -r sel n body; do
           "py_axis_rules returned a name with no expected body - add one or drop the selector"
       continue ;;
   esac
-  if [ "$n" -ne 1 ]; then
-    bad "$sel is declared exactly once" \
+  if [ "$n" -ne "$expect_n" ]; then
+    bad "$sel is declared exactly $expect_n time(s)" \
         "$n declarations - the LAST one is what renders and the rest are dead code; look for an @media override"
     continue
   fi
   # An empty `want` is the count-only case explained above.
   if [ -z "$want" ]; then
-    ok "$sel is declared exactly once (body covered by the scale sections)"
+    ok "$sel is declared exactly $expect_n time(s) (body covered by the scale sections)"
   elif [ "$body" = "$want" ]; then
     ok "$sel states its whole recipe, and reads the tokens"
   else
     bad "$sel states its whole recipe, and reads the tokens" "got: $body"
   fi
-done < <(py_axis_rules '.sidebar' '.sidebar-rail' '.sidebar-header' \
+done < <(py_axis_rules '.sidebar' '.sidebar-header' \
                       '.sidebar-content' '.sidebar-group' '.sidebar-group-label' \
                       '.sidebar-menu' '.sidebar-menu-button' '.sidebar-footer' \
                       '.sidebar-trigger' '.sidebar[data-collapsed="true"]' \
+                      '.sidebar[data-collapsed="true"] .sidebar-content' \
+                      '.sidebar-tier' '.sidebar-collapse' \
                       '.sidebar-menu-button[aria-current="page"]' \
+                      '.sidebar-menu-button.active' \
                       '.sheet' '.sheet-overlay' '.input-underline' '.content-frame' \
-                      '.content-frame-header' '.content-frame-body' '.alert-dialog' \
+                      '.content-frame-header' '.content-frame-body' '.app-content' \
+                      '.app-card' \
+                      '.alert-dialog' \
                       '.alert-dialog-title' '.alert-dialog-description' \
                       '.alert-dialog-actions')
 
+# .sidebar-trigger's FIRST body, which the loop above cannot see - it reads the
+# last, and the last is the reveal. The two bodies are read in source order here
+# rather than through `rule_body`, which takes the first match and would therefore
+# report the root rule even if it had been moved below the media query that should
+# have overridden it. Without `display: none` at the root the trigger would be on
+# screen on every desktop, next to a sidebar that already navigates, and the sheet
+# would be one of two ways in rather than the only one.
+# Mutation: delete the root .sidebar-trigger rule -> red.
+# Mutation: swap the two bodies -> red.
+report=$(python3 - "$CSS" ".sidebar-trigger" <<'PY'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1], encoding="utf-8").read())
+bodies = [" ".join(m.group(2).split())
+          for m in re.finditer(r"([^{}]*)\{([^{}]*)\}", css)
+          if {s.strip() for s in m.group(1).split(",")} == {sys.argv[2]}]
+print(len(bodies))
+for b in bodies:
+    print("#   " + b)
+PY
+)
+# `-eq`, not `=`, on the count: `${report%%#*}` keeps the newline that precedes
+# the first `#` line, and a string comparison against "2" would never match.
+_trigger_n="${report%%#*}"
+_trigger_first="$(printf '%s\n' "$report" | sed -n '2s/^#   //p')"
+if [ "$_trigger_n" -eq 2 ] && [ "$_trigger_first" = "display: none;" ]; then
+  ok ".sidebar-trigger is hidden at the root, not only revealed below 640px"
+else
+  bad ".sidebar-trigger is hidden at the root" \
+      "$(printf '%s\n' "$report" | grep '^#' | tr '\n' ' ') - it would sit beside the desktop sidebar as a second, redundant way in"
+fi
+
+# .sheet's FIRST body, for the same reason and with the order mattering just as
+# much: the prefers-reduced-motion override is the SECOND declaration, so the
+# root body is the only place `animation: sheet-slide-in …` can live. Read here
+# for the same reason as the trigger above and not through `rule_body`, which
+# takes the first match and cannot see a second declaration at all.
+# Mutation: delete the root .sheet rule -> red.
+# Mutation: swap the two bodies -> red.
+report=$(python3 - "$CSS" ".sheet" <<'PYEOF'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1], encoding="utf-8").read())
+bodies = [" ".join(m.group(2).split())
+          for m in re.finditer(r"([^{}]*)\{([^{}]*)\}", css)
+          if {s.strip() for s in m.group(1).split(",")} == {sys.argv[2]}]
+print(len(bodies))
+for b in bodies:
+    print("#   " + b)
+PYEOF
+)
+_sheet_n="${report%%#*}"
+_sheet_first="$(printf '%s\n' "$report" | sed -n '2s/^#   //p')"
+if [ "$_sheet_n" -eq 2 ] && \
+   printf '%s' "$_sheet_first" | grep -q 'animation: sheet-slide-in var(--duration-slow) var(--ease)'; then
+  ok ".sheet slides in at the root, and only prefers-reduced-motion takes it away"
+else
+  bad ".sheet slides in at the root" \
+      "$(printf '%s\n' "$report" | grep '^#' | tr '\n' ' ') - with the bodies swapped the phone drawer animates for everyone EXCEPT the people who asked it not to"
+fi
 # A pin about a RELATION rather than a body, because the relation is what breaks
 # and neither rule's text says anything about it.
 #
@@ -2543,16 +2842,33 @@ done < <(py_axis_rules '.sidebar' '.sidebar-rail' '.sidebar-header' \
 # the sheet is opaque and the scrim is a tint, so the only thing that changes is
 # how much the page behind it dims - the kind of difference that gets reported
 # as "the backdrop feels light" and never traced.
+# EVERY body, not the last one. `.sheet` is now declared twice - the root rule
+# and the prefers-reduced-motion override - and py_axis_rules hands back only
+# the last, so the first version of this check read `animation: none` and
+# reported the sheet as having no z-index at all. Asking for the DISTINCT set
+# of z-index values each selector declares is the stronger question anyway: a
+# second copy saying something else is now caught rather than ignored.
+# .sheet and its scrim must agree on their rungs - read over EVERY body.
+_py_all_z=$(python3 - "$CSS" <<'PYEOF'
+import re, sys
+css = re.sub(r"/\*[\s\S]*?\*/", "", open(sys.argv[1], encoding="utf-8").read())
+for sel in (".sheet-overlay", ".sheet"):
+    zs = []
+    for m in re.finditer(r"([^{}]*)\{([^{}]*)\}", css):
+        if sel in [s.strip() for s in m.group(1).split(",")]:
+            zs += re.findall(r"z-index\s*:\s*([^;}]+)", m.group(2))
+    print("%s|%s" % (sel, ",".join(sorted({z.strip() for z in zs})) or "<none>"))
+PYEOF
+)
 _scrim_z=""; _sheet_z=""
-while IFS='|' read -r sel n body; do
-  z="$(printf '%s' "$body" | grep -o 'z-index:[^;]*' | head -1)"
+while IFS='|' read -r sel zs; do
   case "$sel" in
-    '.sheet-overlay') _scrim_z="$z" ;;
-    '.sheet')         _sheet_z="$z" ;;
+    '.sheet-overlay') _scrim_z="$zs" ;;
+    '.sheet')         _sheet_z="$zs" ;;
   esac
-done < <(py_axis_rules '.sheet-overlay' '.sheet')
-if [ "$_scrim_z" = "z-index: var(--z-modal)" ] \
-   && [ "$_sheet_z" = "z-index: var(--z-top)" ]; then
+done <<< "$_py_all_z"
+if [ "$_scrim_z" = "var(--z-modal)" ] \
+   && [ "$_sheet_z" = "var(--z-top)" ]; then
   # Resolved against the token VALUES, not by trusting the alphabetical order of
   # two strings, so the assertion is about the numbers the cascade will use.
   _z_modal=$(grep -oE '^[[:space:]]*--z-modal:[[:space:]]*[0-9]+' "$CSS" | grep -oE '[0-9]+')

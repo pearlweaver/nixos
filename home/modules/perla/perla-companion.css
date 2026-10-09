@@ -199,6 +199,19 @@
       --sidebar-width: 256px;
       --sidebar-rail-width: 56px;
 
+      /* How far in from the window's left edge the content COLUMN begins, and
+         the single source of truth for the two `position: fixed` surfaces that
+         have to sit over the card rather than over the window. It is a length
+         and not a number of pixels at each use site precisely because two
+         surfaces once each worked the offset out for themselves and drifted.
+
+         THE 0 HERE IS THE NO-SIDEBAR DEFAULT, not the desktop value: with no
+         column to the left, the correction is nothing. .app publishes the real
+         one, and both states with no sidebar - collapsed, and below 640px -
+         zero it again, each at its own rule, because a `0` in one place is not
+         evidence about another. */
+      --content-column-inset: 0px;
+
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
@@ -294,71 +307,659 @@
       gap: var(--space-2);
       width: var(--sidebar-width);
       flex-shrink: 0;
-      /* The containing block for .sidebar-rail below. Without it that rule
-         resolves against whatever ancestor happens to be positioned, which on
-         the desktop shell is the viewport - so the hairline would sit at the
-         right edge of the screen instead of the sidebar's. Inert on its own:
-         no offsets are set here, so nothing lays out differently. */
-      position: relative;
       background: var(--muted);
       border-right: 1px solid var(--border);
       overflow: hidden;
-      transition: width var(--duration-slow) var(--ease);
+      /* The slide, and it is on the BASE rule rather than on either state so the
+         two cannot drift into restating it. Which is right for a CSS transition:
+         the one that runs is the property value read from the state being ENTERED,
+         so a transition declared on only one of the pair would leave the return
+         trip unanimated. `padding-left` and `transform` are what change between
+         the rail and the column; nothing changes them in the plain expanded state,
+         which is what makes this harmless there rather than dead - it is the same
+         element's own transition property either way. `transition: none` under
+         prefers-reduced-motion below, like the file's other two blocks. */
+      transition: padding-left var(--duration-slow) var(--ease),
+        transform var(--duration-slow) var(--ease);
     }
 
-    /* Collapsed state: the rail keeps its rows but drops every label, so the
-       active destination stays identifiable by its icon and aria-current. */
+    /* Collapsed: the rail keeps its rows but drops every label, so the active
+       destination stays identifiable by its icon and aria-current - and it
+       LEAVES THE GRID.
+
+       That second half is the whole of the shift bug. .app declares
+       grid-template-columns: var(--sidebar-width) 1fr, so narrowing the sidebar
+       on a 256px track left the track at 256px and pulled the content column
+       200px to the left: the collapse control moved the chat, which is the
+       opposite of what it is for. Out of flow is what actually stops the shift -
+       the sidebar stops occupying a column at all - and the paired rule below
+       takes the grid to a single column so .app-content still owns the full
+       viewport width. Nothing shifts in either direction.
+
+       `position: fixed`, and the reason is the containing block rather than
+       taste. "Pinned to the screen's left edge" is literally what fixed does.
+       `absolute` would resolve against whatever ancestor happens to be
+       positioned, and .app declares none - so it would work by accident today
+       and stop the moment anything above .app gained a position. Making .app
+       the containing block instead was rejected on a reason that turned out to
+       be FALSE, and it is corrected here rather than left in place: this comment
+       used to say that pinning .app "would re-anchor the viewport-centred toast
+       stack". A `position: relative` ancestor does not re-anchor a
+       `position: fixed` descendant - only transform, perspective, filter,
+       backdrop-filter, will-change of those, or contain:paint do. The real
+       reason to leave .app static is the one below about #drivePanel, which is
+       about `absolute` and is unaffected. Inert below 640px either way, where
+       .app > .sidebar is display: none.
+
+       --z-raised (15), and deliberately not --z-dropdown: the rail has to sit
+       ABOVE the content column, which declares no z-index of its own, and
+       BELOW --z-toast (19) and --z-header (20). A nav drawer that covered the
+       toasts or the header would be the same bug in the other direction, and
+       that ORDER is asserted in test_scales.sh section 2.
+
+       `overflow: visible` overrides the base clip. It WAS load-bearing: it is
+       what let the rail tooltips below escape a 56px column, and a pseudo-element
+       is a DESCENDANT for clipping purposes, so with the base `overflow: hidden`
+       a chip would lay out and then be cut in half - worse than no chip, because
+       it looks like a broken one.
+
+       It is KEPT ANYWAY, and that is a decision rather than an oversight, because
+       the chip it existed for no longer generates a box (`content: none`; see the
+       rail-tooltips block). Two reasons. The first is that the retained chip
+       family is meant to be restorable by deleting ONE declaration, and removing
+       its escape hatch too would make that two edits in two places - a restored
+       chip with the base clip back would be cut in half, which is the exact
+       failure the override exists to prevent. The second is that the override now
+       has a live job of its own, which the base `overflow: hidden` would break:
+       the collapsed GROUP LABELS paint a ::after, and `.sidebar-content` below is
+       `overflow: visible` in this state precisely so a 47px label inside a 55px
+       column is not cut at the 53px inner edge.
+
+       nav_dom_test.js's clip-chain walk therefore still has something real to
+       check, and it is not vacuous: it now guards the label's ::after rather than
+       the chip's, and the collapsed rows, the header control and the tier rows are
+       still asserted to fit 55px exactly. The EXPANDED sidebar keeps the clip: at
+       256px there is nothing for it to escape, and it is still what stops an
+       overlong label bleeding into the chat. */
     .sidebar[data-collapsed="true"] {
-      width: var(--sidebar-rail-width);
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      /* The panel is --sidebar-width in BOTH states, and the rail is the window
+         onto it that the padding and the transform describe. That is the whole
+         trick, and it is what makes the slide a slide rather than a resize:
+
+           rail   padding-left 200px, translateX(-200px)  ->  paints at -200..56
+           open   padding-left 0,     translateX(0)       ->  paints at    0..256
+
+         The panel's LEFT edge therefore travels 200px on the way in, which is
+         what a viewer tracks during a slide and what a `width` animation can
+         never give them: growing the width from 56 to 256 at `left: 0` leaves the
+         left edge - and the border-right hairline with it - exactly where it was,
+         and it reads as a reveal.
+
+         WHY NOT translateX(-100%), which is what @keyframes sheet-slide-in uses
+         for the phone drawer? -100% of a 256px panel is -256px, which parks the
+         whole panel off-screen and leaves nothing at all to hover. The rail has to
+         be ON screen: it is the only navigation there is above 640px. So the
+         offset is `-(width - rail)`, and -100% becomes the correct value for
+         .sheet only because the sheet has no resting state to preserve.
+
+       WHY padding-left rather than moving the three regions. The rail's content
+       must occupy the panel's RIGHT 56px while the panel is 256px wide, and
+       .sidebar is a column flex box whose three regions stretch to its content
+       box. 200px of padding on the box puts that content box at exactly 55px -
+       the same 55px the rail had when its width really was --sidebar-rail-width -
+       so every row, the header and the footer lay out in precisely the geometry
+       the earlier rounds measured and asserted. Right-aligning the rows, or
+       narrowing the regions, would have re-broken the icon centring that took a
+       whole round to get right; this does not touch it. nav_dom_test.js proves
+       the equivalence arithmetically rather than by assertion of intent.
+
+       ONE THING THIS PARAGRAPH USED TO IMPLY AND NO LONGER DOES. It reads as if
+       padding-left is what positions the content, and it is: padding-left and
+       translateX are equal and opposite, so the content box's screen origin is
+       pinned at 0 and neither it nor any row moves as the panel slides. What
+       padding-left also does - and what this comment did not say - is change the
+       content box's WIDTH, continuously, 55 -> 255 and back. Anything that
+       positions itself from the width rather than from the left edge then moves
+       with it, and `justify-content: center` on a row is exactly that: it put
+       every icon 107px to the right on the way back, which is the reported bug.
+       The three regions are now given the rail's width outright so their interior
+       cannot reflow mid-slide - see "THE THREE REGIONS LAY OUT AT RAIL WIDTH"
+       further down. The padding and the transform are unchanged and still the
+       mechanism; what changed is that nothing inside depends on their difference.
+
+         `overflow: visible` overrides the base clip and is load-bearing: it is
+         what lets the rail tooltips escape - and it has to be here on BOTH this
+         rule and .sidebar-content below, because that one carries `overflow-y:
+         auto`, and a `visible` on one axis computes to `auto` whenever the other
+         axis is not `visible`. One override would have left eight of the ten
+         chips clipped at the 53px inner edge. */
+      width: var(--sidebar-width);
+      padding-left: calc(var(--sidebar-width) - var(--sidebar-rail-width));
+      transform: translateX(calc(-1 * (var(--sidebar-width) - var(--sidebar-rail-width))));
+      z-index: var(--z-raised);
+      overflow: visible;
     }
 
-    .sidebar[data-collapsed="true"] .sidebar-group-label,
-    .sidebar[data-collapsed="true"] .sidebar-menu-button span {
+    /* Hovering the rail slides the full sidebar out over the content, and the
+       padding/transform transition on the base rule animates it.
+
+       THERE IS NO SPLIT ANY MORE, and both `:not(:has(…))` guards that used to
+       carve this into "a row gets a chip, anything else gets the column" are
+       gone. The reason is the chip: with the hover name-pill removed from the
+       UX (its rules are all still here, inert - see the rail-tooltips block
+       below) the two affordances no longer compete for `:hover`. Hovering a row
+       used to mean "do not open the column, show me this row's name instead";
+       the name is now on the row's own label, which only exists once the column
+       is open, so a row hover and a column hover are the SAME gesture again and
+       splitting them would only mean a rail row ignored the pointer.
+
+       The keyboard arm loses its guard for the identical reason and by the same
+       argument: `:focus-within`
+       existed so that tabbing onto a row showed a chip instead of opening the
+       column. There is no chip to show, so tabbing onto a row now opens the
+       column - which is strictly better than the alternative, where a keyboard
+       user tabbing the rail got no name for any row and no column either.
+
+       `:not([data-hover-suppressed="true"])` on the HOVER arm only, and it is
+       Item 4's fix rather than a nicety. Measured in Firefox 156 with real
+       pointer input: pressing the collapse control leaves the pointer ON the
+       sidebar (on the control, which is inside .sidebar and is not a
+       `.sidebar-menu-button`), so `.sidebar[data-collapsed="true"]:hover` matched
+       on the very next style recalculation and the column slid straight back
+       out. Focus release was never the problem - document.activeElement really
+       was <main> and :focus-within really was false - which is why the fix
+       belongs on the hover arm. Removing the split makes it strictly worse,
+       because afterwards there is no pointer position over the rail that leaves
+       it collapsed, so the flag is what makes "collapse" mean anything at all.
+
+       toggleSidebar() sets data-hover-suppressed on the COLLAPSE direction only,
+       and only when the sidebar is currently :hover; a pointerleave listener
+       removes it. So the rail stays collapsed until the pointer LEAVES and
+       RETURNS, rather than for an arbitrary number of milliseconds - which is
+       the behaviour that can be reasoned about and asserted, where a grace
+       period is neither.
+
+       ON transform: translateX(), which an earlier draft of this called for. It is
+       not here because it cannot mean anything in this geometry, and a declaration
+       that computes to no change is worse than no declaration. The rail's LEFT edge
+       is at the screen's left edge in both states - that is what pins it there -
+       so the two states share `left: 0` and a translate between them is
+       translateX(0). Animating it would also have meant holding the sidebar at
+       --sidebar-width and sliding it by -200px, which puts the visible 56px
+       strip on the RIGHT of a 256px box and re-breaks every icon's centring
+       (nav_dom_test.js computes that centre from the collapsed width, and
+       ux-fix-1 exists because the icons were 8px adrift when it was wrong).
+       `transform-origin: left` came out with it: it changes nothing for a
+       translate, and there is no scale or rotate here for it to apply to. */
+    .sidebar[data-collapsed="true"]:not([data-hover-suppressed="true"]):hover,
+    .sidebar[data-collapsed="true"]:focus-within {
+      padding-left: 0;
+      transform: translateX(0);
+    }
+
+    /* ---------- The OPEN column: the labels come back ----------
+
+       THE TWO SELECTORS, and they are written out in every rule below rather than
+       factored into `:is(…)`, which reads better and is WRONG here for a reason
+       worth recording. `:is(A, B)` puts a comma INSIDE the parentheses, and this
+       repository's three CSS readers split selector lists on a bare comma without
+       tracking nesting - `py_axis_rules`, `py_all_decls` and `ruleBodies` in
+       nav_dom_test.js all do `selector.split(",")`. A nested comma therefore cuts
+       the compound in half and every one of them reports a selector that does not
+       exist. `test_primitives.sh` section 7 did exactly that and reported three
+       "UNDECLARED override" findings against a selector that was never written.
+
+       A TOP-LEVEL comma is what those readers already understand - it is the
+       normal `a,\n b { … }` shape - so the arms are two comma-separated parts of
+       one rule instead. Same rule count, and each arm is individually addressable,
+       which is what makes "every open rule carries the same two arms" a checkable
+       claim rather than a long string comparison.
+
+       `data-collapsed` STAYS set while the column is open - the flag is the user's
+       preference, the open state is transient - so every rule that hides a label
+       for the rail is still in force and the rules below are what turn them off
+       again. Each body restores exactly what its counterpart removed, and the
+       comment names which one, because "undo" without a referent is the kind of
+       thing that rots.
+
+       The `display` values are what the BASE rules give these elements, not what
+       looks right: .badge is inline-flex, .brand-mark is flex, a bare span is
+       inline. The badge is called out separately from the labels it shares a
+       selector with because getting it wrong shows up as a badge that no longer
+       lines up with its row.
+
+       `.status-indicator` is named in this comment's history and is not in the
+       selector lists any more - it was the footer's own row and the user asked
+       for that row to go. Its `display` belonged here once; the row is gone from
+       the markup, so there is nothing left to restore. */
+
+
+    .sidebar[data-collapsed="true"]:not([data-hover-suppressed="true"]):hover .sidebar-menu-button span,
+    .sidebar[data-collapsed="true"]:focus-within .sidebar-menu-button span {
+      display: inline;
+    }
+
+    /* inline-flex, NOT the `inline` the label spans get. `#tier1Badge` and
+       `#tier2Badge` are `.badge.badge-label` spans, and `.badge` is inline-flex -
+       a badge rendered inline sits on the text baseline and no longer lines up
+       with the row it belongs to. This is the one element in the family whose
+       correct value is not its tag name's default, which is why it is its own
+       rule instead of riding along in the label selector. */
+    .sidebar[data-collapsed="true"]:not([data-hover-suppressed="true"]):hover .sidebar-menu-button span.badge,
+    .sidebar[data-collapsed="true"]:focus-within .sidebar-menu-button span.badge {
+      display: inline-flex;
+    }
+
+    /* `.status-indicator` was in this list and is not any more. It was the
+       wrapper around #tierBadge / #tierTimer / #statusDot, all three of which
+       the user asked to remove, so there is nothing left for it to restore -
+       and a `display: flex` for an element with no markup is the kind of rule
+       that makes the next reader hunt for the thing it is styling. */
+    .sidebar[data-collapsed="true"]:not([data-hover-suppressed="true"]):hover .brand-mark,
+    .sidebar[data-collapsed="true"]:focus-within .brand-mark {
+      display: flex;
+    }
+
+    .sidebar[data-collapsed="true"]:not([data-hover-suppressed="true"]):hover .brand-name,
+    .sidebar[data-collapsed="true"]:not([data-hover-suppressed="true"]):hover .brand-name {
+      display: inline;
+    }
+
+    /* The group labels are NOT restored by this block any more, because they are
+       no longer hidden in the collapsed rail - see their own rule below, which
+       swaps the long word for the short form instead of removing the element.
+       What the open column has to undo is that swap, and it is a different set of
+       declarations: the collapsed rule neutralises the element's own text with
+       `font-size: 0`, so opening the column has to put the type back, or
+       "Navigate" would render at 0px beside its own ::after. */
+    .sidebar[data-collapsed="true"]:not([data-hover-suppressed="true"]):hover .sidebar-group-label,
+    .sidebar[data-collapsed="true"]:focus-within .sidebar-group-label {
+      font-size: var(--text-2xs);
+    }
+
+    /* ...and the short form has to stop being generated, or the open column
+       reads "NavigateNAV". `content: none` on a ::after deletes the box outright,
+       which is why it is written this way rather than as `opacity: 0` - an
+       opacity-0 pseudo-element is still in the box tree, still measured, and
+       still selectable by a click-through test. */
+    .sidebar[data-collapsed="true"]:not([data-hover-suppressed="true"]):hover .sidebar-group-label::after,
+    .sidebar[data-collapsed="true"]:focus-within .sidebar-group-label::after {
+      content: none;
+    }
+
+    .sidebar[data-collapsed="true"]:not([data-hover-suppressed="true"]):hover .sidebar-menu-button,
+    .sidebar[data-collapsed="true"]:focus-within .sidebar-menu-button {
+      /* the row's own 6px gutters and its packed-at-the-start content, which the
+         collapsed rule above zeroed and centred to put the icon on the midpoint */
+      padding-left: var(--space-3);
+      padding-right: var(--space-3);
+      justify-content: flex-start;
+    }
+
+    .sidebar[data-collapsed="true"]:not([data-hover-suppressed="true"]):hover .sidebar-header,
+    .sidebar[data-collapsed="true"]:not([data-hover-suppressed="true"]):hover .sidebar-footer,
+    .sidebar[data-collapsed="true"]:focus-within .sidebar-header,
+    .sidebar[data-collapsed="true"]:focus-within .sidebar-footer {
+      /* 8px, which is what .sidebar-header and .sidebar-footer declare at full width */
+      padding-left: var(--space-4);
+      padding-right: var(--space-4);
+      /* and the width the collapsed rule took away - see "THE THREE REGIONS LAY OUT
+         AT RAIL WIDTH" below for the measurement that made it necessary */
+      width: auto;
+    }
+
+    /* ...and the same restoration for .sidebar-content, which has no padding to give
+       back (its var(--space-2) is the same in both states) and therefore had no open
+       rule to join. Two rules rather than one shared rule for the reason the collapsed
+       half gives: adding a second open rule naming .sidebar-header or .sidebar-footer
+       would declare either of them twice, which nav_dom_test.js reads as a
+       contradiction and is right to.
+
+       `width: auto` and not a number: these are flex items in a COLUMN, so the cross
+       axis is width and the default is to stretch to the panel's content box - 255px
+       while the column is open. Saying `auto` restores that stretch rather than
+       restating it, so this rule stays correct if the panel's width token moves. */
+    .sidebar[data-collapsed="true"]:not([data-hover-suppressed="true"]):hover .sidebar-content,
+    .sidebar[data-collapsed="true"]:focus-within .sidebar-content {
+      width: auto;
+    }
+
+    .sidebar[data-collapsed="true"]:not([data-hover-suppressed="true"]):hover .sidebar-collapse,
+    .sidebar[data-collapsed="true"]:focus-within .sidebar-collapse {
+      /* back to the trailing edge, opposite the brand - the collapsed rule above
+         neutralises it because an auto margin absorbs all the free space and
+         justify-content would never be consulted */
+      margin-left: auto;
+    }
+
+
+    /* ---------- Rail tooltips: RETAINED, AND INERT ----------
+
+       The user asked for the hover name-pill to go from the UX while its code
+       stayed in the file, and the reason it does not have to be looked up later
+       is that everything needed to bring it back is still here: the base recipe,
+       the two-arm show, the open-state suppression, the hoverless-pointer arm,
+       and every `data-tooltip` attribute in the markup. DO NOT "TIDY UP" THE
+       BLOCK BELOW - it is load-bearing history, in the same sense as the
+       commented-out config elsewhere in this repository, and the same instinct
+       that removes it is the one that would have to unpick it again.
+
+       The chip cannot appear at all, and the reason is the LAST rule in this
+       block rather than any change to the four above it: `content: none` on the
+       same pseudo-element, at the same specificity, written after them. A
+       pseudo-element with `content: none` generates NO BOX, which is a stronger
+       statement than any opacity - an `opacity: 0` chip is still laid out, still
+       measured, still hit-testable, and still there for the next rule to find.
+       Deleting the box means every one of the arms above it is inert by
+       construction rather than by a specificity race, which is why the arms were
+       left exactly as they were.
+
+       WHY IT IS OFF, which is a design decision rather than a simplification:
+       the whole rail now expands on hover anywhere, so a chip's only remaining
+       job would have been to say a row's name - and hovering that row opens the
+       column, which shows the row's own <span> with that name on it. The chip
+       would have been the same information, one gesture later and 100px further
+       from the icon.
+
+       AND THE KEYBOARD/TOUCH ANSWER IS BETTER FOR IT, not worse, which is worth
+       recording because "removed an affordance" usually means one of those and
+       this is the case where it is not. A pointerless user at 640px and up had
+       exactly one way to read a rail row's name: this chip, on `:active` (below),
+       because `:hover` never fires and iOS moves no focus on a tap. There is now
+       a better one. `:focus-within` opens the column, and it no longer has the
+       `:not(:has(.sidebar-menu-button:focus-visible))` carve-out that used to
+       divert a focused row to the chip instead - so tapping or tabbing onto a
+       row opens the column with every label showing, and the name is right there
+       in its own row rather than in a bubble that appears for the duration of a
+       press and then vanishes.
+
+       THE STRING IS STILL DUPLICATED, and it still has to be. CSS can read an
+       attribute; it cannot read a descendant's text, and the labels already exist
+       as <span>s. So `data-tooltip` restates each row's own <span>, and
+       nav_dom_test.js asserts the two agree for every row rather than taking the
+       comment's word for it. That assertion is left running on purpose: it is
+       what would catch a label being edited without its data-tooltip, which is
+       the one edit that would make a restored chip say the wrong thing.
+
+       Collapsed-only by selector: every rule here is written
+       `.sidebar[data-collapsed="true"] …`, so an expanded sidebar can never
+       produce one - a tooltip next to a label that is already showing is noise. */
+    .sidebar[data-collapsed="true"] .sidebar-menu-button::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      top: 50%;
+      left: 100%;
+      transform: translateY(-50%);
+      margin-left: var(--space-2);
+      padding: 2px var(--space-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--popover);
+      color: var(--foreground);
+      font-family: var(--font-sans);
+      font-size: var(--text-2xs);
+      line-height: 1.4;
+      white-space: nowrap;
+      /* Decoration hanging off an icon: a pointer event here would land on the
+         chip rather than the row underneath it. */
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity var(--duration) var(--ease);
+    }
+
+    /* The chip appears on hover of its OWN row, or on keyboard focus of it - the two
+       halves of one affordance, and neither replaces the other.
+
+       INERT. Kept verbatim, and kept for the reason given at the head of this
+       block: the chip is retired from the UX at the user's request and its
+       mechanism is retained, and this rule is the mechanism. It is unreachable
+       because of the `content: none` at the foot of the block, which deletes the
+       box rather than hiding it - so nothing below is being relied on to lose a
+       specificity contest it might win.
+
+       The prose under it describes a split that no longer exists (it says the
+       row's own hover is what suppresses the slide-out), and it is left rather
+       than rewritten because rewriting a comment to match code nobody can reach
+       is how the next reader loses the history of WHY the split was there. Read
+       it as: this is what the chip did, before the rail expanded on hover
+       anywhere and made a name-bubble redundant. */
+    .sidebar[data-collapsed="true"] .sidebar-menu-button:hover::after,
+    .sidebar[data-collapsed="true"] .sidebar-menu-button:focus-visible::after {
+      opacity: 1;
+    }
+
+    /* ...and THIS is what stopped the chip and the open column showing at the same
+       time. It was written when hovering a row suppressed the slide-out, so the
+       two were reachable by hover simultaneously and one had to win.
+
+       Its arms have CHANGED, deliberately and not mechanically: they carry the
+       rail's CURRENT open-state compounds, so they still mean "the column is
+       open" rather than naming a selector that no longer exists. With the chip
+       inert this rule does nothing at all, and keeping it pointed at the live
+       open-state selectors - rather than freezing the old ones in place - is what
+       keeps the block internally consistent, so a reader who deletes the
+       `content: none` below gets a chip that is correctly suppressed rather than
+       one whose suppression silently stopped matching.
+
+       The (0,6,1)-against-(0,4,1) arithmetic this comment used to quote is
+       obsolete: the open-state compound is now `:not([data-hover-suppressed="true"]):hover`,
+       whose `:not()` takes an attribute selector's specificity and lands at
+       (0,5,1). nav_dom_test.js recomputes it rather than reading it from here,
+       and the assertion was rewritten when the compound was - see that file. */
+    .sidebar[data-collapsed="true"]:not([data-hover-suppressed="true"]):hover .sidebar-menu-button::after,
+    .sidebar[data-collapsed="true"]:focus-within .sidebar-menu-button::after {
+      opacity: 0;
+    }
+
+    /* ---------- AND THE ONE DECLARATION THAT ACTUALLY TURNS IT OFF ----------
+
+       `content: none` on the same pseudo-element, at the same specificity as the
+       base recipe above, written after it - so it wins on source order and
+       deletes the generated box.
+
+       Why this and not `opacity: 0` on the arms, or `display: none` here:
+       `content: none` is the only one of the three that makes the four rules
+       above it irrelevant rather than merely out-ranked. An `opacity: 0` chip is
+       still in the box tree - still measured by getBoundingClientRect, still
+       hit-testable, and still something the next specificity bump in this file
+       could resurrect by accident. `display: none` would work too but says
+       something false about the mechanism: the content is not hidden, it is not
+       generated. And specificity is not load-bearing anywhere in this decision,
+       which is the point - the rule that matters is the last one written and it
+       wins by being last, which is the one ordering a reader can check by
+       looking.
+
+       TO BRING THE CHIP BACK, in full and with nothing else to change: delete
+       this rule. The recipe, both show arms, the suppression and the hoverless
+       arm are all still here, every data-tooltip attribute is still in the
+       markup, and the open-state compounds the suppression names are the live
+       ones. Do not "simplify" by deleting those instead - they are what makes
+       the restored chip behave. */
+    .sidebar[data-collapsed="true"] .sidebar-menu-button::after {
+      content: none;
+    }
+
+    /* A hoverless pointer cannot use `:hover`, and iOS cannot use
+       `:focus-visible` either, so without this arm the chip would be unreachable
+       on a touchscreen at 640px and up - and a `:hover` rule being the only way to
+       see something is exactly what the two existing `@media (hover: none)` blocks
+       in this file exist to prevent (.code-copy-btn and .drive-item-menu-btn both
+       get a permanent state there). `:active` rather than a permanent `opacity: 1`
+       because ten chips at once on a 56px column would overlap each other.
+
+       KEPT, INERT, and the decision recorded: this arm is part of the retained
+       chip family and was not deleted with the rest of it, because the user asked
+       for the chip's CODE to stay and this is its code. It is unreachable for the
+       same reason as every other arm - the `content: none` above deletes the box,
+       inside a media query or not, since media queries do not change what
+       `content: none` means.
+
+       It is worth being explicit that keeping it costs a touch user nothing,
+       because their route to a row's name is now BETTER and does not involve it:
+       at 640px and up a tap or a Tab lands focus on a row, `:focus-within` opens
+       the column with no row carve-out to divert it, and the label is in the row.
+       Below 640px there is no rail at all and the same rows are moved into
+       #sidebarSheet at 256px with their own <span>s showing. So the accessibility
+       argument this comment used to make for the chip is now made, better, by the
+       open column - which is why deleting the chip does not need a replacement
+       affordance invented for it. */
+    @media (hover: none) {
+      .sidebar[data-collapsed="true"] .sidebar-menu-button:active::after {
+        opacity: 1;
+      }
+    }
+
+    /* THREE selectors, and both of the two that left are gone for different
+       reasons. `.sidebar-group-label` was here because its long word does not fit
+       55px, and it is dealt with three rules further down by being SHORTENED
+       rather than removed - the user asked for the section headers to survive the
+       collapse, and hiding them is what read as "the separators were removed".
+
+       `.status-indicator` was here because the tier pill, the Full Mode countdown
+       and the status dot are sized for the 256px column and did not fit either -
+       and all three have been removed from the markup at the user's request, so
+       there is no longer an element for this rule to hide. Leaving the selector
+       would be a rule that styles nothing and reads as though it still did.
+
+       `.brand-mark` and `.brand-name` each set their own `display`, so this more
+       specific selector is what has to beat them - hence one rule holding both
+       rather than two rules. */
+    .sidebar[data-collapsed="true"] .sidebar-menu-button span,
+    .sidebar[data-collapsed="true"] .brand-mark,
+    .sidebar[data-collapsed="true"] .brand-name {
       display: none;
     }
 
-    /* The hairline down the sidebar's TRAILING edge. Deliberately not
-       .divider-vertical: that is a flex CHILD, living in the gap between two
-       things and taking its height from align-self, whereas this is the
-       sidebar's own boundary and has to sit on the sidebar itself, edge to
-       edge, whether or not anything is beside it.
+    /* ---------- The group labels, shortened rather than hidden ----------
 
-       The brief listed .sidebar-rail among the primitives this layer produces
-       and registered it in the existence check, but shipped no rule for it -
-       leaving it out would have made that assertion unsatisfiable from the
-       moment it was written.
+       The user reported the collapse as removing the section headers, and they
+       were right about the effect even though `display: none` was the mechanism:
+       "Navigate" and "Session" are the only thing separating the two groups.
 
-       WHAT IT IS FOR, HONESTLY: nothing yet. No markup in this redesign carries
-       the class (no consumer in the JS or the HTML), and .sidebar above already
-       draws the same hairline at the same edge with `border-right`. Applied to
-       both, these two draw one line twice - harmless, because it is the same
-       --border over the same --border, and invisible.
+       THE GEOMETRY, because "just unhide them" would have shipped a collision.
+       Measured in Firefox 156 at 1920x1080 with the transition disabled, on the
+       resting collapsed rail (padding-left 200px, translateX(-200px)):
 
-       There is exactly one technical difference between them, and it is why
-       this shape exists rather than being a copy: `*` is box-sizing: border-box,
-       so .sidebar's `border-right` is taken OUT of the declared
-       --sidebar-width and the sidebar lays out 1px narrower inside than it
-       measures. An absolutely-positioned overlay costs no layout width at all.
-       That is a real distinction, and it is not a need anyone has yet - a 1px
-       discrepancy in a 256px column is not a defect worth a rule on its own.
+         rail content box                 55px   (56 declared, less .sidebar's
+                                                 own 1px border-right)
+         less .sidebar-content's padding  8px   (var(--space-2) each side)
+         = what the label actually gets   47px
+         "NAVIGATE" at --text-2xs         59.3px (uppercase, letter-spacing
+                                                 0.06em = 0.66px/char)
+         "SESSION"                        52.1px
+         the label's own side padding     12px  (var(--space-3) each side, and
+                                                 zeroed by the rule below)
 
-       So this is registered-but-unreferenced, and it is kept rather than deleted
-       because the brief put it in the registry and unwiring a registered name
-       is a Task 6 decision, not a de-duplication call. It is also why .sidebar
-       carries `position: relative`, which is otherwise inert: the containing
-       block for this rule and nothing else. Whoever wires the sidebar up must
-       pick ONE of the two hairlines; shipping both is what the pair is being
-       held open for. */
-    .sidebar-rail {
-      position: absolute;
-      top: 0;
-      right: 0;
-      bottom: 0;
-      width: 1px;
-      background: var(--border);
-      /* The line is decoration sitting over the boundary; it must never be the
-         thing a click lands on. */
-      pointer-events: none;
+       So the long word does not fit, and not narrowly: "NAVIGATE" overruns even
+       the whole 55px rail by 4.3px, let alone the 47px the label actually gets,
+       and "SESSION" overruns that by 5.1px. The arithmetic was re-measured
+       against the element rather than a probe span, and the letter-spacing is
+       included - 0.66px per character, which is 5.3px of the 59.3px.
+
+       And an overrun would PAINT OVER THE CHAT rather than being clipped:
+       `.sidebar-content` is `overflow: visible` in the collapsed state (see its
+       rule below), so there is nothing to catch it. There is also no rung on the
+       type scale below --text-2xs to shrink into - test_scales.sh section 7
+       rejects every other font-size - so "make it smaller" is not available.
+
+       THE SHORT FORM, then. `font-size: 0` on the element takes the long word out
+       of the RENDERING while leaving it in the DOM and in the accessibility tree,
+       and a `::after` paints attr(data-short) in its place: "NAV" measures
+       24.7px and "SES" 22.7px against the 47px available, so the widest leaves
+       22px of slack. Zeroing the element's own 6px side padding is part of what
+       buys that 47px, which is why it is in this rule rather than left to the
+       base 12px.
+
+       `font-size: 0` rather than `display: none` is the load-bearing choice and
+       is deliberate on two counts. A display-none label would take the group name
+       out of the accessibility tree, so a screen-reader user would hear five
+       unlabelled destinations; and it is what the user objected to in the first
+       place, since the labels ARE the thing they said had gone missing.
+
+       The measured result, same build: both labels render 12px tall (one
+       line-height, var(--space-6)) and 47px wide, group 0's label ends 2px above
+       its first row and group 1's likewise, all ten rows still centre their icon
+       at 27.5px, the last nav row clears the footer by 661px, and the document's
+       scrollWidth is unchanged at 1920 - so nothing spilled sideways, which is
+       the failure the long word would have had. The rail grows about 26px, which
+       the nav absorbs: its content box measures 943px against ten rows totalling
+       roughly 450px.
+
+       `overflow: hidden` is belt-and-braces for a data-short long enough to
+       overrun, which nothing in the markup is today - and, unlike the rail's own
+       clip, it would cut the short form rather than let it bleed over the chat.
+    */
+    .sidebar[data-collapsed="true"] .sidebar-group-label {
+      font-size: 0;
+      padding: 0;
+      overflow: hidden;
+      text-align: center;
+    }
+
+    .sidebar[data-collapsed="true"] .sidebar-group-label::after {
+      content: attr(data-short);
+      display: block;
+      font-family: var(--font-sans);
+      font-size: var(--text-2xs);
+      line-height: var(--space-6);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    /* And the footer's 16px of side padding goes with them: two full-width rows
+       inside a 56px rail leave 24px of content box, which is narrower than the
+       19px icon plus its own 12px of padding. */
+    .sidebar[data-collapsed="true"] .sidebar-footer {
+      padding-left: 0;
+      padding-right: 0;
+      /* the rail's own width, and the reason is in the block below */
+      width: calc(var(--sidebar-rail-width) - 1px);
+    }
+
+    /* Centring, which the hiding above does not do on its own. A row whose only
+       child left is a 19px icon is still laid out at the INLINE START of its box
+       by default: .sidebar-menu-button sets padding 4px 6px and no justify-content,
+       so the icon sat 4px of container padding plus 6px of its own from the rail's
+       left edge - 19.5px in a 55px content box, 8px adrift of the midpoint. Zeroing
+       the inline padding and centring the content puts it on the midpoint exactly.
+
+       Zeroing the padding alone would NOT have been enough, and that is the whole
+       reason both declarations are here: the padding is symmetric, so it shifts
+       the content box without moving its centre, and a packed icon stays packed.
+       Nor is the zeroing pointless - it hands the icon the row's full clickable
+       width instead of 35px of it.
+
+       .btn-icon-24 is the width the collapse control resolves to, read by
+       nav_dom_test.js, which checks this against the same arithmetic. */
+    .sidebar[data-collapsed="true"] .sidebar-menu-button {
+      padding-left: 0;
+      padding-right: 0;
+      justify-content: center;
+    }
+
+    /* The header, one step further out, for the same two reasons. Its 8px of side
+       padding put a 24px control in a 39px content box. */
+    .sidebar[data-collapsed="true"] .sidebar-header {
+      padding-left: 0;
+      padding-right: 0;
+      justify-content: center;
+      /* the rail's own width, and the reason is in the block below */
+      width: calc(var(--sidebar-rail-width) - 1px);
+    }
+
+    /* ...and margin-left: auto is the subtle half of the header's centring: an
+       auto margin absorbs ALL the free space in a flex row, so justify-content is
+       never consulted and the control stays welded to the trailing edge at 35px
+       however the header above is centred. Neutralised here rather than by
+       dropping the rule, which is what puts the control opposite the brand in the
+       expanded rail and is asserted there. */
+    .sidebar[data-collapsed="true"] .sidebar-collapse {
+      margin-left: 0;
     }
 
     .sidebar-header {
@@ -376,6 +977,128 @@
       overflow-y: auto;
       padding: var(--space-2);
     }
+
+    /* THE SECOND CLIPPER, and it is the one that actually shipped broken.
+       `overflow-y: auto` on its own makes this a TWO-AXIS clipper: per CSS
+       Overflow, a `visible` on the other axis computes to `auto` whenever this
+       axis is not `visible`, so `overflow-x: visible` here would NOT be a way out
+       - it would compute back to `auto`.
+
+       Which matters because eight of the ten rail rows live inside this box (the
+       two tier rows are in .sidebar-footer, which is why they were the only two
+       chips that ever rendered). A chip is a pseudo-element of a row, and a
+       pseudo-element is a descendant for clipping purposes, so every one of those
+       eight laid out and was then cut off at this box's inner edge - measured at
+       53px in Firefox 156, with this element reporting scrollWidth 142 against
+       clientWidth 55. `.sidebar`'s own `overflow: visible` was necessary and was
+       not sufficient, which is exactly the shape of bug an assertion that checks
+       ONE clipper cannot see: it went green while 8 of 10 chips were invisible.
+
+       The knock-on is the reason this is not merely cosmetic: a box that scrolls
+       sideways because its content is wider than it lets you SCROLL the rail
+       sideways, and a rail scrolled sideways is a rail with no icons in it.
+       nav_dom_test.js now asks the general question instead - no ancestor between
+       a row and .sidebar may declare any `overflow` other than `visible` in the
+       collapsed state - so a third clipper added later cannot hide behind the two
+       that are already accounted for.
+
+       `overflow: visible` here also gives up vertical scrolling in the rail. That
+       is a real trade and it is bounded: the ten rows measure about 450px in total
+       against the collapsed panel's full viewport height, so it only matters on a
+       window shorter than the nav itself, where the alternative was an invisible
+       chip on eight of ten rows. The expanded column keeps `overflow-y: auto`,
+       where a 256px sidebar genuinely does overflow and genuinely does need to
+       scroll. */
+    .sidebar[data-collapsed="true"] .sidebar-content {
+      overflow: visible;
+      /* the rail's own width, and the reason is in the block below */
+      width: calc(var(--sidebar-rail-width) - 1px);
+    }
+
+    /* ---------- THE THREE REGIONS LAY OUT AT RAIL WIDTH, NOT PANEL WIDTH ----------
+
+       This is the fix for "the icons jump when the sidebar is hovered", and the
+       measurement that found it is the reason it is written this way rather than
+       the way it first looks.
+
+       WHAT MOVED, measured in Firefox 156 with real pointer input, one rAF sample
+       per frame, on the shipped file. Two facts, and they are not the same fact:
+
+         hover IN, panel padding-left 200 -> 0 over ~200ms
+           icon centre   27.5 -> 20.5 in the FIRST frame, then 20.5 for every
+                         one of the remaining frames
+           row left edge 4.0 throughout, row WIDTH 47 -> 247 throughout
+
+         hover OUT, panel padding-left 0 -> 200 over ~200ms
+           icon centre  127.5 -> 27.5, continuously, thirteen distinct samples
+           collapse control  235.0 -> 27.5
+
+       So the padding animation was never what carried the icons across the screen.
+       Its own left and right edges CANCEL - padding-left rises exactly as fast as
+       translateX falls, because the slide relation above pins the content box's
+       screen origin at 0 - so the content box's LEFT edge does not move at all and
+       neither does any row's. What moves is the box's WIDTH, 55 -> 255 and back,
+       and `justify-content: center` makes every centred item's position a FUNCTION
+       OF THAT WIDTH: padL + (available - item)/2 + item/2. On the way out the
+       collapsed rule's centring re-applies while the row is still 247px wide, so
+       each icon lands on the middle of a 247px row - 127.5px, which is 4.6 rail
+       widths from where it was - and then rides the shrinking box down to 27.5.
+       The collapse control does the same over 207px, which is why the report reads
+       as "the icons jump a lot": 107px and 207px are not slips, they are the
+       centring arithmetic running on a width that is halfway between the two.
+
+       The width has to keep animating, and that is not a choice. The panel's left
+       edge and its content box's width are the SAME number - the content box is
+       `width - border - padding-left`, so padding-left is simultaneously what puts
+       the rail's content at screen x 0 and what makes that content 55px wide
+       instead of 255. Any other arrangement that revealed the panel's own content
+       would have to animate the width too. So the animation stays, and what is
+       removed is the DEPENDENCY: the three regions are given the rail's own width
+       outright, which means they lay out in rail geometry for the whole slide and
+       in column geometry for the whole slide, and never in anything between.
+
+       The invariant this states, and it is the one worth keeping: WHILE COLLAPSED,
+       THE SIDEBAR'S CONTENT IS A RAIL OR A COLUMN, NEVER A HYBRID. The panel
+       slides as a rigid window over it; the content inside does not reflow once
+       per frame. That is what a slide is, and the padding/transform arrangement
+       was already half of it - this is the half that was missing.
+
+       WHY THE REGIONS AND NOT THE TEN ROWS. Pinning `.sidebar-menu-button` would
+       fix the icons and the two tier rows, and `.sidebar-header` separately would
+       fix the control, but the group labels are centred too (`text-align: center`)
+       and anything added to the column later would be centred by default. Pinning
+       the three regions fixes the whole interior at once, and leaves the row's own
+       recipe exactly as it was - the row is still `width: 100%`, still
+       justify-content: center, still zero inline padding, and still lays out in
+       the 55px box the earlier rounds measured. nav_dom_test.js's centring
+       arithmetic is untouched and still reads 27.5.
+
+       `calc(var(--sidebar-rail-width) - 1px)`, and the arithmetic is the identity
+       rather than a second copy of it: the collapsed panel's content box is
+       `--sidebar-width - 1px border - (--sidebar-width - --sidebar-rail-width)`,
+       which is `--sidebar-rail-width - 1px`. So the two expressions move together
+       when either token moves, and there is no fourth number in the file to keep in
+       step. The 1px is `.sidebar`'s own `border-right`, which is inside its
+       border-box width because `*` is box-sizing: border-box - which is also why
+       the rail's midpoint is 27.5 and not 28.
+
+       The restore is in the OPEN block above, and it has to exist: `data-collapsed`
+       STAYS set while the column is open (the flag is the preference, the open
+       state is transient), so without `width: auto` the regions would stay 55px
+       wide inside a 256px column and the labels would have nowhere to sit. It is
+       two rules rather than one because `.sidebar-header` and `.sidebar-footer`
+       already share an open rule and adding a second one naming either would make
+       them declared twice - which is exactly what nav_dom_test.js reads as a
+       contradiction, and correctly so.
+
+       ONE DECLARATION PER REGION, inside the rule that region already had, rather
+       than one shared rule at the end. A shared rule is the tidier shape and it is
+       wrong here: `.sidebar[data-collapsed="true"] .sidebar-header` would then be
+       declared TWICE, and `axisBodies` - the last-match-plus-count reader three
+       assertions in nav_dom_test.js are built on - would resolve the header's
+       padding and its justify-content to the width rule instead. That is the
+       duplicate-selector failure mode this file has been bitten by four times, and
+       it is not worth three lines of tidiness to walk back into it. */
 
     .sidebar-group {
       display: flex;
@@ -427,6 +1150,16 @@
       text-align: left;
       white-space: nowrap;
       cursor: pointer;
+      /* The containing block for the rail tooltip's ::after, whose `left: 100%` is
+         the ROW's right edge - a few px short of the column's in a rail, and out
+         over the chat once the sidebar is open. Declared on the base row rather
+         than inside the collapsed rule on purpose: it is the same box in both
+         states, and a second collapsed rule saying `position` would have made
+         `.sidebar[data-collapsed="true"] .sidebar-menu-button` declared twice,
+         which nav_dom_test.js reads as a contradiction. Inert otherwise - none of
+         a row's children are absolutely positioned, and `position: relative`
+         with the default z-index creates no stacking context. */
+      position: relative;
       transition: background var(--duration) var(--ease),
         color var(--duration) var(--ease);
     }
@@ -438,6 +1171,20 @@
     /* aria-current="page" is what actually conveys the active destination to a
        screen reader; the fill is the visual half of the same signal. */
     .sidebar-menu-button[aria-current="page"] {
+      background: var(--primary-subtle);
+      color: var(--ring);
+      font-weight: 600;
+    }
+
+    /* The same three declarations as the [aria-current="page"] rule above, for a
+       different question. aria-current means "you are HERE"; .active on the
+       T1/T2 rows means "this is the chat you have selected" while an overlay is
+       covering it, and the two can be true at once - History open, Tier 2 the
+       live conversation underneath. Deliberately a separate selector rather than
+       a second name on one rule: a selector LIST is keyed by its whole set in
+       test_primitives.sh section 19, so sharing one rule would have made both
+       pins unsatisfiable. */
+    .sidebar-menu-button.active {
       background: var(--primary-subtle);
       color: var(--ring);
       font-weight: 600;
@@ -459,12 +1206,27 @@
       color: var(--muted-foreground);
     }
 
-    /* Hidden because the desktop shell always has the sidebar; the media query
-       that reveals it belongs to the shell that lays the grid out, not to a
-       primitive. */
-    .sidebar-trigger {
-      display: none;
+    /* The T1/T2 rows live in the footer, not in .sidebar-menu, but they are the
+       same row primitive in the same column - one recipe, not two. A hook rather
+       than a new shape: only `display`/`gap` are restated, and the collapsed rail
+       hides the footer padding separately (see the rule above). */
+    .sidebar-tier {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1);
     }
+
+    /* Trailing edge of the sidebar header, so the collapse control sits opposite
+       the brand rather than against it. The one thing this element needs from
+       the shell it is not getting from .btn-icon. */
+    .sidebar-collapse {
+      margin-left: auto;
+    }
+
+    /* The collapse control lives in the sidebar header, above. The phone's way
+       in - #sidebarTrigger - is NOT declared here; see the note beside the rule
+       that carries it, which is in the primitives block for a reason that is
+       about the cascade and not about tidiness. */
 
     /* ---------- Sheet ----------
        The mobile presentation of the sidebar, and the overlay primitive any
@@ -498,6 +1260,35 @@
       box-shadow: var(--shadow-lg);
       width: var(--sidebar-width);
       max-width: 84vw;
+      /* The slide-in, on the drawer the phone gets. An animation rather than a
+         transition because the sheet starts `hidden`, and `display: none` has no
+         box for a transition to interpolate between - pushOverlay() un-hides it
+         and the keyframes run from the first rendered frame.
+
+         It is a transform, not a width change, so nothing reflows inside the
+         drawer on the way in, and `left: 0` above is what makes -100% mean
+         "entirely off the left edge of the screen".
+
+         THE DESKTOP RAIL DOES NOT USE THIS KEYFRAMES, and for a reason that is
+         arithmetic rather than taste: `-100%` here is -256px, which parks the panel
+         entirely off screen. The rail cannot be off screen - it is the only
+         navigation there is above 640px - so it slides by `-(width - rail)`
+         instead, and holds its content in the panel's right 56px with
+         `padding-left`. An earlier round of this file asserted the rail could not
+         borrow this one at all, which was right about `width` and wrong about the
+         idea: the rail DOES slide now, and its own why-comment says how, and why
+         the offset is not -100%. */
+      animation: sheet-slide-in var(--duration-slow) var(--ease);
+    }
+
+    @keyframes sheet-slide-in {
+      from {
+        transform: translateX(-100%);
+      }
+
+      to {
+        transform: translateX(0);
+      }
     }
 
     /* ---------- Content frame ----------
@@ -715,8 +1506,7 @@
       display: none;
     }
 
-
-.input {
+    .input {
       flex: 1;
       min-width: 0;
       background: var(--card);
@@ -764,6 +1554,22 @@
     }
 
 
+    /* `.badge` alone now. It was the base of THREE variants and is the base of
+       one: `.badge-outline` (the Full Mode countdown) and `.badge-solid` (the
+       tier pill) had exactly one element each - #tierTimer and #tierBadge - and
+       the user asked for both to be removed. Their rules went with them rather
+       than lingering as shapes nothing renders, which is what this file's own
+       design-token suite calls dead weight that reads as intent.
+
+       What survives is the geometry, and it is not vestigial: `.badge-label` is
+       still inline-flex on both live badges - #tier1Badge and #tier2Badge, the
+       lock icon and the unread count on the tier rows - and an inline-flex
+       `.badge` is what makes them sit on a row's baseline rather than floating.
+       So the rule below is load-bearing for two elements, not zero.
+
+       The two variants are named in the markup's own comment at the foot of
+       .sidebar-footer, along with what each one's removal cost, so the history is
+       where someone looking for them will find it. */
     .badge {
       /* inline / nested: a badge sits inside a row of other controls */
       display: inline-flex;
@@ -772,36 +1578,6 @@
       letter-spacing: 0.04em;
       border-radius: var(--radius-md);
       flex-shrink: 0;
-    }
-
-
-    .badge-outline {
-      padding: 2px 8px;
-      margin-right: var(--space-3);
-      border: 1px solid var(--primary-dim);
-      background: color-mix(in srgb, var(--primary) 8%, transparent);
-      color: var(--ring);
-
-      font-variant-numeric: tabular-nums;
-    }
-
-
-    .badge-solid {
-      padding: 2px 7px;
-      margin-right: var(--space-3);
-      background: var(--destructive);
-      color: var(--background);
-      /* Was 0.65rem (10.4px) against .badge's 11px. The sweep table sends
-         0.65rem to --text-xs (12px) and 11px to --text-2xs (11px), which would
-         make the solid variant one step LARGER than the base it overrides - and
-         the two render side by side in the header (#tierBadge solid,
-         #tierTimer outline), so the inversion is visible rather than
-         theoretical. Held at the base's own rung: the half-point size
-         difference was decorative, and weight 700 + the solid fill + the glow
-         are what actually mark this variant. */
-      font-size: var(--text-2xs);
-      font-weight: 700;
-      box-shadow: var(--glow-destructive);
     }
 
     .badge-label {
@@ -975,6 +1751,37 @@
     .btn-icon:hover {
       color: var(--ring);
       background: color-mix(in srgb, var(--primary) 10%, transparent);
+    }
+
+    /* #sidebarTrigger IS A .btn-icon, and this rule is HERE rather than in the
+       shell block for that reason.
+
+       THE CASCADE LESSON, because it is the one this stylesheet learned the
+       expensive way. The desktop hide used to be declared in the shell block,
+       about 520 lines ABOVE `.btn-icon` here. Both selectors are (0,1,0), so
+       source order decided, `.btn-icon`'s `display: inline-flex` was later and
+       won, and `display: none` was dead code: the hamburger rendered on every
+       desktop beside a sidebar that already navigates, which is the exact thing
+       it exists to avoid. The declaration was real, correct, in the right place,
+       and outranked - and every assertion about it was green, because they all
+       asked whether the declaration EXISTED. That is the same class as the
+       first-match-wins bugs this file has been bitten by four times, one level
+       up: a rule that is present and loses.
+
+       So the fix is position, not a comment: this is the last (0,1,0) rule that
+       sets `display` for the element's own class list, which is what makes it
+       the winner on a desktop. The `@media (max-width: 640px)` reveal is later
+       still - media queries add no specificity - so a phone still gets
+       `inline-flex`.
+
+       The dependency is asserted rather than trusted: nav_dom_test.js resolves
+       `display` for #sidebarTrigger against the whole sheet and against the
+       640px block and requires `none` and then not-`none`. Moving this rule
+       back above `.btn-icon`, or adding a later `.btn-icon { display: … }`,
+       turns that assertion red while every other suite stays green - which is
+       the point of resolving instead of reading. */
+    .sidebar-trigger {
+      display: none;
     }
 
 
@@ -1251,26 +2058,203 @@
     }
 
 
+    /* Full-bleed grid: a real desktop app shell, not a centred card in a letterbox.
+       The card that used to be wanted is .app-card, INSIDE the second column,
+       where it can be as wide as it likes without also narrowing the nav.
+
+       AND THE GRID IS ALSO WHERE THE COLUMN'S LEFT EDGE GETS PUBLISHED, which is
+       the one thing this rule declares that is not about the grid's own box.
+
+       WHY IT EXISTS. .app-card centres in the CONTENT COLUMN, not in the window:
+       `width: 100%` capped by `max-width`, with `margin-inline: auto` centring
+       the remainder, so its centre is `--sidebar-width` + half of what is left.
+       #qaDrawer and .toast-stack are `position: fixed`, so their `left`/`right`
+       are measured from the viewport, and both of them rendered 128px - half a
+       sidebar - to the LEFT of the card on any expanded desktop. One number, read
+       by both, is the fix. The alternative was each surface working it out for
+       itself, which is how they came to disagree with each other and with the
+       card in the first place.
+
+       It has to be 0 wherever the grid is one `1fr` column, because then the
+       column IS the window and the two centres already coincide - collapsed, and
+       below 640px. Both rules that zero it are next door, and nav_dom_test.js
+       checks each of them by ARITHMETIC rather than by reading the `0`, so a
+       deleted or wrong override is red and a correct-looking `0px` is not enough.
+
+       NO POSITIONED ANCESTOR CAN FIX THIS, and that is the trap worth writing
+       down because a stale comment in nav_dom_test.js claimed the opposite.
+       `position: fixed` resolves against the VIEWPORT; it is not re-anchored by
+       an ancestor's `position`, only by `transform`, `perspective`, `filter`,
+       `backdrop-filter`, `will-change` of those, or `contain: paint`. So pinning
+       .app would not have brought the toast stack with it, and if it had, both
+       surfaces would be centred on the wrong axis anyway. A custom property
+       inherits regardless of `position`, which is why this is the mechanism.
+
+       THAT LIST IS ALSO WHY ONE OF THE TWO SURFACES IS STILL HALF-FIXED, and the
+       connection is worth one sentence here rather than only at the rule:
+       #qaDrawer sits INSIDE #quickActionsPanel, whose `panel-drop` animation
+       carries a `transform`, so for the length of that animation the panel - and
+       not the viewport - is the sheet's containing block. The trap above is real
+       and it is also the mechanism that moves. The rule's own comment carries
+       the measurements and the one-word follow-up; this one says only that the
+       property is the right mechanism for a surface whose containing block is
+       the viewport, which is the toast stack and nothing else today. */
     .app {
+      display: grid;
+      grid-template-columns: var(--sidebar-width) 1fr;
+      --content-column-inset: var(--sidebar-width);
       height: 100dvh;
-
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-      max-width: 820px;
-      margin: 0 auto;
-
+      overflow: hidden;
     }
 
+    /* Collapsed: one column. The rail leaves the grid entirely when collapsed (see
+       .sidebar[data-collapsed="true"]), so without this the content column would
+       auto-place into the now-empty FIRST track and sit 256px in from the left -
+       trading a 200px shift right for the 200px shift left this fixes. One
+       track, and .app-content fills the viewport in both states.
 
+       The attribute is on #app as well as on #sidebar, written by the same single
+       function (applySidebarCollapsed) that writes the sidebar's, because
+       `grid-template-columns` has to be re-declared for the grid to react and
+       there is no other selector that could carry it. `grid-template-columns:
+       auto 1fr` would have read the track off the sidebar's own box instead, and
+       then :has() would not be needed - rejected, because an auto track is sized
+       by max-content, so one overlong nowrap row in the nav would silently widen
+       the column. A literal 1fr cannot do that. test_scales.sh section 4 asserts
+       that .app itself is still declared exactly twice and is still the rule
+       keyboardResize's inline height overrides. */
+    .app[data-collapsed="true"] {
+      grid-template-columns: 1fr;
+      /* One track, so the content column IS the window and the card's centre and
+         the viewport's already agree. Zeroing the published inset is what stops
+         the two fixed surfaces from staying half a sidebar out of place in a
+         layout that has no sidebar any more - without it the correction this
+         file makes would be a 128px shift, and it is a shift in exactly the
+         states where the bug is invisible. */
+      --content-column-inset: 0px;
+    }
+
+    .app-content {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      /* The containing block for the absolutely-positioned .app-header and the
+         Drive panel below it. Without it `fixed` was the only option, and
+         `fixed` anchors to the viewport - which is how a header ended up
+         painted straight across the nav column. */
+      position: relative;
+    }
+
+    /* The card. .app stays a full-bleed two-column grid - that is the app shell,
+       and it is what the sidebar needs - but the CHAT is a card centred in the
+       remaining space rather than a column running edge to edge.
+
+       A new element rather than .content-wrap reused, and that is the decision
+       worth stating: .content-wrap holds the transcript and the composer only,
+       while #historyPanel, #remindersBar, #drivePanel, #fileViewerModal and
+       #quickActionsPanel are its SIBLINGS. Reusing it would have left every
+       overlay running the full width of the content column beside an 820px chat,
+       so opening History would visibly change the shape of the page.
+
+       It does NOT make the shell's measure the same whatever is on screen, and
+       the thing that stops it is named here rather than left for the next reader
+       to discover. #drivePanel is `position: absolute; left: 0; right: 0` against
+       .app-content, so it fills the COLUMN - measured 1344px beside an 820px
+       card at a 1600px window - and that one is still a decision about overlays
+       rather than about the card. The other two, #qaDrawer and .toast-stack, are
+       `position: fixed` and WERE centred on the VIEWPORT, 128px to this card's
+       left once the sidebar was showing; they now follow it by reading
+       --content-column-inset, which .app publishes from the grid that makes the
+       column. Both were fixed rather than recorded because centring a surface on
+       the window while the page is centred on the column is the same bug twice,
+       and because it cost two properties rather than moving anything.
+
+       `.app-card` is STATIC for one of those reasons: give the card a position
+       and #drivePanel's `position: absolute` re-anchors to the card, which is a
+       different design decision and not one to make inside a layout fix.
+       nav_dom_test.js asserts the card's staticness so the re-anchoring cannot
+       happen by accident.
+
+       NO background and NO border-radius here, which is a deliberate non-choice
+       rather than an omission. Two colours in this file already mean "a surface
+       that sits on this background": `.entry-perla .entry-bubble` is
+       var(--card), and `.entry-question/.entry-permission .entry-bubble` is
+       var(--background). Painting the card var(--card) would erase Perla's own
+       replies into the page; painting it var(--background) would erase the
+       question cards. So the card is a measure and nothing else, and every
+       rounded corner and background in it is one a rule already owns -
+       .composer, .entry-bubble, .dropdown-panel - and keeps rendering exactly
+       as it does now. Giving it a radius with nothing behind it would be a
+       declaration that draws nothing.
+
+       `margin-inline: auto` rather than `justify-content: center` on the parent:
+       auto margins absorb the free space in a flex row's cross axis, and a
+       `justify-content` would need the parent to change. But auto margins in the
+       cross axis also SUPPRESS `align-self: stretch`, so the box stops filling
+       the column and becomes fit-content - which is the whole reason `width`
+       below is load-bearing rather than redundant.
+
+       The header band is reserved HERE, not on .app-content. Reserving it on the
+       grid container pushed the whole sidebar down by --header-height and left
+       an empty strip above the nav column; reserving it on .app-content would
+       work identically today but splits one invariant across two selectors - the
+       header's height and the space kept clear for it have to be the same number
+       - and the card is the element that has to clear the header. See
+       test_scales.sh section 4, which pairs .app-header { height } with this
+       rule's margin-top. */
+    .app-card {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      margin-inline: auto;
+      margin-top: var(--header-height);
+      /* 820px, not the ~900px an earlier draft of this rule used. 820px is what
+         this column was BEFORE the redesign - the floating card's `max-width:
+         820px` - and the brief asked for the same size as before. A re-measure
+         would be a decision worth making deliberately; this one is not made, so
+         nothing has to justify the number. */
+      max-width: 820px;
+      /* THE MEASURE, and it is one declaration long. `max-width` is a CEILING,
+         and a ceiling nothing reaches is not a measure: because `margin-inline:
+         auto` suppresses stretch, this box was fit-content, so its width was
+         whatever its contents happened to be. Measured in Firefox at 1600x1000
+         against the shipped stylesheet: 264px with an empty transcript, 790px
+         after one ordinary reply, never 820 in either state - which is exactly
+         the report that the width "only changes once I send a message".
+         `width: 100%` resolves against .app-content's content box, `max-width`
+         caps it, and the auto margins centre the remainder: on a wide column
+         820px, on a phone the full width. */
+      width: 100%;
+    }
+
+    /* Below 640px the sidebar becomes a Sheet - the SAME rows, which is why this
+       is one implementation and not a second one. The persistent column is
+       vacated from the grid (rather than merely hidden) so the content column
+       takes the full width, and `position: fixed` gives the shell a box for
+       keyboardResize() to move when the on-screen keyboard opens.
+
+       And the published inset is zeroed for the same reason the collapsed rule
+       zeroes it: with one column the column is the window, so on a phone the
+       correction has to be a NO-OP. A phone is where the two centres cannot
+       disagree, and a correction that shifted there would be a new bug wearing
+       the fix as a disguise. */
     @media (max-width: 640px) {
       .app {
+        grid-template-columns: 1fr;
         position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        width: 100%;
-        max-width: none;
+        inset: 0;
+        --content-column-inset: 0px;
+      }
+
+      .app > .sidebar {
+        display: none;
+      }
+
+      .sidebar-trigger {
+        display: inline-flex;
       }
     }
 
@@ -1291,18 +2275,33 @@
 
       background: transparent;
 
-      position: fixed;
+      /* Absolute inside .app-content, not fixed against the viewport. Fixed was
+         correct when the app was a centred 820px column, where spanning the
+         whole window happened to look deliberate; with a sidebar column it
+         paints over the nav. Absolute also keeps the header inside the box
+         keyboardResize() shrinks, so it tracks the keyboard with everything else. */
+      position: absolute;
       top: 0;
       left: 0;
       right: 0;
-      width: 100%;
       box-sizing: border-box;
+
+      /* Transparent AND click-through. The header is a full-width band at
+         --z-header (20), which is ABOVE the collapsed rail's --z-raised (15) -
+         deliberately, so toasts and the header both stay on top of the slide-out.
+         The cost is that this band covers the rail's own header row, so hovering
+         the top 56px of the rail and clicking the control that opens it would
+         both land here instead. A transparent element still takes pointer events,
+         which is the part that is not obvious from the paint.
+
+         Nothing in the desktop header is interactive: the brand moved into the
+         sidebar and the hamburger is display: none above 640px. On a phone the
+         one thing in here is #sidebarTrigger, and .header-left below puts the
+         pointer events back for it - that is the whole of the cost, one
+         declaration, rather than re-deriving z-indexes or moving the rail. */
+      pointer-events: none;
     }
 
-
-    .app {
-      padding-top: var(--header-height);
-    }
 
     .app-header-inner {
       display: flex;
@@ -1315,6 +2314,13 @@
       display: flex;
       align-items: center;
       gap: var(--space-6);
+      /* The pointer-events .app-header gives up, handed back to the one element
+         in the header that needs them - which is #sidebarTrigger, the only child
+         .header-left has, and it is display: none on a desktop. Keyed on the
+         wrapper rather than on .sidebar-trigger because that rule is pinned to
+         two declarations in test_primitives.sh section 19, and because an empty
+         flex row is zero-width and so cannot swallow a pointer event on its own. */
+      pointer-events: auto;
     }
 
     .brand {
@@ -1342,31 +2348,24 @@
     }
 
 
-    .status-indicator {
-      display: flex;
-      align-items: center;
-      gap: var(--space-2);
-    }
+    /* `.status-indicator` and `.status-dot` (with its .ok and .err) were here and
+       are not any more. All four rules styled ONE element - #statusIndicator
+       wrapping #tierBadge, #tierTimer and #statusDot - and the user asked for that
+       element to be removed, so the rules went with it. Left behind they would be
+       the dead weight test_design_tokens.sh section 16 exists to catch: a rule
+       that reads as a decision and renders nothing.
 
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--accent-foreground);
-      margin-left: var(--space-3);
-      flex-shrink: 0;
-      transition: background var(--duration-slower) var(--ease), box-shadow var(--duration-slower) var(--ease);
-    }
+       Nothing else in this file used them. `--glow-success` and
+       `--glow-destructive` each keep a live consumer in
+       `.qa-drawer-entry-status.ok` / `.fail`, which is why neither token became
+       unused and why section 16 is green without them.
 
-    .status-dot.ok {
-      background: var(--success);
-      box-shadow: var(--glow-success);
-    }
+       `.status` - no suffix - is a DIFFERENT class and is untouched: it is the
+       inline status line the overlay panels use (#historyStatus,
+       #quickActionsStatus, #remindersStatus). Do not sweep it up with these.
 
-    .status-dot.err {
-      background: var(--destructive-bright);
-      box-shadow: var(--glow-destructive);
-    }
+       The markup's comment at the foot of .sidebar-footer records what each
+       removed element was, and the JS records what each one's removal cost. */
 
     .page {
       flex: 1;
@@ -3027,21 +4026,32 @@
       .shake {
         animation: none;
       }
-    }
 
-    @media (min-width: 641px) {
-      body {
-        padding: 28px 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+      /* The three pieces of chrome that MOVE. The drawer is an animation
+         (sheet-slide-in, above), the collapsed rail's slide-out is a width
+         transition on .sidebar, and the rail tooltip fades in on focus. Same
+         treatment as the mic pulses, the think-dot and the lightbox fade above:
+         motion the user did not ask for goes away, the state change does not -
+         .sheet still appears, the rail still opens on hover. */
+      .sheet {
+        animation: none;
       }
 
-      .app {
-        height: calc(100dvh - 56px);
-
+      .sidebar,
+      .sidebar-menu-button::after {
+        transition: none;
       }
     }
+
+    /* The letterbox is gone. Above 640px this used to give body 28px of padding
+       and centre the 820px column with `height: calc(100dvh - 56px)` on .app -
+       which is the floating card this redesign replaces, and the 56px there was
+       the header height restated as a literal. A persistent sidebar has to be
+       full-bleed, so there is nothing left for this query to do; .app's own
+       `height: 100dvh` is the whole of it. There was deliberately no sixth
+       token to replace that literal: the token it would have been is still
+       --header-height, and the declaration that used it lives on .app-content
+       now (see test_scales.sh section 4). */
 
 
 
@@ -3070,42 +4080,17 @@
     }
 
 
-    .menu-btn {
-      position: relative;
-    }
+    /* Eight rules went here with #menuBtn and #appMenu: .menu-btn,
+       .hamburger-lines, .hamburger-lines span, the three
+       .menu-btn.active .hamburger-lines span:nth-child(n) transforms, .app-menu
+       and .app-menu.open. The hamburger drew its three bars as 1.5px spans
+       rather than an SVG, so its micro-element radius exemption goes with it -
+       .voice-wave i and .mic-stop-square are what still justify
+       `border-radius: var(--space-1)` as a micro-element rather than a radius
+       step (see test_design_tokens.sh section 7). .menu-item.active went with
+       the two tier rows, which are .sidebar-menu-button now. .floating-menu and
+       .menu-item both survive: #attachMenu and #historyDayMenu still use them. */
 
-    .hamburger-lines {
-      width: 15px;
-      height: 11px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-
-    .hamburger-lines span {
-      /* micro-element, and a ZERO-change substitution. The bar is 1.5px tall, so
-         CSS scales the corner radii down to fit the side: 1px and 2px both render
-         as fully-rounded ends. The token is chosen for legibility of intent, not
-         because it changes a pixel. */
-      display: block;
-      width: 100%;
-      height: 1.5px;
-      background: currentColor;
-      border-radius: var(--space-1);
-      transition: transform var(--duration-slow) var(--ease), opacity var(--duration-slow) var(--ease);
-    }
-
-    .menu-btn.active .hamburger-lines span:nth-child(1) {
-      transform: translateY(4.5px) rotate(45deg);
-    }
-
-    .menu-btn.active .hamburger-lines span:nth-child(2) {
-      opacity: 0;
-    }
-
-    .menu-btn.active .hamburger-lines span:nth-child(3) {
-      transform: translateY(-4.5px) rotate(-45deg);
-    }
 
 
     .floating-menu {
@@ -3131,18 +4116,6 @@
       pointer-events: auto;
     }
 
-    .app-menu {
-
-      top: var(--header-height);
-      left: 20px;
-      width: 240px;
-      transform-origin: top left;
-      transform: scale(0.94) translateY(-6px);
-    }
-
-    .app-menu.open {
-      transform: scale(1) translateY(0);
-    }
 
     .attach-menu {
 
@@ -3175,10 +4148,6 @@
       background: color-mix(in srgb, var(--primary) 8%, transparent);
     }
 
-    .menu-item.active {
-      background: color-mix(in srgb, var(--primary) 14%, transparent);
-      color: var(--ring);
-    }
 
     .menu-item-icon {
       width: 22px;
@@ -3511,21 +4480,25 @@
       display: flex;
       flex-direction: column;
       min-height: 0;
-      flex: 1;
-      height: 100%;
       padding: 12px 24px calc(24px + var(--safe-bottom));
       overflow-y: auto;
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
 
-      position: fixed;
+      /* Absolute inside .app-content, not fixed over the viewport. As a fixed
+         child of #app it covered the nav column, so opening Drive on a desktop
+         made the sidebar disappear - the one thing a persistent sidebar must
+         never do. `flex: 1`, `height: 100%` and `width: 100%` went with it:
+         none of them applied to a `fixed` box, and `height` in particular would
+         beat `bottom: 0` and hang the panel --header-height below the fold.
+         Layer 3 replaces this overlay strategy outright; until then this is the
+         smallest change that keeps it inside the frame. */
+      position: absolute;
 
       top: var(--header-height);
       left: 0;
       right: 0;
       bottom: 0;
-      width: 100%;
-      box-sizing: border-box;
       z-index: var(--z-sticky);
       background: var(--background);
     }
@@ -4058,10 +5031,23 @@
 
 
 
+    /* The CENTRE OF THE CONTENT COLUMN, not of the window. This stack is `fixed`,
+       so `left: 50%` was the viewport's midpoint and every toast sat 128px to the
+       left of the card the rest of the page is built around; `(100% + inset) / 2`
+       is the midpoint of the column, with `100%` the width a `fixed` box's left
+       is measured from. The inset is published by .app, so this rule never has to
+       know that a sidebar exists - which is what keeps it right in the collapsed
+       and below-640px states without a word here about either.
+
+       UNTOUCHED, and both load-bearing: `top` still clears the fixed header, and
+       `z-index: var(--z-toast)` (19) is deliberately BELOW `--z-header` (20) so
+       a toast passes under the header rather than over it. Centring on the right
+       axis has nothing to do with either, and moving this box horizontally does
+       not change what it covers at the top. */
     .toast-stack {
       position: fixed;
       top: calc(var(--header-height) + 10px + var(--safe-top));
-      left: 50%;
+      left: calc((100% + var(--content-column-inset)) / 2);
       transform: translateX(-50%);
       z-index: var(--z-toast);
       display: flex;
@@ -4099,9 +5085,55 @@
       /* Bottom sheet, so the free edges are the TOP ones and the bottom is flush
          against the viewport (no border-bottom). Keeping the 0 0 tail is the
          whole point - rounding the two corners that sit on the screen edge would
-         show --background through them. */
+         show --background through them.
+
+         `left`/`right` bound the sheet to the CONTENT COLUMN rather than to the
+         window, which is all the centring correction needs: the `margin: 0 auto`
+         and `max-width` below were already the right mechanism and were already
+         centring the sheet in the wrong box. At 1600px with the sidebar showing
+         that put the sheet 128px left of the card, which is the reported bug and
+         is reproduced by measurement rather than argued.
+
+         MEASURED IN FIREFOX at 1920x1080, because this surface is not as simple
+         as the toast stack and the difference is worth writing down. The sheet's
+         containing block FLIPS:
+           - while .dropdown-panel's `panel-drop` animation runs, the panel's
+             `transform` makes IT the containing block, so the sheet is measured
+             from the card's column and lands at centre 1088;
+           - once the animation is over (200ms, --duration-slow) the transform
+             reverts to none, the containing block is the viewport again, and the
+             measured value with `left: 0` was 960 - 128px left of the card.
+         So the bug is real, it is persistent, and `left: 0` only ever hid it for
+         the length of one animation. The published inset is what fixes the
+         persistent half.
+
+         WHAT IS STILL WRONG, and is NOT fixed here, is the 200ms: with the inset
+         applied, `left: 256px` is also applied inside the panel while the panel
+         is the containing block, and the sheet measures 1216 for the length of
+         the drop animation before snapping to 1088. The brief's mechanism cannot
+         be right in both states - the two candidate containing blocks are offset
+         by exactly the inset - so this trades a PERMANENT 128px error for a
+         TRANSIENT one, which is the better trade and is not the end of it.
+
+         THE FIX FOR THE TRANSIENT, recorded rather than applied because it is a
+         design change to a rule this bug is not about: `position: absolute`.
+         #quickActionsPanel is `position: relative` and is this sheet's nearest
+         positioned ancestor, so `absolute` would resolve there PERMANENTLY -
+         and `position: absolute` is not re-anchored by an ancestor's `transform`,
+         which is the entire instability. With `left: 0; right: 0` unchanged, the
+         sheet's band is then the panel's padding box, which is the card's column:
+         measured centre 1088 and bottom 1080 in BOTH states. It costs one word,
+         and it was declined in ux-fix-2 for a reason that no longer holds (that
+         round assumed the nearest positioned ancestor was .app-content; it is
+         #quickActionsPanel, which is why the same one-word change would have been
+         WRONG then and is right now).
+
+         `bottom: 0` is NOT the card's bottom and must not become it. The sheet
+         hangs off the containing block's bottom edge, which for a `fixed` sheet is
+         the viewport's; lifting it to meet the card would open a strip of
+         --background under a sheet that is meant to reach the screen edge. */
       position: fixed;
-      left: 0;
+      left: var(--content-column-inset);
       right: 0;
       bottom: 0;
       z-index: var(--z-drawer);
