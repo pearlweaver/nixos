@@ -615,6 +615,28 @@ TURN_TIMEOUT_SECONDS = int(os.environ.get("PERLA_TURN_TIMEOUT", "900"))
 # an unanswered question should end its turn via the graceful auto-dismiss,
 # not by tripping the turn timeout into a "request timed out" error.
 AUTO_DISMISS_SECONDS = min(600, max(60, TURN_TIMEOUT_SECONDS - 120))
+# An unanswered PERMISSION is auto-rejected on a much shorter clock than an
+# unanswered question, and deliberately so.
+#
+# Questions are meant to be answered, so AUTO_DISMISS_SECONDS can be generous.
+# A permission is a tool call that is blocked mid-turn: until it is resolved
+# the model is parked, and in headless serve mode there may be no UI to prompt
+# in at all. Left alone, the turn then sits until TURN_TIMEOUT_SECONDS and the
+# user gets a timeout instead of an answer. That is exactly the failure the
+# old top-level `bash = "deny"` was introduced to avoid (see perla.nix).
+#
+# `ask` cannot simply replace `deny`, because the Zen free tier rejects any
+# request whose tool list omits `bash` or `read` -- denying a tool removes it
+# from the list, so a denied `bash` makes every Tier 1 turn a candidate for a
+# 403 FreeTierError ("OpenCode's free tier can only be used from within
+# OpenCode", a message that says nothing about permissions). Keeping the tool
+# present with `ask` satisfies the gate while still requiring approval, and
+# this timer is what keeps `ask` from becoming a hang.
+#
+# Short enough that a refused tool call surfaces to the model in seconds,
+# the same "report the boundary fast" property `deny` gave us; long enough
+# that someone watching the web companion can still click Approve.
+PERMISSION_TIMEOUT_SECONDS = int(os.environ.get("PERLA_PERMISSION_TIMEOUT", "90"))
 
 _turns = {}
 _turns_lock = threading.Lock()
@@ -636,6 +658,10 @@ class _Turn:
         self.answered_request_ids = set()
         self.permission_directory = None  # workspace dir, needed to answer a permission
         self.dismiss_timer = None
+        # Separate slot from dismiss_timer on purpose: a turn can be parked on
+        # a question and later on a permission, and reusing one slot would let
+        # the question's still-pending timer suppress the permission's.
+        self.permission_timer = None
         self.cleanup_paths = None   # deferred temp uploads (stale-question case)
         # Message-turn metadata needed to finalize logging on the /api/question
         # path, where the final reply arrives on a later HTTP request than the
@@ -878,6 +904,49 @@ def _autodismiss(turn):
         _clear_turn(turn.tier, turn)
 
 
+def _schedule_permission_autodismiss(turn):
+    """Arms the auto-reject for a permission nobody has answered yet.
+
+    The mirror of _schedule_autodismiss, and deliberately on a separate timer
+    and a much shorter clock -- see PERMISSION_TIMEOUT_SECONDS for why a
+    permission cannot be allowed to wait out the turn.
+    """
+    with turn.cond:
+        if turn.permission_timer is not None:
+            return
+        turn.permission_timer = threading.Timer(
+            PERMISSION_TIMEOUT_SECONDS, _autodismiss_permission, args=(turn,))
+        turn.permission_timer.daemon = True
+        turn.permission_timer.start()
+
+
+def _autodismiss_permission(turn):
+    """Rejects a permission that nobody answered in time.
+
+    This is what makes `bash: "ask"` safe in a headless tier: rejecting
+    unblocks the tool, so the model gets an immediate error and reports the
+    boundary in its next message -- the same fast failure the old top-level
+    `deny` produced, without removing `bash` from the request's tool list
+    (which the Zen free tier answers with a 403).
+    """
+    with turn.cond:
+        if turn.permission is None or turn.permission["id"] in turn.answered_request_ids:
+            return
+        request_id = turn.permission["id"]
+    # Mark it answered FIRST, exactly as _autodismiss does for questions, so a
+    # client answering at the same moment cannot double-reply or re-surface it.
+    with turn.cond:
+        turn.permission = None
+        turn.answered_request_ids.add(request_id)
+        turn.cond.notify_all()
+    _resolve_permission(turn, request_id, "reject",
+                        "Nobody approved this in time — Full Mode runs commands.")
+    print(f"INFO: auto-rejected unanswered permission {request_id}", flush=True)
+    if not turn.began:
+        # A never-started (stale) turn evaporates once its permission is gone.
+        _clear_turn(turn.tier, turn)
+
+
 def _begin_turn(turn):
     with turn.cond:
         if turn.began:
@@ -930,6 +999,11 @@ def _wait_for_turn_outcome(turn):
                     if turn.permission is None:
                         turn.permission = p
                         turn.cond.notify_all()
+                # Arm the auto-reject the moment it is surfaced. A permission
+                # is a tool call blocked mid-turn, so an unanswered one holds
+                # the whole tier -- voice and wake-word turns have no client to
+                # answer it, and used to hang until the turn timeout.
+                _schedule_permission_autodismiss(turn)
         if turn.question is None:
             q = _poll_pending_question(turn)
             if q is not None:
@@ -4543,10 +4617,15 @@ class CompanionHandler(BaseHTTPRequestHandler):
             return
 
         # Mark it answered BEFORE forwarding, so nothing re-surfaces it while
-        # the reply is in flight.
+        # the reply is in flight. The auto-reject timer is cancelled here for
+        # the same reason: it would otherwise fire against a request that is
+        # already being answered.
         with turn.cond:
             turn.answered_request_ids.add(request_id)
             turn.permission = None
+            if turn.permission_timer is not None:
+                turn.permission_timer.cancel()
+                turn.permission_timer = None
             turn.cond.notify_all()
 
         if not _resolve_permission(turn, request_id, reply, body.get("message")):

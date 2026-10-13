@@ -1,4 +1,4 @@
-{ ... }: {
+{ lib, pkgs, ... }: {
 
   # Passwordless sudo, scoped to EXACTLY the one command the Perla quick-actions
   # daemon runs ("sudo nixos-rebuild switch --flake ." from ~/nixos-config, see
@@ -72,6 +72,20 @@
 
       nginx-botsearch.settings = {
         enabled = true;
+      };
+    };
+  };
+
+  programs.firejail = {
+    enable = true;
+    wrappedBinaries = {
+      packettracer9 = {
+        executable = lib.getExe pkgs.ciscoPacketTracer9;
+        desktop = "${pkgs.ciscoPacketTracer9}/share/applications/cisco-packet-tracer-9.desktop";
+        extraArgs = [
+          "--noprofile"
+          "--net=none"
+        ];
       };
     };
   };

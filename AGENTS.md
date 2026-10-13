@@ -182,10 +182,30 @@ Two details that are easy to break:
      waited out the full 900s turn timeout with no reply and no error.
 
   An explicit top-level `deny` makes the tool error immediately, so the model
-  reports the boundary in ~3s instead of hanging. A comment in `perla.nix` also
-  records that a top-level *permission map* (rather than a flat deny) was tried
-  and rejected — though that 403 warning was later re-tested against the
-  currently deployed model and no longer applies.
+  reports the boundary in ~3s instead of hanging. **But `bash` is now `"ask"`,
+  not `"deny"`, and that is not a regression — read this before "fixing" it.**
+
+  The Zen free tier rejects any request whose tool list omits `bash` or
+  `read`: HTTP 403 `FreeTierError: "OpenCode's free tier can only be used from
+  within OpenCode"`. Denying a tool removes it from that list, so pairing
+  `opencode_model` (a `*-free` model) with `bash: "deny"` made **every Tier 1
+  turn** a candidate for rejection. Verified against the live gateway with
+  this config's exact permission set: `bash: "deny"` → 403, `bash: "ask"` →
+  200. `ask` is the only value that keeps the tool in the list without
+  granting execution.
+
+  The hang that made `ask` unusable is handled daemon-side instead: an
+  unanswered permission is auto-rejected after
+  `permission_timeout_seconds` (default 90), so a refused tool still surfaces
+  in seconds. **The earlier claim in `perla.nix` that this 403 "no longer
+  applies" was a false negative** — it was re-tested while the gateway
+  happened not to be enforcing. The gate is applied *intermittently and
+  per-request*, so it presents as a flaky 403, not a clean failure: the same
+  Tier 1 session ran ~200 turns cleanly and then began failing. Don't trust a
+  single clean turn as proof that a permission change is safe.
+
+  Other top-level denies are unaffected — `edit`/`glob`/`grep`/`webfetch`/
+  `task` may be denied freely; only `bash` and `read` are gate-relevant.
 - **Tier 2 is served through an isolated config dir** (`perla-t2-server` copies
   the t2 config into a scratch `XDG_CONFIG_HOME`). This is deliberate: your
   interactive `~/.config/opencode/opencode.json` must never be touched. Note the
@@ -360,7 +380,7 @@ Consequences an agent will trip over:
 `bash home/modules/perla/tests/run.sh` runs every `tests/test_*.sh` and prints a
 summary. It is the only test infrastructure in the repo and it is Perla-only.
 
-Current: 8 suites, 302 assertions. The runner deliberately reports `0 passed`
+Current: 13 suites, 1084 assertions. The runner deliberately reports `0 passed`
 loudly rather than looking like a pass, so a green exit code is never mistaken
 for coverage.
 

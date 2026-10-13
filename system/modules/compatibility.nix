@@ -36,6 +36,7 @@
       libva-vdpau-driver
       libvdpau-va-gl
       mesa
+      libglvnd
       vulkan-loader
       vulkan-tools
       intel-compute-runtime

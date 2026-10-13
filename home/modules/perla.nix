@@ -96,42 +96,64 @@ in {
     source = ./perla/perla-agent.md;
   };
 
-  # === OpenCode Tier 1 config (no superpowers — Obsidian MCP only) ===
-  xdg.configFile."opencode/opencode-t1.json" = {
-    force = true;
-    text = builtins.toJSON {
-      "$schema" = "https://opencode.ai/config.json";
-      model = cfg.opencode_model;
-      # Tier 1 must deny these AT THE TOP LEVEL, not just on agent.perla.
-      #
-      # Tier-1 `opencode serve` sessions actually run as agent=build, so the
-      # denies scoped to agent.perla never applied to a single real turn —
-      # Tier 1 was restricted by instruction alone. Two consequences, both
-      # observed live:
-      #   1. It would happily write files inside the workspace, straight
-      #      through the boundary AGENTS.md draws.
-      #   2. Asked to write OUTSIDE the workspace (/tmp, /var/tmp), the tool
-      #      never returned at all — it sat at status=running forever,
-      #      because the un-answered permission request has no UI to prompt
-      #      in headless serve mode. The user waited out the full 900s turn
-      #      timeout with no reply and no error.
-      # An explicit top-level deny makes the tool error immediately, so the
-      # model reports the boundary in ~3s instead of hanging.
-      #
-      # The old comment here claimed a top-level permission map trips a
-      # free-tier 403 ("can only be used from within OpenCode"). Re-tested
-      # against the currently deployed model: chat, refusal, and turn
-      # completion are all unaffected, so that warning no longer applies.
-      permission = {
-        edit = "deny";
-        bash = "deny";
-        webfetch = "deny";
-        websearch = "deny";
-        task = "deny";
-        todowrite = "deny";
-        lsp = "deny";
-        skill = "deny";
-      };
+# === OpenCode Tier 1 config (no superpowers — Obsidian MCP only) ===
+      xdg.configFile."opencode/opencode-t1.json" = {
+        force = true;
+        text = builtins.toJSON {
+          "$schema" = "https://opencode.ai/config.json";
+          model = cfg.opencode_model;
+          # Tier 1 must restrict these AT THE TOP LEVEL, not just on
+          # agent.perla.
+          #
+          # Tier-1 `opencode serve` sessions actually run as agent=build, so
+          # restricts scoped to agent.perla never applied to a single real turn
+          # — Tier 1 was unrestricted by instruction alone. Two consequences,
+          # both observed live:
+          #   1. It would happily write files inside the workspace, straight
+          #      through the boundary AGENTS.md draws.
+          #   2. Asked to write OUTSIDE the workspace (/tmp, /var/tmp), the
+          #      tool sat at status=running forever, because an unanswered
+          #      permission request has no UI to prompt in headless serve mode.
+          #
+          # WHY `bash` IS "ask" AND NOT "deny" — read before changing it.
+          #
+          # `deny` looks like the obvious safe answer, and it was: it makes
+          # the tool error immediately, so the model reports the boundary in
+          # ~3s instead of hanging. But it also REMOVES `bash` from the tool
+          # list OpenCode sends, and the Zen free tier (every `opencode/*-free`
+          # model, which is what `opencode_model` is) rejects any request whose
+          # tool list omits `bash` or `read`:
+          #
+          #     403 FreeTierError: "OpenCode's free tier can only be used
+          #     from within OpenCode"
+          #
+          # That message is a decoy — it names neither the account nor the
+          # client nor the permissions, and it is why this file used to carry
+          # a comment claiming the 403 "no longer applies". That re-test was a
+          # FALSE NEGATIVE, taken while the gateway happened not to be
+          # enforcing. The gate is applied intermittently and per-request, so
+          # it presents as a flaky 403 rather than a clean failure: this exact
+          # session ran ~200 turns cleanly and then started failing. Verified
+          # against the live gateway with this config's exact permission set:
+          # `bash: "deny"` → 403, `bash: "ask"` → 200.
+          #
+          # `ask` is the only value that keeps the tool in the list without
+          # granting execution. The hang that used to make `ask` unusable is
+          # handled on the daemon side instead: an unanswered permission is
+          # auto-rejected after `permission_timeout_seconds`, so a refused
+          # tool still surfaces in seconds and Tier 1 still never runs shell
+          # unattended. The web companion already renders a permission card,
+          # so an interactive user can approve within that window.
+          permission = {
+            edit = "deny";
+            bash = "ask";
+            webfetch = "deny";
+            websearch = "deny";
+            task = "deny";
+            todowrite = "deny";
+            lsp = "deny";
+            skill = "deny";
+          };
       # Identity and personality are a SYSTEM prompt, not a message. They used
       # to be pasted into the first user turn, which put them at position #1
       # of a conversation that can run to hundreds of messages — models weight
@@ -312,6 +334,7 @@ in {
       # hit the SHORTER client cap, curl bailed, and Perla wrongly reported
       # "offline" while the daemon finished the turn into the void.
       PERLA_TURN_TIMEOUT=${toString cfg.turn_timeout_seconds}
+      PERLA_PERMISSION_TIMEOUT=${toString cfg.permission_timeout_seconds}
     '';
   };
 
@@ -736,6 +759,7 @@ in {
         "PERLA_VOICE_DIR=%h/.local/share/perla-voice"
         "PERLA_COMPANION_PORT=8443"
         "PERLA_TURN_TIMEOUT=${toString cfg.turn_timeout_seconds}"
+        "PERLA_PERMISSION_TIMEOUT=${toString cfg.permission_timeout_seconds}"
         "PERLA_GATE_PASSWORD=${cfg.gate_password}"
         "PERLA_FILES_DIR=${cfg.files_dir}"
         "PERLA_EXTRA_SEARCH_DIRS=${lib.concatStringsSep ":" cfg.extra_search_dirs}"

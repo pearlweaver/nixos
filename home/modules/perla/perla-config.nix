@@ -33,6 +33,15 @@
     # tasks legitimately need more than the old flat 5 minutes.
     turn_timeout_seconds = 900;
 
+    # How long the daemon waits for someone to answer a Tier 1 permission
+    # prompt before rejecting it on the user's behalf. Short on purpose: a
+    # permission is a tool call blocking mid-turn, and Tier 1 runs headless on
+    # voice hotkey and the wake word, where nobody may be watching to click
+    # Approve. Too long and the turn just hangs; this is the knob that stops
+    # `bash: "ask"` (which the Zen free tier requires — see perla.nix) from
+    # turning into the 900s stall that `deny` existed to avoid.
+    permission_timeout_seconds = 90;
+
     session_idle_timeout_minutes = 10;
     memory_prune_days = 14;
 
