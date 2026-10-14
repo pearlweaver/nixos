@@ -42,12 +42,15 @@ let
   # python3Packages, so python3.withPackages cannot be used and its own
   # .piper-wrapped script hardcodes an 88-entry addsitedir list that
   # propagatedBuildInputs alone does not reproduce (16 direct entries, 89
-  # effective — the wrapper's list is NOT a subset of this closure: it swaps
-  # torch-2.13.0 and grpcio-1.83.1 for their -dev variants and adds
-  # python3-3.14.7, a 2-for-2 substitution plus one, hence 89). Merging the
-  # RECURSIVE closure with buildEnv yields a single site-packages containing
-  # piper, onnxruntime, flask and numpy — verified by running
-  # piper.http_server against it. See spec section 5.2.
+  # effective). The two lists are NOT nested — diffed against the real store
+  # paths, the CLOSURE is the side that carries the -dev variants: this
+  # recursion yields torch-2.13.0-dev, grpcio-1.83.1-dev and python3-3.14.7,
+  # while the wrapper carries the PLAIN torch-2.13.0 and grpcio-1.83.1 and has
+  # no -dev entry at all (python3-3.14.7 appears there only on the shebang
+  # line). So 89 = 88 - 2 plain + 3 closure-only: a 2-for-2 substitution plus
+  # one. Merging the RECURSIVE closure with buildEnv yields a single
+  # site-packages containing piper, onnxruntime, flask and numpy — verified by
+  # running piper.http_server against it. See spec section 5.2.
   #
   # The recursion is deliberate rather than `lib.flatten (map ...)` at depth 1:
   # piper's direct inputs include onnxruntime and flask, but those in turn pull

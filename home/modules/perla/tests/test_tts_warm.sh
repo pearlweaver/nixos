@@ -44,10 +44,10 @@ src = open(sys.argv[1]).read()
 # --- comment stripping -----------------------------------------------------
 #
 # A `#` starts a comment that runs to end of line — but only in CODE. Inside
-# "..." , ''...'' and 'c' it is an ordinary character. Cutting at every '#'
-# would eat string contents, and this suite asserts ON string contents (the
-# bind host, the port, the description), so that would corrupt the text being
-# matched rather than merely lose coverage.
+# "..." and ''...'' it is an ordinary character. Cutting at every '#' would eat
+# string contents, and this suite asserts ON string contents (the bind host,
+# the port, the description), so that would corrupt the text being matched
+# rather than merely lose coverage. Those two forms are all Nix has.
 #
 # `${...}` inside any string is real code again, comments included, so the
 # scanner keeps a stack and pushes an "antiquote" frame with a brace counter.
@@ -58,7 +58,7 @@ def strip_comments(text):
     # as the bare string "ind" reads as "i", is never recognised as a string,
     # and the scanner leaks state for the rest of the file — which silently
     # stops stripping every comment after the first string literal.
-    frames = []   # ('dq',) | ('ind',) | ('char',) | ('anti', brace_depth)
+    frames = []   # ('dq',) | ('ind',) | ('anti', brace_depth)
     i, n = 0, len(text)
     while i < n:
         top = frames[-1] if frames else None
@@ -89,8 +89,6 @@ def strip_comments(text):
                 continue
             if kind == "dq" and c == '"':
                 frames.pop(); i += 1; continue
-            if kind == "char" and c == "'":
-                frames.pop(); i += 1; continue
             if kind == "ind":
                 if text.startswith("'''", i):      # '' escape
                     i += 3; continue
@@ -119,8 +117,14 @@ def strip_comments(text):
             frames.append(("ind",)); i += 2; continue
         if text[i] == '"':
             frames.append(("dq",)); i += 1; continue
-        if text[i] == "'":
-            frames.append(("char",)); i += 1; continue
+        # No branch for a bare "'" in code, and that is deliberate. Nix has no
+        # character literals — `nix-instantiate --eval -E "'a'"` is a syntax
+        # error, as is "'#'" — so a lone apostrophe cannot appear in code in any
+        # file that parses, which is every file this lexer ever sees. An earlier
+        # version modelled a char frame and "covered" it with a `'#'` fixture;
+        # that fixture was a syntax error being asserted on as if it were Nix,
+        # which made the coverage claim false. Removing the construct removed
+        # the only thing that could have justified the branch.
         i += 1
     return "".join(out), in_string
 
@@ -156,18 +160,14 @@ LEXER_CASES = [
     # only fixture shape found that discriminates the branch; shorter runs
     # (''', '''a''') parse identically either way.
     ("ind_escape", "s = '''''''#kept'';\n", "s = '''''''        \n"),
-    # `#` inside a 'c' char literal is an ordinary character. Without the
-    # char-literal frame the '#' is read as a comment and eats the rest of the
-    # line. The plain "char" fixture below does NOT catch this — 'x' has no '#'
-    # in it, so the frame's absence changes nothing.
-    ("char", "v = '#'; #gone\n", "v = '#';      \n"),
     ("escape", 'u = "a\\" # b"; #gone\n', 'u = "a\\" # b";      \n'),
-    # A '#' reached as the second half of a backslash pair. `\#` is not a valid
-    # Nix escape — this fixture is not about Nix, it is about the scanner: the
-    # MASK invariant below requires every surviving '#' to be flagged as string
-    # content, and the pair is consumed with i += 2, so nothing else can flag
-    # it. Without the marking in the escape branch this goes red while the
-    # LEXER check alone still passes.
+    # A '#' reached as the second half of a backslash pair. This IS valid Nix —
+    # `nix-instantiate --eval -E '"a\#b"'` evaluates to "a#b", the backslash
+    # simply dropped — so the escape branch is real coverage, not a synthetic
+    # edge. What makes it worth its own fixture is the MASK invariant below: the
+    # pair is consumed with i += 2, so nothing else in the scanner can flag the
+    # '#' as string content. Without the marking in the escape branch this goes
+    # red while the LEXER check alone still passes.
     ("escape_hash", 'u = "a\\#b"; #gone\n', 'u = "a\\#b";      \n'),
 ]
 for name, case_in, case_out in LEXER_CASES:
@@ -281,7 +281,7 @@ assert_not_fact() {
 }
 
 assert_fact UNIT_FOUND              "perla.nix defines systemd.user.services.perla-tts" "unit block not found"
-for name in line dq ind anti_dq anti_ind ind_escape_anti char escape escape_hash ind_escape; do
+for name in line dq ind anti_dq anti_ind ind_escape_anti escape escape_hash ind_escape; do
   assert_fact "LEXER[$name]" "comment stripper handles the '$name' Nix string form" "see LEXER_DETAIL on stderr"
   assert_fact "MASK[$name]" "in-string mask stays aligned through '$name'" "a surviving # was not flagged as string content"
 done
