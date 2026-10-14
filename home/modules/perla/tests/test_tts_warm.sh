@@ -148,15 +148,39 @@ LEXER_CASES = [
     # comment as if it were code. Without it the bug is only caught indirectly,
     # by every other assertion going red at once.
     ("ind_escape_anti", "p = ''lit''${x}# kept'';\n", "p = ''lit''${x}# kept'';\n"),
-    ("char", "v = 'x'; #gone\n", "v = 'x';      \n"),
+    # An apostrophe run long enough that the '''-escape and a plain ''-close
+    # disagree about where the string ends. Per Nix, '' opens, then ''' is the
+    # escape for a literal '', leaving '' to CLOSE — so `#kept` is code and must
+    # be stripped. Drop the ''' branch and the run re-parses as close-then-
+    # reopen, which swallows `#kept` as string content and keeps it. This is the
+    # only fixture shape found that discriminates the branch; shorter runs
+    # (''', '''a''') parse identically either way.
+    ("ind_escape", "s = '''''''#kept'';\n", "s = '''''''        \n"),
+    # `#` inside a 'c' char literal is an ordinary character. Without the
+    # char-literal frame the '#' is read as a comment and eats the rest of the
+    # line. The plain "char" fixture below does NOT catch this — 'x' has no '#'
+    # in it, so the frame's absence changes nothing.
+    ("char", "v = '#'; #gone\n", "v = '#';      \n"),
     ("escape", 'u = "a\\" # b"; #gone\n', 'u = "a\\" # b";      \n'),
-    ("ind_escape", "t = ''a''''#kept''; #gone\n", "t = ''a''''#kept'';      \n"),
+    # A '#' reached as the second half of a backslash pair. `\#` is not a valid
+    # Nix escape — this fixture is not about Nix, it is about the scanner: the
+    # MASK invariant below requires every surviving '#' to be flagged as string
+    # content, and the pair is consumed with i += 2, so nothing else can flag
+    # it. Without the marking in the escape branch this goes red while the
+    # LEXER check alone still passes.
+    ("escape_hash", 'u = "a\\#b"; #gone\n', 'u = "a\\#b";      \n'),
 ]
 for name, case_in, case_out in LEXER_CASES:
-    got, _ = strip_comments(case_in)
+    got, got_mask = strip_comments(case_in)
     fact(f"LEXER[{name}]", got == case_out)
     if got != case_out:
         print(f"LEXER_DETAIL[{name}]={got!r}", file=sys.stderr)
+    # The two halves of the return value must stay aligned. A '#' that SURVIVED
+    # stripping was inside a string literal, so the mask must say so at exactly
+    # that offset. If the mask drifts — extra marks, missing marks, off-by-one
+    # after a multi-char construct — this goes red instead of silently making
+    # block_after skip or count the wrong braces.
+    fact(f"MASK[{name}]", all(got_mask[i] for i, ch in enumerate(got) if ch == "#"))
 
 def block_after(text, mask, marker):
     i = text.find(marker)
@@ -176,6 +200,17 @@ def block_after(text, mask, marker):
             if depth == 0:
                 return text[j:k + 1]
     return None
+
+# The mask is not a second opinion about comments — it is what keeps a brace
+# inside a string literal from ending an attribute block. block_after is its
+# only consumer, so assert on that directly: this snippet's string holds a '}'
+# that must NOT close the block. With the mask skipped, block_after returns at
+# that '}' and both facts below go red.
+MASK_SNIPPET = 'u = {\n  s = "}"; #gone\n  t = 2;\n};\n'
+_mask_clean, _mask_bits = strip_comments(MASK_SNIPPET)
+fact("MASK[string_brace_flagged]", _mask_bits[_mask_clean.index('"}"') + 1] is True)
+fact("MASK[block_ignores_string_brace]",
+     block_after(_mask_clean, _mask_bits, "u =") == '{\n  s = "}";      \n  t = 2;\n}')
 
 unit = block_after(clean, in_string, "systemd.user.services.perla-tts")
 fact("UNIT_FOUND", unit is not None)
@@ -246,9 +281,12 @@ assert_not_fact() {
 }
 
 assert_fact UNIT_FOUND              "perla.nix defines systemd.user.services.perla-tts" "unit block not found"
-for name in line dq ind anti_dq anti_ind ind_escape_anti char escape ind_escape; do
+for name in line dq ind anti_dq anti_ind ind_escape_anti char escape escape_hash ind_escape; do
   assert_fact "LEXER[$name]" "comment stripper handles the '$name' Nix string form" "see LEXER_DETAIL on stderr"
+  assert_fact "MASK[$name]" "in-string mask stays aligned through '$name'" "a surviving # was not flagged as string content"
 done
+assert_fact MASK[string_brace_flagged]     "a brace inside a string is flagged" "mask did not mark the string's '}'"
+assert_fact MASK[block_ignores_string_brace] "block matching ignores a brace inside a string" "block_after closed on the string's '}'"
 for key in 'Restart = "on-failure"' 'RestartSec = 5' 'Install.WantedBy' 'default.target' 'piper.http_server'; do
   assert_fact "UNIT_HAS[$key]" "perla-tts has $key" "not present in the unit block"
 done

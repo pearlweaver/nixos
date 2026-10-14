@@ -42,17 +42,19 @@ let
   # python3Packages, so python3.withPackages cannot be used and its own
   # .piper-wrapped script hardcodes an 88-entry addsitedir list that
   # propagatedBuildInputs alone does not reproduce (16 direct entries, 89
-  # effective — the 89th is a path the wrapper's own addsitedir computation
-  # folds in differently). Merging the RECURSIVE closure with buildEnv yields a
-  # single site-packages containing piper, onnxruntime, flask and numpy —
-  # verified by running piper.http_server against it. See spec section 5.2.
+  # effective — the wrapper's list is NOT a subset of this closure: it swaps
+  # torch-2.13.0 and grpcio-1.83.1 for their -dev variants and adds
+  # python3-3.14.7, a 2-for-2 substitution plus one, hence 89). Merging the
+  # RECURSIVE closure with buildEnv yields a single site-packages containing
+  # piper, onnxruntime, flask and numpy — verified by running
+  # piper.http_server against it. See spec section 5.2.
   #
   # The recursion is deliberate rather than `lib.flatten (map ...)` at depth 1:
   # piper's direct inputs include onnxruntime and flask, but those in turn pull
   # numpy, werkzeug, protobuf and so on, and piper.http_server imports them at
   # module scope. Depth 1 builds an env that ImportErrors on the first missing
   # transitive, which is a runtime failure, not a build one — the exact failure
-  # mode perlaTtsEnvCheck below exists to prevent.
+  # mode the import check further down exists to prevent.
   piperClosure = p: [ p ] ++ lib.concatMap piperClosure (p.propagatedBuildInputs or [ ]);
 
   # The site-packages directory is named after the interpreter, so the unit's
@@ -89,8 +91,25 @@ let
   # this list is filtered (275 paths / ~50 GiB before and after). The value
   # here is a correct PYTHONPATH, not a smaller closure.
   #
-  # If nixpkgs renames or drops one of these, perlaTtsEnvCheck fails the build
-  # rather than leaving a stale exclusion quietly doing nothing.
+  # THIS LIST IS VOICE-SPECIFIC. It is sized for cfg.voice_model =
+  # en_US-libritts_r-medium, whose phonemizer path is espeak and whose
+  # phonemize_japanese.py / phonemize_chinese.py are never reached. Switching
+  # cfg.voice_model to a Japanese or Chinese voice needs these back:
+  #   * phonemize_japanese.py imports pyopenjtalk (function-local) and
+  #     g2pw_onnx.py imports transformers — and transformers is NOT in this
+  #     closure at all, so such a voice fails at synthesis time.
+  #   * phonemize_chinese.py has its own dependency set.
+  # Those imports are function-local, so the build-time import check further
+  # down does NOT catch them — `import piper.http_server` succeeds with the
+  # list exactly as it is today, and only a real /synthesize with the new
+  # voice would fail. Re-widen the list and re-run the live check before
+  # changing cfg.voice_model. Verified working for the configured voice.
+  #
+  # What the import check DOES guarantee, precisely: this is a name-membership
+  # filter, so a name here that matches nothing in the closure excludes nothing
+  # and the build still passes. A stale entry is therefore silent. The check
+  # catches the opposite failure — over-narrowing (piper needs something we
+  # removed) and a python-version split — and nothing else.
   perlaTtsExcluded = [
     "torch"
     "lightning"
