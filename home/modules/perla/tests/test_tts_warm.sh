@@ -117,14 +117,30 @@ def strip_comments(text):
             frames.append(("ind",)); i += 2; continue
         if text[i] == '"':
             frames.append(("dq",)); i += 1; continue
-        # No branch for a bare "'" in code, and that is deliberate. Nix has no
-        # character literals — `nix-instantiate --eval -E "'a'"` is a syntax
-        # error, as is "'#'" — so a lone apostrophe cannot appear in code in any
-        # file that parses, which is every file this lexer ever sees. An earlier
-        # version modelled a char frame and "covered" it with a `'#'` fixture;
-        # that fixture was a syntax error being asserted on as if it were Nix,
-        # which made the coverage claim false. Removing the construct removed
-        # the only thing that could have justified the branch.
+        # No branch for a bare "'" in code, and that is deliberate — but NOT for
+        # the reason the obvious one suggests. Nix has no character literals
+        # (`nix-instantiate --eval -E "'a'"` is a syntax error), which is true
+        # and is not the reason. A lone apostrophe can still appear in code,
+        # because identifiers may contain one: the manual's grammar is
+        # `identifier ~ [A-Za-z_][A-Za-z0-9_'-]*`, and both of these parse and
+        # evaluate —
+        #   $ nix-instantiate --eval -E "let foo'bar = 1; in foo'bar"
+        #   1
+        #   $ nix-instantiate --eval -E 'let x = { a'"'"'b = 1; }; in x.a'"'"'b'
+        #   1
+        #
+        # So the char frame this branch used to push was not unreachable
+        # machinery — it was corrupting valid Nix. On `let foo'bar = 1; # c`
+        # the `'` in the identifier opened a "string", the `#` was masked as
+        # that string's content instead of being stripped, and the comment
+        # survived into the very text these assertions match against. Deleting
+        # the frame fixed that; it did not remove dead code.
+        #
+        # What the branch WAS justified by was its fixture: `v = '#'; #gone`,
+        # where `'#'` is a syntax error. Asserting on it made a non-Nix input
+        # look covered, so the frame read as necessary long after it had gone
+        # actively wrong. Neither the fixture nor the rationale it stood on
+        # was valid; see LEXER_CASES for the fixtures that replaced them.
         i += 1
     return "".join(out), in_string
 
