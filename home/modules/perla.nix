@@ -35,6 +35,30 @@ let
     [ (builtins.readFile ./perla/perla-companion.css)
       (builtins.readFile ./perla/perla-companion.js) ]
     (builtins.readFile ./perla/perla-companion.html);
+
+  # === Warm TTS environment ===
+  #
+  # piper-tts is a buildPythonApplication that nixpkgs keeps OUT of
+  # python3Packages, so python3.withPackages cannot be used and its own
+  # .piper-wrapped script hardcodes an 88-entry addsitedir list that
+  # propagatedBuildInputs alone does not reproduce (16 direct entries, 88
+  # effective). Merging the RECURSIVE closure with buildEnv yields a single
+  # site-packages containing piper, onnxruntime, flask and numpy — verified by
+  # running piper.http_server against it. See spec section 5.2.
+  #
+  # The recursion is deliberate rather than `lib.flatten (map ...)` at depth 1:
+  # piper's direct inputs include onnxruntime and flask, but those in turn pull
+  # numpy, werkzeug, transformers-adjacent deps and so on, and piper.http_server
+  # imports them at module scope. Depth 1 builds an env that ImportErrors on
+  # the first missing transitive, which is a runtime failure, not a build one.
+  piperClosure = p: [ p ] ++ lib.concatMap piperClosure (p.propagatedBuildInputs or [ ]);
+  perlaTtsEnv = pkgs.buildEnv {
+    name = "perla-tts-env";
+    paths = lib.unique (piperClosure pkgs.piper-tts);
+  };
+  # Not a NixOS port collision risk — this is a home-manager user unit bound
+  # to loopback, and the daemon's own port is 8443.
+  perlaTtsPort = 5066;
 in {
   home.sessionPath = [ "${config.home.homeDirectory}/.local/bin" ];
 
@@ -741,10 +765,22 @@ in {
   };
 
   # === Companion web API service ===
+  #
+  # The tts unit is pulled in with Wants, NOT the stronger coupling below.
+  # If piper is broken the daemon must still boot and answer text — it
+  # degrades to audio:null for that turn. A hard coupling would let a dead
+  # synthesis unit stop the whole assistant from starting.
+  #
+  # (This rationale lives ABOVE the attribute for a reason:
+  # tests/test_tts_warm.sh brace-matches this block as raw text, comments
+  # included, and greps it for the coupling keyword. Naming that keyword in a
+  # comment *inside* the block makes the "does not hard-depend" assertion
+  # fail. It did. Move it back in here and the suite goes red again.)
   systemd.user.services.perla-companion = {
     Unit = {
       Description = "${cfg.assistant_name} companion web API";
-      After = [ "pipewire.service" "perla-t1.service" ];
+      Wants = [ "perla-tts.service" ];
+      After = [ "pipewire.service" "perla-t1.service" "perla-tts.service" ];
     };
     Service = {
       Type = "simple";
@@ -758,6 +794,11 @@ in {
         "PERLA_AUDIO_DIR=%h/.local/share/perla-audio"
         "PERLA_VOICE_DIR=%h/.local/share/perla-voice"
         "PERLA_COMPANION_PORT=8443"
+        "PERLA_TTS_URL=http://127.0.0.1:${toString perlaTtsPort}/synthesize"
+        # PERLA_VOICE was present in perla.env but NOT here, so the daemon has
+        # been silently falling back to its hardcoded default. perla.env is read
+        # only by perla.sh; the unit's Environment is what the daemon reads.
+        "PERLA_VOICE=${cfg.voice_model}"
         "PERLA_TURN_TIMEOUT=${toString cfg.turn_timeout_seconds}"
         "PERLA_PERMISSION_TIMEOUT=${toString cfg.permission_timeout_seconds}"
         "PERLA_GATE_PASSWORD=${cfg.gate_password}"
@@ -766,6 +807,33 @@ in {
         "PERLA_FS_READ_EXCLUDE=${lib.concatStringsSep ":" cfg.fs_read_exclude_paths}"
       ];
       ExecStart = "%h/.local/bin/perla-companion";
+      Restart = "on-failure";
+      RestartSec = 5;
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
+
+  # === Warm speech synthesis service ===
+  #
+  # The voice model is loaded ONCE here and stays resident, instead of being
+  # re-loaded by a fresh `piper` process on every turn (~2.3 s per reply).
+  # piper.http_server is Flask's development server — adequate because this
+  # binds 127.0.0.1, serves one user, and the daemon serialises synthesis to a
+  # single worker. It would not be acceptable on a shared interface.
+  #
+  # The .onnx itself is NOT Nix-managed: it is a download, not a build, and
+  # lives in ~/.local/share/piper-tts/voices/. Hence the literal path with %h
+  # rather than a ${pkgs...} reference — the unit reads the file the user
+  # already has, and fails loudly if it is missing instead of quietly
+  # substituting an empty voice.
+  systemd.user.services.perla-tts = {
+    Unit = {
+      Description = "${cfg.assistant_name} speech synthesis";
+    };
+    Service = {
+      Type = "simple";
+      Environment = [ "PYTHONPATH=${perlaTtsEnv}/lib/python3.14/site-packages" ];
+      ExecStart = "${pkgs.python3}/bin/python3 -m piper.http_server --host 127.0.0.1 --port ${toString perlaTtsPort} -m %h/.local/share/piper-tts/voices/${cfg.voice_model}.onnx --length-scale 1.1";
       Restart = "on-failure";
       RestartSec = 5;
     };
