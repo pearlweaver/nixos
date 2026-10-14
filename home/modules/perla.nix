@@ -41,21 +41,98 @@ let
   # piper-tts is a buildPythonApplication that nixpkgs keeps OUT of
   # python3Packages, so python3.withPackages cannot be used and its own
   # .piper-wrapped script hardcodes an 88-entry addsitedir list that
-  # propagatedBuildInputs alone does not reproduce (16 direct entries, 88
-  # effective). Merging the RECURSIVE closure with buildEnv yields a single
-  # site-packages containing piper, onnxruntime, flask and numpy — verified by
-  # running piper.http_server against it. See spec section 5.2.
+  # propagatedBuildInputs alone does not reproduce (16 direct entries, 89
+  # effective — the 89th is a path the wrapper's own addsitedir computation
+  # folds in differently). Merging the RECURSIVE closure with buildEnv yields a
+  # single site-packages containing piper, onnxruntime, flask and numpy —
+  # verified by running piper.http_server against it. See spec section 5.2.
   #
   # The recursion is deliberate rather than `lib.flatten (map ...)` at depth 1:
   # piper's direct inputs include onnxruntime and flask, but those in turn pull
-  # numpy, werkzeug, transformers-adjacent deps and so on, and piper.http_server
-  # imports them at module scope. Depth 1 builds an env that ImportErrors on
-  # the first missing transitive, which is a runtime failure, not a build one.
+  # numpy, werkzeug, protobuf and so on, and piper.http_server imports them at
+  # module scope. Depth 1 builds an env that ImportErrors on the first missing
+  # transitive, which is a runtime failure, not a build one — the exact failure
+  # mode perlaTtsEnvCheck below exists to prevent.
   piperClosure = p: [ p ] ++ lib.concatMap piperClosure (p.propagatedBuildInputs or [ ]);
-  perlaTtsEnv = pkgs.buildEnv {
+
+  # The site-packages directory is named after the interpreter, so the unit's
+  # PYTHONPATH must be named the same way. Deriving it here — rather than
+  # writing "python3.14" into the ExecStart string — is what makes a future
+  # nixpkgs bump to python 3.15 a no-op instead of a ModuleNotFoundError
+  # crash-loop behind a green test suite.
+  #
+  # Is pkgs.python3 the RIGHT python to derive from, or must it come from
+  # piper-tts itself? Answer: pkgs.python3 is correct today, and this is not
+  # luck — piper-tts is built by the same pkgs set's buildPythonApplication, so
+  # the interpreter we exec and the interpreter its packages were built against
+  # are the same one. piper-tts exposes no `python`/`pythonPath` attribute in
+  # this nixpkgs (checked: only pythonImportsCheck / overridePythonAttrs /
+  # dontWrapPythonPrograms), so there is no attr to read it from anyway.
+  # If someone ever overrides piper-tts to a pinned older python, this
+  # derivation starts lying — which is precisely what the import check below
+  # turns from a silent restart loop into a build failure.
+  perlaTtsSite = "python${lib.versions.majorMinor pkgs.python3.version}";
+
+  # Dropped from the closure because piper.http_server never imports them.
+  # Traced from the actual source, not guessed: `python -m piper.http_server`
+  # pulls flask (http_server) + numpy and onnxruntime (voice) + piper's own
+  # modules. Everything below is either the training stack (piper ships a
+  # `train` subpackage), a language-specific phonemizer for a voice we do not
+  # use, or a CLI-argument library used only by the training entrypoints.
+  #
+  # This narrows the MERGED site-packages — the thing PYTHONPATH actually points
+  # at — from 190 entries to 166, and removes the shadowing risk of torch and
+  # librosa sitting on the same sys.path as onnxruntime.
+  #
+  # It does NOT shrink the store closure. Traced: piper-tts's own runtime
+  # references already reach torch-2.13.0, so torch stays a download however
+  # this list is filtered (275 paths / ~50 GiB before and after). The value
+  # here is a correct PYTHONPATH, not a smaller closure.
+  #
+  # If nixpkgs renames or drops one of these, perlaTtsEnvCheck fails the build
+  # rather than leaving a stale exclusion quietly doing nothing.
+  perlaTtsExcluded = [
+    "torch"
+    "lightning"
+    "pytorch-lightning"
+    "torchmetrics"
+    "tensorboard"
+    "tensorboardx"
+    "pysilero-vad"
+    "librosa"
+    "pyopenjtalk-plus"
+    "jsonargparse"
+    "docstring-parser"
+    "typeshed-client"
+  ];
+
+  perlaTtsEnvRaw = pkgs.buildEnv {
     name = "perla-tts-env";
-    paths = lib.unique (piperClosure pkgs.piper-tts);
+    paths = lib.filter
+      (p: !(builtins.elem (lib.getName p) perlaTtsExcluded))
+      (lib.unique (piperClosure pkgs.piper-tts));
   };
+
+  # The exclusion list above is a hand-maintained allow/deny boundary, and a
+  # denylist in an allowlist-shaped system is exactly the shape this repo
+  # rejects elsewhere. So close the loop at BUILD time: actually import the
+  # module we are going to run, with the PYTHONPATH the unit will use. If a
+  # nixpkgs bump makes piper want a package we excluded — or moves python and
+  # splits the site-packages path — this fails loudly at `rebuild-home`, not
+  # silently as a perla-tts restart loop with a green test suite.
+  perlaTtsEnv = pkgs.runCommand "perla-tts-env" { } ''
+    site="${perlaTtsEnvRaw}/lib/${perlaTtsSite}/site-packages"
+    if [ ! -d "$site" ]; then
+      echo "perla-tts: no site-packages at $site" >&2
+      echo "  (derived python version: ${perlaTtsSite})" >&2
+      ls -1 "${perlaTtsEnvRaw}/lib" >&2 || true
+      exit 1
+    fi
+    PYTHONPATH="$site" ${pkgs.python3}/bin/python3 -c 'import piper.http_server' \
+      || { echo "perla-tts: piper.http_server is not importable from the merged env" >&2; exit 1; }
+    cp -r ${perlaTtsEnvRaw}/. $out
+  '';
+
   # Not a NixOS port collision risk — this is a home-manager user unit bound
   # to loopback, and the daemon's own port is 8443.
   perlaTtsPort = 5066;
@@ -832,7 +909,7 @@ in {
     };
     Service = {
       Type = "simple";
-      Environment = [ "PYTHONPATH=${perlaTtsEnv}/lib/python3.14/site-packages" ];
+      Environment = [ "PYTHONPATH=${perlaTtsEnv}/lib/${perlaTtsSite}/site-packages" ];
       ExecStart = "${pkgs.python3}/bin/python3 -m piper.http_server --host 127.0.0.1 --port ${toString perlaTtsPort} -m %h/.local/share/piper-tts/voices/${cfg.voice_model}.onnx --length-scale 1.1";
       Restart = "on-failure";
       RestartSec = 5;

@@ -1,9 +1,23 @@
 #!/usr/bin/env bash
 # Guards for the warm TTS service (spec: docs/superpowers/specs/2026-10-14-tts-latency-design.md).
 #
-# Brace-matches perla.nix instead of asserting on line numbers, so the test
-# tracks the file as it moves. Every assertion here must be observed failing
-# against the un-modified module before this suite is trusted.
+# Reads perla.nix as TEXT and matches attributes by brace-depth, so it tracks
+# the file as it moves.
+#
+# Two things this suite is deliberately strict about, both learned the hard way:
+#
+#   1. Comments are stripped before anything is matched. A guard that greps raw
+#      source is satisfied by PROSE: deleting `Wants = [ "perla-tts.service" ]`
+#      and leaving `# Wants perla-tts.service` behind kept this suite at 9/9.
+#      Only real code may satisfy a guard.
+#
+#   2. `#` is also legal inside every Nix string form, so stripping cannot be a
+#      naive cut-to-end-of-line. check_lexer asserts the stripper against
+#      fixtures, so a broken stripper goes red here instead of quietly
+#      corrupting the text every other assertion matches against.
+#
+# Every assertion here must be observed failing against broken code before this
+# suite is trusted.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -11,7 +25,6 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # home/modules/perla.nix, a sibling of the perla/ payload directory, NOT
 # inside it.
 NIX="$HERE/../../perla.nix"
-PY="$HERE/../perla-companion.py"
 
 pass=0; fail=0
 ok()  { pass=$((pass+1)); printf '  PASS  %s\n' "$1"; }
@@ -19,12 +32,133 @@ bad() { fail=$((fail+1)); printf '  FAIL  %s\n' "$1"; printf '        %s\n' "$2"
 
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
 
-check_nix() {
-  python3 - "$NIX" <<'PY' > "$WORK/nix.txt"
-import re, sys
+# Emit `key=value` facts about perla.nix into $WORK/nix.txt. Each fact is
+# True/False; the shell loop below turns them into assertions one by one, so a
+# missing fact is a FAIL rather than a silently-skipped check.
+collect() {
+  python3 - "$NIX" > "$WORK/nix.txt" <<'PY'
+import sys
+
 src = open(sys.argv[1]).read()
 
-def block_after(text, marker):
+# --- comment stripping -----------------------------------------------------
+#
+# A `#` starts a comment that runs to end of line — but only in CODE. Inside
+# "..." , ''...'' and 'c' it is an ordinary character. Cutting at every '#'
+# would eat string contents, and this suite asserts ON string contents (the
+# bind host, the port, the description), so that would corrupt the text being
+# matched rather than merely lose coverage.
+#
+# `${...}` inside any string is real code again, comments included, so the
+# scanner keeps a stack and pushes an "antiquote" frame with a brace counter.
+def strip_comments(text):
+    out = list(text)
+    in_string = [False] * len(text)   # True where a char is inside a string
+    # Every frame is a TUPLE. `kind` below is read as top[0], so a frame pushed
+    # as the bare string "ind" reads as "i", is never recognised as a string,
+    # and the scanner leaks state for the rest of the file — which silently
+    # stops stripping every comment after the first string literal.
+    frames = []   # ('dq',) | ('ind',) | ('char',) | ('anti', brace_depth)
+    i, n = 0, len(text)
+    while i < n:
+        top = frames[-1] if frames else None
+        kind = top[0] if top else "code"
+
+        if kind == "anti":
+            c = text[i]
+            if c == "{":
+                frames[-1] = ("anti", top[1] + 1)
+            elif c == "}":
+                if top[1] == 0:
+                    frames.pop()
+                else:
+                    frames[-1] = ("anti", top[1] - 1)
+            elif c == "#":
+                while i < n and text[i] != "\n":
+                    out[i] = " "; i += 1
+                continue
+            i += 1
+            continue
+
+        if kind != "code":
+            c = text[i]
+            if c == "\\" and kind != "ind":
+                in_string[i] = True
+                if i + 1 < n: in_string[i + 1] = True
+                i += 2
+                continue
+            if kind == "dq" and c == '"':
+                frames.pop(); i += 1; continue
+            if kind == "char" and c == "'":
+                frames.pop(); i += 1; continue
+            if kind == "ind":
+                if text.startswith("'''", i):      # '' escape
+                    i += 3; continue
+                if text.startswith("''${", i):     # antiquote in ''-string
+                    # Advance 4, not 3: ''${ is four characters. Stopping at 3
+                    # leaves the '{' to be read as code, which bumps the brace
+                    # depth to 1 so the matching '}' only decrements instead of
+                    # closing — and the frame then swallows everything up to the
+                    # next '}' in the file. One unclosed antiquote poisons every
+                    # comment-stripping decision after it.
+                    frames.append(("anti", 0)); i += 4; continue
+                if text.startswith("''", i):       # end of ''-string
+                    frames.pop(); i += 2; continue
+            if c == "$" and text.startswith("${", i):
+                frames.append(("anti", 0)); i += 2; continue
+            in_string[i] = True
+            i += 1
+            continue
+
+        # code
+        if text.startswith("#", i):
+            while i < n and text[i] != "\n":
+                out[i] = " "; i += 1
+            continue
+        if text.startswith("''", i):
+            frames.append(("ind",)); i += 2; continue
+        if text[i] == '"':
+            frames.append(("dq",)); i += 1; continue
+        if text[i] == "'":
+            frames.append(("char",)); i += 1; continue
+        i += 1
+    return "".join(out), in_string
+
+clean, in_string = strip_comments(src)
+
+def fact(name, value):
+    print(f"{name}={value}")
+
+# The stripper underpins every assertion below, so it is asserted rather than
+# trusted. If comment handling regresses, the other guards start matching prose
+# again — these go red first.
+# (name, input, expected). A comment is replaced by an equal run of spaces so
+# the text keeps its shape and offsets — which is what keeps the in-string mask
+# aligned with the original source.
+LEXER_CASES = [
+    ("line", "a = 1; #gone\nb = 2;\n", "a = 1;      \nb = 2;\n"),
+    ("dq", 'x = "a # b"; #gone\n', 'x = "a # b";      \n'),
+    ("ind", "y = ''\n#kept\n''; #gone\n", "y = ''\n#kept\n'';      \n"),
+    ("anti_dq", 'z = "${a #gone\n}"; #gone\n', 'z = "${a      \n}";      \n'),
+    ("anti_ind", "w = ''${a #gone\n}''; #gone\n", "w = ''${a      \n}'';      \n"),
+    # Comment following an escaped antiquote (''${) inside a ''-string. The
+    # comment is ordinary string content and must survive. This is the fixture
+    # that catches the ''$-advance-by-3 bug DIRECTLY: with i += 3 the '{' is
+    # left behind, the frame survives its own '}', and it then eats this
+    # comment as if it were code. Without it the bug is only caught indirectly,
+    # by every other assertion going red at once.
+    ("ind_escape_anti", "p = ''lit''${x}# kept'';\n", "p = ''lit''${x}# kept'';\n"),
+    ("char", "v = 'x'; #gone\n", "v = 'x';      \n"),
+    ("escape", 'u = "a\\" # b"; #gone\n', 'u = "a\\" # b";      \n'),
+    ("ind_escape", "t = ''a''''#kept''; #gone\n", "t = ''a''''#kept'';      \n"),
+]
+for name, case_in, case_out in LEXER_CASES:
+    got, _ = strip_comments(case_in)
+    fact(f"LEXER[{name}]", got == case_out)
+    if got != case_out:
+        print(f"LEXER_DETAIL[{name}]={got!r}", file=sys.stderr)
+
+def block_after(text, mask, marker):
     i = text.find(marker)
     if i < 0:
         return None
@@ -33,6 +167,8 @@ def block_after(text, marker):
         return None
     depth = 0
     for k in range(j, len(text)):
+        if mask[k]:
+            continue                      # braces inside strings are not blocks
         if text[k] == "{":
             depth += 1
         elif text[k] == "}":
@@ -41,47 +177,93 @@ def block_after(text, marker):
                 return text[j:k + 1]
     return None
 
-unit = block_after(src, "systemd.user.services.perla-tts")
-print("UNIT_FOUND" if unit else "UNIT_MISSING")
-if unit:
-    for key in ("Restart = \"on-failure\"", "RestartSec = 5",
-                "Install.WantedBy", "default.target", "piper.http_server"):
-        print(f"UNIT_HAS[{key}]={key in unit}")
-    # The companion must WANT the tts unit, never REQUIRE it: a dead TTS
-    # service has to degrade to audio:null, not stop the daemon booting.
-    comp = block_after(src, "systemd.user.services.perla-companion") or ""
-    print(f"COMP_WANTS={'Wants' in comp and 'perla-tts.service' in comp}")
-    print(f"COMP_REQUIRES={'Requires' in comp and 'perla-tts.service' in comp}")
-    print(f"COMP_TTS_URL={'PERLA_TTS_URL' in comp}")
-    # PERLA_VOICE must reach the daemon; it was silently falling back to the
-    # hardcoded default because perla.env is not read by the unit.
-    print(f"COMP_VOICE={'PERLA_VOICE=${cfg.voice_model}' in comp}")
+unit = block_after(clean, in_string, "systemd.user.services.perla-tts")
+fact("UNIT_FOUND", unit is not None)
+if unit is None:
+    sys.exit(0)
+
+for key in ('Restart = "on-failure"', "RestartSec = 5", "Install.WantedBy",
+            "default.target", "piper.http_server"):
+    fact(f"UNIT_HAS[{key}]", key in unit)
+
+# piper.http_server has no authentication of any kind. Binding it to loopback
+# is the ONLY thing standing between the LAN and an open synthesis endpoint,
+# so it gets its own guard rather than riding along on another assertion.
+fact("UNIT_LOOPBACK", "--host 127.0.0.1" in unit)
+fact("UNIT_NOT_WILDCARD", not any(
+    bad_host in unit for bad_host in ("--host 0.0.0.0", "--host ::", "--host=0.0.0.0")))
+
+# The port is a single source of truth: the unit's ExecStart and the daemon's
+# PERLA_TTS_URL must both come from it, or they point at different servers.
+fact("PORT_BINDING", "perlaTtsPort = 5066;" in clean)
+fact("PORT_IS_DERIVED", clean.count("toString perlaTtsPort") == 2)
+
+# Depth-1 closure builds an env that ImportErrors at runtime rather than
+# failing the build, so the recursion is asserted directly.
+fact("CLOSURE_RECURSES", "concatMap piperClosure" in clean)
+fact("CLOSURE_START", "piperClosure (piperClosure" not in clean
+                      and "piperClosure = p: [ p ] ++ lib.concatMap piperClosure" in clean)
+
+# The site-packages directory moves when python moves. A hardcoded "python3.14"
+# would ImportError on the next nixpkgs bump, behind a green suite.
+fact("SITE_DERIVED", "perlaTtsSite" in unit and "python3.14" not in unit)
+fact("SITE_FROM_INTERPRETER", "lib.versions.majorMinor pkgs.python3.version" in clean)
+
+comp = block_after(clean, in_string, "systemd.user.services.perla-companion") or ""
+# The companion must WANT the tts unit, never hard-couple it: a dead TTS
+# service has to degrade to audio:null, not stop the daemon booting.
+fact("COMP_WANTS", "Wants" in comp and "perla-tts.service" in comp)
+fact("COMP_REQUIRES", "Requires" in comp and "perla-tts.service" in comp)
+fact("COMP_TTS_URL", "PERLA_TTS_URL" in comp and "perlaTtsPort" in comp)
+# PERLA_VOICE must reach the daemon; it was silently falling back to the
+# hardcoded default because perla.env is not read by the unit.
+fact("COMP_VOICE", "PERLA_VOICE=${cfg.voice_model}" in comp)
 PY
-  grep -q '^UNIT_FOUND$' "$WORK/nix.txt" \
-    && ok "perla.nix defines systemd.user.services.perla-tts" \
-    || bad "perla.nix defines systemd.user.services.perla-tts" "unit block not found"
-  for key in 'Restart = "on-failure"' 'RestartSec = 5' 'default.target' 'piper.http_server'; do
-    if grep -qF "UNIT_HAS[$key]=True" "$WORK/nix.txt"; then
-      ok "perla-tts has $key"
-    else
-      bad "perla-tts has $key" "not present in the unit block"
-    fi
-  done
-  grep -q 'COMP_WANTS=True' "$WORK/nix.txt" \
-    && ok "perla-companion Wants perla-tts.service" \
-    || bad "perla-companion Wants perla-tts.service" "no Wants on the tts unit"
-  grep -q 'COMP_REQUIRES=False' "$WORK/nix.txt" \
-    && ok "perla-companion does not Require perla-tts.service" \
-    || bad "perla-companion does not Require perla-tts.service" "Requires would make a dead TTS unit fatal"
-  grep -q 'COMP_TTS_URL=True' "$WORK/nix.txt" \
-    && ok "perla-companion receives PERLA_TTS_URL" \
-    || bad "perla-companion receives PERLA_TTS_URL" "env var missing from the unit"
-  grep -q 'COMP_VOICE=True' "$WORK/nix.txt" \
-    && ok "perla-companion receives PERLA_VOICE (latent-bug fix)" \
-    || bad "perla-companion receives PERLA_VOICE (latent-bug fix)" "PERLA_VOICE missing from the unit"
 }
 
-check_nix
+# The stripper underpins every other assertion, so it gets fixtures rather
+# than trust. If comment handling regresses, the guards below start matching
+# prose again and these go red first.
+
+collect
+
+assert_fact() {
+  if grep -qxF "$1=True" "$WORK/nix.txt"; then
+    ok "$2"
+  else
+    bad "$2" "$3"
+  fi
+}
+
+# For facts where True is the BAD outcome. Asserting `assert_fact` on one of
+# these would assert the defect is present.
+assert_not_fact() {
+  if grep -qxF "$1=False" "$WORK/nix.txt"; then
+    ok "$2"
+  else
+    bad "$2" "$3"
+  fi
+}
+
+assert_fact UNIT_FOUND              "perla.nix defines systemd.user.services.perla-tts" "unit block not found"
+for name in line dq ind anti_dq anti_ind ind_escape_anti char escape ind_escape; do
+  assert_fact "LEXER[$name]" "comment stripper handles the '$name' Nix string form" "see LEXER_DETAIL on stderr"
+done
+for key in 'Restart = "on-failure"' 'RestartSec = 5' 'Install.WantedBy' 'default.target' 'piper.http_server'; do
+  assert_fact "UNIT_HAS[$key]" "perla-tts has $key" "not present in the unit block"
+done
+assert_fact UNIT_LOOPBACK           "perla-tts binds loopback only" "--host 127.0.0.1 absent"
+assert_fact UNIT_NOT_WILDCARD       "perla-tts never binds a wildcard address" "a non-loopback --host is present"
+assert_fact PORT_BINDING            "perlaTtsPort is 5066" "port binding missing or changed"
+assert_fact PORT_IS_DERIVED         "port is derived, not repeated as a literal" "toString perlaTtsPort must appear twice (unit + companion)"
+assert_fact CLOSURE_RECURSES        "piperClosure recurses" "closure is not recursive"
+assert_fact CLOSURE_START           "piperClosure starts at piper-tts itself" "piperClosure definition changed"
+assert_fact SITE_DERIVED            "PYTHONPATH is derived, not a literal python3.14" "perlaTtsSite missing or python3.14 hardcoded"
+assert_fact SITE_FROM_INTERPRETER   "site path comes from the interpreter version" "majorMinor derivation missing"
+assert_fact COMP_WANTS              "perla-companion Wants perla-tts.service" "no Wants on the tts unit"
+assert_not_fact COMP_REQUIRES     "perla-companion does not hard-couple perla-tts.service" "a hard coupling would make a dead TTS unit fatal"
+assert_fact COMP_TTS_URL            "perla-companion receives PERLA_TTS_URL (derived port)" "env var missing from the unit"
+assert_fact COMP_VOICE              "perla-companion receives PERLA_VOICE (latent-bug fix)" "PERLA_VOICE missing from the unit"
 
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
