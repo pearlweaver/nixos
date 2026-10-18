@@ -25,6 +25,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # home/modules/perla.nix, a sibling of the perla/ payload directory, NOT
 # inside it.
 NIX="$HERE/../../perla.nix"
+# tests/ -> perla/, so the daemon sits one level up from the test dir.
+PY="$HERE/../perla-companion.py"
 
 pass=0; fail=0
 ok()  { pass=$((pass+1)); printf '  PASS  %s\n' "$1"; }
@@ -318,6 +320,102 @@ assert_fact COMP_WANTS              "perla-companion Wants perla-tts.service" "n
 assert_not_fact COMP_REQUIRES     "perla-companion does not hard-couple perla-tts.service" "a hard coupling would make a dead TTS unit fatal"
 assert_fact COMP_TTS_URL            "perla-companion receives PERLA_TTS_URL (derived port)" "env var missing from the unit"
 assert_fact COMP_VOICE              "perla-companion receives PERLA_VOICE (latent-bug fix)" "PERLA_VOICE missing from the unit"
+
+# Source-level guards on the daemon. Same discipline as the Nix half: comments
+# and docstrings are stripped before anything is matched, so a guard can never
+# be satisfied by PROSE. A generate_tts whose docstring says "no longer spawns
+# piper" must not pass NO_PIPER_SUBPROCESS while its body still shells out.
+check_py_source() {
+  python3 - "$PY" > "$WORK/py.txt" <<'PYX'
+import io, re, sys, tokenize
+
+src = open(sys.argv[1]).read()
+
+def take(name):
+    i = src.find("\ndef " + name + "(")
+    if i < 0:
+        return None
+    rest = src[i + 1:]
+    m = re.search(r"\n(?=\S)", rest)
+    return rest[: m.start()] if m else rest
+
+def code_only(text):
+    """Drop comments and string literals, keeping executable tokens only.
+
+    tokenize is used rather than a regex because the body is full of f-strings
+    whose braces and quotes a cut-to-# scanner would mangle. It is allowed to
+    raise rather than fall back to raw text: a silent fallback would quietly
+    turn every guard below into a prose match.
+    """
+    toks = [t for t in tokenize.generate_tokens(io.StringIO(text).readline)
+            if t.type not in (tokenize.COMMENT, tokenize.STRING)]
+    return tokenize.untokenize(toks)
+
+g = take("generate_tts")
+print("FOUND" if g else "MISSING")
+if g:
+    body = code_only(g)
+    # The regression guard that matters: the voice model must never be re-loaded
+    # by spawning piper again. `subprocess` is NOT itself banned — the mux step
+    # legitimately shells out to ffmpeg. What is being protected against is the
+    # piper binary, its --model flag, and the --output-raw PCM pipe the old
+    # body used. (The brief's own draft banned the bare word "subprocess",
+    # which its own ffmpeg mux step satisfies — so it could never go green.)
+    print(f"NO_PIPER_SUBPROCESS={'piper' not in body and '--model' not in body and 'output-raw' not in body}")
+    # generate_tts must route synthesis through the warm service. It reaches
+    # PERLA_TTS_URL via the _tts_wav transport helper rather than by naming the
+    # env var itself, so either counts — what must not happen is going back to
+    # inlining a synthesis call.
+    print(f"USES_URL={'PERLA_TTS_URL' in body or '_tts_wav' in body}")
+    # Writes must land via os.replace so a crash mid-mux cannot leave a
+    # truncated mp3 that send_file would happily serve.
+    print(f"ATOMIC={'os.replace' in body}")
+print(f"CONFIG_URL={'PERLA_TTS_URL' in src}")
+
+s = take("speak_locally")
+print("SPEECH_FOUND" if s else "SPEECH_MISSING")
+if s:
+    sbody = code_only(s)
+    # Assert on the exact string the old body shelled out to, not the bare
+    # word "piper" — the word also occurs in prose, which would make the
+    # guard permanently red and therefore meaningless.
+    print(f"SPEECH_NO_PIPER={'piper --model' not in sbody}")
+    # The hotkey path paid the same ~2.3 s model reload as generate_tts did.
+    print(f"SPEECH_USES_HELPER={'_tts_wav' in sbody}")
+    # pw-play needs a file path now instead of a raw pipe, so every exit path
+    # must remove it or each hotkey turn leaks a wav.
+    print(f"SPEECH_CLEANUP={'finally' in sbody and 'os.unlink' in sbody}")
+PYX
+  grep -q '^FOUND$' "$WORK/py.txt" \
+    && ok "generate_tts is present in the daemon" \
+    || bad "generate_tts is present in the daemon" "function not found"
+  grep -q 'NO_PIPER_SUBPROCESS=True' "$WORK/py.txt" \
+    && ok "generate_tts no longer spawns piper" \
+    || bad "generate_tts no longer spawns piper" "still shells out — the 2.3 s model load is back"
+  grep -q 'USES_URL=True' "$WORK/py.txt" \
+    && ok "generate_tts uses PERLA_TTS_URL" \
+    || bad "generate_tts uses PERLA_TTS_URL" "no reference to the env var or the transport helper"
+  grep -q 'ATOMIC=True' "$WORK/py.txt" \
+    && ok "generate_tts writes via os.replace" \
+    || bad "generate_tts writes via os.replace" "non-atomic write can serve a truncated mp3"
+  grep -q 'CONFIG_URL=True' "$WORK/py.txt" \
+    && ok "daemon reads PERLA_TTS_URL at module scope" \
+    || bad "daemon reads PERLA_TTS_URL at module scope" "config line missing"
+  grep -q 'SPEECH_FOUND' "$WORK/py.txt" \
+    && ok "speak_locally is present in the daemon" \
+    || bad "speak_locally is present in the daemon" "function not found"
+  grep -q 'SPEECH_NO_PIPER=True' "$WORK/py.txt" \
+    && ok "speak_locally no longer spawns piper" \
+    || bad "speak_locally no longer spawns piper" "still shells out — the hotkey still pays the model reload"
+  grep -q 'SPEECH_USES_HELPER=True' "$WORK/py.txt" \
+    && ok "speak_locally routes through the warm transport" \
+    || bad "speak_locally routes through the warm transport" "not using _tts_wav"
+  grep -q 'SPEECH_CLEANUP=True' "$WORK/py.txt" \
+    && ok "speak_locally removes its temp wav on every path" \
+    || bad "speak_locally removes its temp wav on every path" "temp wav leaks per hotkey turn"
+}
+
+check_py_source
 
 printf '\n  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1

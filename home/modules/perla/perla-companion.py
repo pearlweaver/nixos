@@ -61,6 +61,7 @@ import subprocess
 import tempfile
 import time
 import urllib.parse
+import urllib.request
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -104,6 +105,28 @@ HOST = os.environ.get("PERLA_COMPANION_HOST", "127.0.0.1")
 PERLA_NAME = os.environ.get("PERLA_NAME", "Perla")
 PERLA_MODEL = os.environ.get("PERLA_MODEL", "opencode/deepseek-v4-flash-free")
 PERLA_VOICE = os.environ.get("PERLA_VOICE", "en_US-libritts_r-medium")
+# Warm synthesis service (perla-tts unit). The voice model is loaded once and
+# stays resident there, instead of being re-loaded by a fresh `piper` process
+# on every turn — that reload was ~2.3 s of a ~2.7 s reply.
+PERLA_TTS_URL = os.environ.get("PERLA_TTS_URL", "http://127.0.0.1:5066/synthesize")
+# Above the ~2.4 s COLD model load with margin, not at warm latency (~0.5 s):
+# the first request after the unit restarts legitimately pays the cold load.
+PERLA_TTS_TIMEOUT = int(os.environ.get("PERLA_TTS_TIMEOUT", "30"))
+# Speech rate. The old code passed `--length-scale 1.1` to the piper CLI, so
+# this preserves the voice exactly. piper's HTTP server takes it per request in
+# the JSON body and only falls back to its own `--length-scale` when the field
+# is absent — sending it explicitly is what keeps the rate pinned.
+PERLA_TTS_LENGTH_SCALE = float(os.environ.get("PERLA_TTS_LENGTH_SCALE", "1.1"))
+# Cold-start retry budget. perla-tts is Type=simple, so systemd calls it active
+# the instant the process execs — roughly 2.8 s before piper has finished
+# loading the 78 MB model and bound its socket. Retrying only on a refused
+# connect keeps the first turn after a login or a crash-restart from silently
+# degrading to audio:null with nothing in the journal to explain it. A refused
+# connect returns immediately, so these sleeps cost nothing once the unit is
+# actually listening; they sum to 5 s, which covers the ~2.8 s load with margin.
+_TTS_COLD_SLEEPS = (0.5, 1.0, 1.5, 2.0)
+# Timestamp of the last "TTS service unreachable" warning, for rate limiting.
+_TTS_WARN_LAST = 0.0
 PERLA_VAULT = os.environ.get("PERLA_VAULT", os.path.expanduser("~/Documents/Obsidian/PerlaNew"))
 PERLA_PERSONA = os.environ.get("PERLA_PERSONA", os.path.expanduser("~/.config/perla/persona.md"))
 # Persona delivery. The persona is a system prompt now (see each tier's
@@ -3451,15 +3474,97 @@ def speech_text(md):
     return s.strip()
 
 
+_VOICE_DIR = os.path.expanduser("~/.local/share/piper-tts/voices")
+
+
+def _tts_connect_refused(exc):
+    """True when the TTS socket is not accepting connections yet.
+
+    urllib wraps the OSError: urlopen raises URLError whose .reason is the
+    underlying ConnectionRefusedError. Both shapes are matched so this keeps
+    working if a raw OSError is ever raised at this call site instead.
+    """
+    if isinstance(exc, ConnectionRefusedError):
+        return True
+    return isinstance(getattr(exc, "reason", None), ConnectionRefusedError)
+
+
+def _tts_wav(text):
+    """POST text to the perla-tts service, return WAV bytes or None.
+
+    urllib rather than the curl subprocess the rest of the daemon uses: this
+    is the hot path being optimised, and a process spawn per turn is exactly
+    the overhead being removed. urllib.request is stdlib.
+
+    A refused connect is retried across the cold-start budget (see
+    _TTS_COLD_SLEEPS) because perla-tts is Type=simple and is therefore
+    reported active before it can serve. Every other failure — a 500, a
+    timeout, a malformed reply — is not retried: none of those fix
+    themselves, and retrying them would hold the turn open for no reason.
+
+    Returns None on ANY failure — an unreachable or dead unit degrades to the
+    same audio-less reply Perla already produces when speech_text() is empty,
+    rather than raising into the request handler.
+    """
+    if not text.strip():
+        return None
+    payload = json.dumps(
+        {"text": text, "length_scale": PERLA_TTS_LENGTH_SCALE}
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        PERLA_TTS_URL, data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    last_exc = None
+    for i in range(len(_TTS_COLD_SLEEPS) + 1):
+        if i:
+            time.sleep(_TTS_COLD_SLEEPS[i - 1])
+        try:
+            with urllib.request.urlopen(req, timeout=PERLA_TTS_TIMEOUT) as resp:
+                return resp.read()
+        except Exception as e:
+            last_exc = e
+            if not _tts_connect_refused(e):
+                break
+    # Rate-limited by the caller: a dead unit must not write a traceback
+    # to the journal on every single turn. Reached only once the retries are
+    # exhausted, so a unit that is merely still loading logs nothing at all.
+    _warn_tts_unreachable(last_exc)
+    return None
+
+
+def _warn_tts_unreachable(exc):
+    """Log the first unreachable-service failure, then stay quiet for a minute.
+
+    Without this, a stopped perla-tts unit produces one warning per turn,
+    which trains the reader to ignore the journal.
+    """
+    global _TTS_WARN_LAST
+    now = time.time()
+    if now - _TTS_WARN_LAST < 60:
+        return
+    _TTS_WARN_LAST = now
+    print(f"WARNING: TTS service unreachable at {PERLA_TTS_URL}: {exc}", flush=True)
+
+
 def generate_tts(text):
-    """Generate TTS audio file, return path or None."""
+    """Generate TTS audio file, return path or None.
+
+    Synthesis runs in the perla-tts service, which holds the voice model
+    resident instead of re-loading it per turn. The mp3-on-disk contract is
+    unchanged: callers still get a path to a finished file, or None.
+    """
     spoken = speech_text(text)
     if not spoken:
         return None
-    voice_dir = os.path.expanduser("~/.local/share/piper-tts/voices")
-    voice_file = os.path.join(voice_dir, f"{PERLA_VOICE}.onnx")
+    voice_file = os.path.join(_VOICE_DIR, f"{PERLA_VOICE}.onnx")
     if not os.path.exists(voice_file):
         print(f"WARNING: voice file not found at {voice_file}", flush=True)
+        return None
+
+    wav = _tts_wav(spoken)
+    if not wav:
         return None
 
     os.makedirs(PERLA_AUDIO_DIR, exist_ok=True)
@@ -3467,43 +3572,79 @@ def generate_tts(text):
     audio_path = os.path.join(PERLA_AUDIO_DIR, f"{audio_id}.mp3")
 
     try:
+        # ffmpeg writes to .tmp and os.replace() publishes it atomically. The
+        # old code wrote straight to the final path, so a crash mid-mux left a
+        # truncated mp3 that send_file would serve as if it were complete.
+        wav_path = audio_path + ".tmp.wav"
+        mp3_tmp = audio_path + ".tmp"
+        with open(wav_path, "wb") as f:
+            f.write(wav)
+        # -f mp3 is REQUIRED, not decoration: the temp path ends in ".tmp",
+        # which ffmpeg cannot map to a muxer, so without it ffmpeg exits
+        # non-zero with "Unable to find a suitable output format" — silently,
+        # because stderr is discarded — and every reply just loses its audio.
         proc = subprocess.run(
             ["bash", "-c",
-             f"echo {shlex.quote(spoken)} | "
-             f"piper --model {shlex.quote(voice_file)} --output-raw --length-scale 1.1 | "
-             f"ffmpeg -y -f s16le -ar 22050 -ac 1 -i - {shlex.quote(audio_path)} 2>/dev/null"],
+             f"ffmpeg -y -i {shlex.quote(wav_path)} "
+             f"-b:a 96k -f mp3 {shlex.quote(mp3_tmp)} 2>/dev/null"],
             capture_output=True, timeout=30
         )
-        if proc.returncode == 0 and os.path.exists(audio_path):
+        if proc.returncode == 0 and os.path.exists(mp3_tmp):
+            os.replace(mp3_tmp, audio_path)
             return audio_path
     except Exception as e:
-        print(f"ERROR: TTS generation failed: {e}", flush=True)
+        print(f"ERROR: TTS mux failed: {e}", flush=True)
+    finally:
+        # Every exit path, including an ffmpeg timeout — otherwise each failed
+        # turn leaks a wav into PERLA_AUDIO_DIR for the sweeper to find.
+        for tmp in (audio_path + ".tmp.wav", audio_path + ".tmp"):
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
     return None
 
 
 def speak_locally(text):
     """Play TTS directly through local speakers — used for local hotkey/
-    voice callers so audio doesn't need to round-trip as a file URL."""
+    voice callers so audio doesn't need to round-trip as a file URL.
+
+    Synthesis goes through the perla-tts service (see _tts_wav), so the hotkey
+    no longer pays the ~2.3 s model reload that generate_tts used to. This is
+    the most latency-sensitive path in the app: you just spoke, and you are
+    waiting for the answer.
+    """
     spoken = speech_text(text)
     if not spoken:
         return False
-    voice_dir = os.path.expanduser("~/.local/share/piper-tts/voices")
-    voice_file = os.path.join(voice_dir, f"{PERLA_VOICE}.onnx")
+    voice_file = os.path.join(_VOICE_DIR, f"{PERLA_VOICE}.onnx")
     if not os.path.exists(voice_file):
         print(f"WARNING: voice file not found at {voice_file}", flush=True)
         return False
+    wav = _tts_wav(spoken)
+    if not wav:
+        return False
+    # The service returns a WAV container, so pw-play needs a path rather than
+    # the raw s16le it used to read off a pipe. Removed on every exit path, or
+    # each hotkey turn leaks a file into PERLA_AUDIO_DIR.
+    os.makedirs(PERLA_AUDIO_DIR, exist_ok=True)
+    wav_path = os.path.join(PERLA_AUDIO_DIR, f"speak-{uuid.uuid4()}.wav")
     try:
+        with open(wav_path, "wb") as f:
+            f.write(wav)
         subprocess.run(
-            ["bash", "-c",
-             f"echo {shlex.quote(spoken)} | "
-             f"piper --model {shlex.quote(voice_file)} --output-raw --length-scale 1.1 | "
-             f"pw-play --rate=22050 --channels=1 --format=s16 --raw -"],
+            ["pw-play", wav_path],
             timeout=60
         )
         return True
     except Exception as e:
         print(f"ERROR: local speak failed: {e}", flush=True)
         return False
+    finally:
+        try:
+            os.unlink(wav_path)
+        except OSError:
+            pass
 
 
 def transcribe_audio(audio_path):
