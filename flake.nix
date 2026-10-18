@@ -71,6 +71,9 @@
           (final: prev: {
             brave-origin = final.callPackage ./pkgs/brave-origin { };
             rose-pine-gtk-theme = final.callPackage ./pkgs/rose-pine-gtk-theme { };
+            # nixpkgs' flutter lags upstream stable; this rebuilds it from a
+            # vendored data.json. See pkgs/flutter/default.nix.
+            flutter = final.callPackage ./pkgs/flutter { };
             # aseprite uses fmt::format via `fmt/core.h`, which fmt >= 12.2.0
             # no longer pulls in (it includes only fmt/base.h). Pin an older fmt.
             aseprite = prev.aseprite.override { fmt = prev.fmt_11; };
