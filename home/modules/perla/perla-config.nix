@@ -25,7 +25,7 @@
     whisper_model = "tiny";
     whisper_lang = "en";
 
-    opencode_model = "opencode/space-bunny-free";
+    opencode_model = "opencode/deepseek-v4.1-flash-free";
     ollama_model = "qwen2.5:3b";
 
     # Hard cap on how long a single message turn may run before the daemon

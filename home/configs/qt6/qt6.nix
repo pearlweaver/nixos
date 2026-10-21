@@ -1,3 +1,3 @@
-{ ryokuSession ? false, ... }: {
-  imports = [ (if ryokuSession then ./themes/rose-pine.nix else ./themes/noctalia.nix) ];
+{ hyprlandSession ? false, ... }: {
+  imports = [ (if hyprlandSession then ./themes/rose-pine.nix else ./themes/noctalia.nix) ];
 }

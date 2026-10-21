@@ -1,4 +1,4 @@
-{ config, pkgs, ... }: {
+{ config, pkgs, lib, hyprlandSession ? false, ... }: {
   imports = [ ./themes/rose-pine.nix ];
 
   programs.fish = {
@@ -9,14 +9,21 @@
       set -gx PATH $HOME/.local/bin $PATH
       clear
       fastfetch
+    '' + lib.optionalString hyprlandSession ''
+      # SekaiPop app theming: Home Manager owns config.fish as a read-only
+      # /nix/store symlink, so app-theme.sh cannot append the line that
+      # sources its terminal palette. Replay it here instead; the guard keeps
+      # this a no-op until the theme has been applied at least once.
+      # sekaipop: managed block, removed by Settings -> Desktop -> App colours (revert)
+      test -f $HOME/.local/state/sekaipop/terminal/sequences.txt; and cat $HOME/.local/state/sekaipop/terminal/sequences.txt
     '';
 
     shellAliases = {
       ll = "ls -l";
       rebuild-nix = "cd ~/nixos-config && sudo nixos-rebuild switch --flake .#nixos";
-      rebuild-nix-ryoku = "cd ~/nixos-config && sudo nixos-rebuild switch --flake .#ryoku";
       rebuild-home = "cd ~/nixos-config && home-manager switch --flake .#thedreamdev";
-      rebuild-home-ryoku = "cd ~/nixos-config && home-manager switch --flake .#thedreamdev-ryoku";
+      rebuild-sekaipop = "cd ~/nixos-config && sudo nixos-rebuild switch --flake .#sekaipop";
+      rebuild-home-sekaipop = "cd ~/nixos-config && home-manager switch --flake .#thedreamdev-sekaipop";
     };
 
     functions = {

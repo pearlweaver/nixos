@@ -102,7 +102,7 @@ except Exception as e:
 PORT = int(os.environ.get("PERLA_COMPANION_PORT", "8443"))
 HOST = os.environ.get("PERLA_COMPANION_HOST", "127.0.0.1")
 PERLA_NAME = os.environ.get("PERLA_NAME", "Perla")
-PERLA_MODEL = os.environ.get("PERLA_MODEL", "opencode/deepseek-v4-flash-free")
+PERLA_MODEL = os.environ.get("PERLA_MODEL", "opencode/deepseek-v4.1-flash-free")
 PERLA_VOICE = os.environ.get("PERLA_VOICE", "en_US-libritts_r-medium")
 PERLA_VAULT = os.environ.get("PERLA_VAULT", os.path.expanduser("~/Documents/Obsidian/PerlaNew"))
 PERLA_PERSONA = os.environ.get("PERLA_PERSONA", os.path.expanduser("~/.config/perla/persona.md"))
@@ -2565,7 +2565,7 @@ def decode_upload_images(data_urls):
 
 
 # ---------------------------------------------------------------------------
-# Text/code file uploads — mimo-v2.6-flash-free (like most models) has no document
+# Text/code file uploads — deepseek-v4.1-flash-free (like most models) has no document
 # ingestion channel, only vision (images). For plain-text files (markdown,
 # source code, config, etc.) there's nothing to "attach" at the model level:
 # instead the daemon reads the file itself and inlines its content into the
@@ -2632,7 +2632,7 @@ def _text_upload_extension_ok(filename):
 # perla_textify.convert() rather than decoded as plain text. Two possible
 # outcomes per file, same "images vs text" split perla_textify itself
 # uses: PDF/PPTX come back as page-image PNGs and are merged into the
-# same attach_paths list as any other user-uploaded image (mimo-v2.6 sees
+# same attach_paths list as any other user-uploaded image (deepseek-v4.1 sees
 # them exactly like a photo the user attached); DOCX/XLSX/etc come back
 # as text and are merged into the same text_attachments list as a plain
 # .py/.md upload, using the same format_text_attachments() fencing.
@@ -2964,7 +2964,7 @@ def attachment_manifest_line(typed_message, files):
 def build_opencode_body(text, tier, image_path=None):
     """Build the JSON request body for an OpenCode message turn. If
     image_path is given, attaches it as one or more file parts alongside the
-    text part — mimo-v2.6-flash-free (the deployed model per
+    text part — deepseek-v4.1-flash-free (the deployed model per
     perla-config.nix) accepts multi-image input natively; the model tokenizes
     each image into its context window like any other input, so there's no
     fixed per-message image count to enforce here beyond

@@ -1,6 +1,6 @@
-{ ryokuSession ? false, ... }: {
+{ hyprlandSession ? false, ... }: {
   imports =
-    if ryokuSession then
+    if hyprlandSession then
       [ ./themes/rose-pine.nix ]
     else
       [ ./themes/noctalia.nix ];

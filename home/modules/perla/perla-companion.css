@@ -1161,7 +1161,16 @@
          with the default z-index creates no stacking context. */
       position: relative;
       transition: background var(--duration) var(--ease),
-        color var(--duration) var(--ease);
+        color var(--duration) var(--ease),
+        transform var(--duration) var(--ease);
+      /* Chrome arrives once and all at once rather than calling attention to
+         itself - but it still moves, and a nav that never settles is a nav that
+         reads as a screenshot. */
+      animation: rise-in var(--duration-slow) var(--ease-out) backwards;
+    }
+
+    .sidebar-menu-button:active {
+      transform: scale(0.985);
     }
 
     .sidebar-menu-button:hover {
@@ -2383,6 +2392,11 @@
       max-width: 92%;
       display: flex;
       flex-direction: column;
+      /* Every turn that lands rises 20px over the slow token: enough to say
+         "this arrived", short enough that a fast exchange never looks like it
+         is queueing. `backwards` so the row holds its first frame while it waits
+         rather than flashing at full opacity and jumping back. */
+      animation: rise-in var(--duration-slow) var(--ease-out) backwards;
     }
 
     .entry-user {
@@ -3685,6 +3699,13 @@
       border: 1px solid var(--border);
       box-shadow: var(--shadow-xl);
       cursor: grab;
+      /* The signature move, on the only picture in this app worth opening by
+         hand. The frame comes from its left edge while the image inside it
+         settles out of its crop - a photograph arriving, once, at true size.
+         It was written for the welcome card's portrait first, which no longer
+         animates; a splash is a splash, and this is the better home for it. */
+      animation: shutter var(--duration-slower) var(--ease-out) backwards,
+        settle var(--duration-slower) var(--ease-out) backwards;
     }
 
     .lightbox img:active {
@@ -4508,12 +4529,16 @@
       align-items: center;
       justify-content: space-between;
       gap: var(--space-6);
-      padding: 10px 14px;
-      margin-bottom: var(--space-6);
+      padding: var(--space-4) var(--space-5);
+      margin-bottom: var(--space-5);
       position: sticky;
       top: 0;
       z-index: var(--z-sticky);
-      box-shadow: var(--shadow-md);
+      /* A sticky bar has to be told what is behind it, or the rows scroll
+         through it. One flat tone rather than a shadow: the toolbar is a head on
+         a list, not something floating above the app. */
+      border: none;
+      background: var(--background);
     }
 
     .drive-breadcrumbs {
@@ -4662,12 +4687,24 @@
       opacity: 0.45;
     }
 
+    /* The ledger. Rows are 4px apart and alternate between two tones one step
+       apart, which is how a list gets read as a list at a glance without a
+       single rule around it. The alternating tone lives on the LIST rather than
+       on the row, so the grid view is not half-zebraed. */
     .drive-list,
     .drive-grid {
       display: flex;
       flex-direction: column;
-      gap: var(--space-3);
+      gap: var(--space-2);
       width: 100%;
+    }
+
+    .drive-list .drive-item:nth-child(odd) {
+      background: color-mix(in srgb, var(--card) 82%, var(--background));
+    }
+
+    .drive-list .drive-item:nth-child(even) {
+      background: color-mix(in srgb, var(--card) 38%, var(--background));
     }
 
 
@@ -4683,22 +4720,32 @@
       flex-direction: row;
       align-items: center;
       justify-content: flex-start;
-      gap: 14px;
-      padding: 10px 14px;
+      gap: var(--space-6);
+      padding: var(--space-4) var(--space-5);
+      /* A file is a line in a list, not a card in a grid of cards. Forty-three
+         outlined boxes stacked with 10px gaps is the "rows of identical cards"
+         tell exactly, and the outline was doing nothing: the rows above and
+         below are the same distance apart either way. */
+      border: none;
+      border-radius: var(--radius-lg);
       cursor: pointer;
       user-select: none;
       -webkit-user-select: none;
-      transition: border-color var(--duration) var(--ease), transform var(--duration) var(--ease), background var(--duration) var(--ease);
+      transition: background var(--duration) var(--ease),
+        transform var(--duration) var(--ease);
     }
 
+    /* No 2px nudge to the right on hover. A list of 43 rows that all shuffle
+       sideways as the pointer crosses them is noise; the tone change says it
+       without moving anything. */
     .drive-item:hover {
-      border-color: var(--primary-dim);
-      background: color-mix(in srgb, var(--primary) 6%, transparent);
-      transform: translateX(2px);
+      background: var(--card);
     }
 
+    /* A press answers back. 2% is under the threshold where a row reads as
+       having moved rather than as having been pushed. */
     .drive-item:active {
-      transform: translateX(0) scale(0.99);
+      transform: scale(0.985);
     }
 
     .drive-item.is-hidden {
@@ -4781,8 +4828,12 @@
       flex-shrink: 0;
     }
 
+    /* Sizes and dates were 12px and 11px in --accent-foreground, which is 2.7:1
+       on this ground: unreadable, and under the size floor the rest of the Drive
+       now holds. Both are real content - how big a file is and when it changed
+       is why you opened the Drive at all. */
     .drive-item-meta {
-      font-size: var(--text-xs);
+      font-size: var(--text-sm);
       color: var(--muted-foreground);
       flex-shrink: 0;
       margin-right: var(--space-2);
@@ -4790,8 +4841,8 @@
     }
 
     .drive-item-modified {
-      font-size: var(--text-2xs);
-      color: var(--accent-foreground);
+      font-size: var(--text-sm);
+      color: var(--muted-foreground);
       flex-shrink: 0;
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
@@ -5305,6 +5356,12 @@
       gap: var(--space-5);
     }
 
+    /* A panel that opens shows its parts rather than appearing as a slab. */
+    .qa-section-title,
+    .qa-btn {
+      animation: rise-in var(--duration-slow) var(--ease-out) backwards;
+    }
+
     .qa-section-title {
       font-size: var(--text-2xs);
       letter-spacing: 0.12em;
@@ -5635,6 +5692,86 @@
       backdrop-filter: blur(4px);
     }
 
+
+    /* ---------- Motion ----------
+       Three parts and nothing else: an entrance for the things that ARRIVE
+       (a turn in the transcript, a row in the nav, a section of a panel that
+       has just been opened), an answer for every control you PRESS, and the one
+       picture that is worth opening by hand.
+
+       Transform and opacity only - nothing here moves a box, changes a colour
+       or reflows a neighbour, so a dropped frame costs a frame rather than a
+       layout. Every duration is a token: test_scales.sh section 7 allows a
+       literal second on an animation only for the five cycle lengths this file
+       already justifies by name (perla-spin, shake, pulse-ring, blink-wax,
+       think-bounce), so an entrance that wants its own pace has to use the scale
+       or it does not build.
+
+       `backwards` fill on every entrance: the element holds its first frame
+       while it waits out its delay rather than flashing at full opacity and
+       then jumping back.
+
+       There is no looping motion here, and that is deliberate. The one thing
+       that genuinely moves in this app - the mic's rings while recording, the
+       spinner while a scoped command runs, the typing dots while she thinks -
+       is already wired to the state it reports. A portrait breathing on a loop
+       would be decoration on a static image. */
+    @keyframes rise-in {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes shutter {
+      from {
+        clip-path: inset(0 100% 0 0);
+      }
+
+      to {
+        clip-path: inset(0 0 0 0);
+      }
+    }
+
+    @keyframes settle {
+      from {
+        transform: scale(1.12);
+      }
+
+      to {
+        transform: scale(1);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+      /* Every entrance above resolves to "already there". The elements keep
+         every property they had - only the travel is dropped - so reduced motion
+         costs the travel and nothing else: the transcript, the nav and the
+         panels all still arrive. */
+      .entry,
+      .sidebar-menu-button,
+      .qa-section-title,
+      .qa-btn,
+      .lightbox img {
+        animation: none;
+      }
+
+      .drive-item,
+      .sidebar-menu-button {
+        transition: none;
+      }
+
+      .drive-item:active,
+      .sidebar-menu-button:active {
+        transform: none;
+      }
+    }
 
     @media (max-width: 520px) {
       #quickActionsPanel {

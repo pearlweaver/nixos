@@ -49,11 +49,20 @@ in {
     # imports (pdf2image, docx, pptx, openpyxl) unresolvable even though
     # they're declared as project dependencies elsewhere. withPackages
     # bakes them into this environment's python3 directly.
+    #
+    # numpy and aubio-ledfx are here for SekaiPop, not for Perla: its
+    # VisualizerService.qml spawns a bare "python3" to run
+    # scripts/cava/sekai_analyzer.py, which imports numpy. They must ride in
+    # this env rather than a second one — two python3.withPackages envs on the
+    # same home.packages list collide in buildEnv over bin/idle3.*. On the Niri
+    # session they are unused; Perla gains ~40 MB of closure and no behaviour.
     (python3.withPackages (ps: with ps; [
       pdf2image
       python-docx
       python-pptx
       openpyxl
+      numpy
+      aubio-ledfx
     ]))
     curl
     nodejs

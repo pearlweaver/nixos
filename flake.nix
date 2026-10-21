@@ -40,11 +40,6 @@
 
     catppuccin.url = "github:catppuccin/nix";
 
-    ryoku = {
-      url = "github:aethctl/Ryoku-on-NixOS";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     silentSDDM = {
       url = "github:uiriansan/SilentSDDM";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -54,6 +49,17 @@
       url = "github:Daaboulex/cod-clients-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # SekaiPop: a full Quickshell-based Hyprland desktop shell. Pinned so
+    # `nix flake update` moves it deliberately rather than on every fetch.
+    # The Arch installers are unusable here (they hard-exit on a missing
+    # pacman), so pkgs/sekaipop stages the config tree instead.
+    # `flake = false` because the repo is not a flake -- without it nix looks
+    # for a flake.nix that does not exist and the input fails to resolve.
+    sekaipop = {
+      url = "github:Blapples/SekaiPop";
+      flake = false;
+    };
   };
 
   # nixConfig = {
@@ -61,7 +67,7 @@
   #  extra-trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
   #};
 
-  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, catppuccin, sops-nix, ryoku, silentSDDM, cod-clients, ... }@inputs:
+  outputs = { self, nixpkgs, home-manager, noctalia, niri-flake, nixvim, catppuccin, sops-nix, silentSDDM, cod-clients, ... }@inputs:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
@@ -71,6 +77,12 @@
           (final: prev: {
             brave-origin = final.callPackage ./pkgs/brave-origin { };
             rose-pine-gtk-theme = final.callPackage ./pkgs/rose-pine-gtk-theme { };
+            # Not in nixpkgs; check-deps.sh lists it as a Tier 1 manual install.
+            google-sans-flex = final.callPackage ./pkgs/google-sans-flex { };
+            # Stages SekaiPop's QML tree, Hyprland Lua tree and assets into the
+            # store so home-manager can link them. Carries no binaries of its
+            # own; the shell itself is quickshell, which is pinned per-output.
+            sekaipop = final.callPackage ./pkgs/sekaipop { src = inputs.sekaipop; };
             # nixpkgs' flutter lags upstream stable; this rebuilds it from a
             # vendored data.json. See pkgs/flutter/default.nix.
             flutter = final.callPackage ./pkgs/flutter { };
@@ -81,6 +93,14 @@
         ];
       };
     in {
+      # Exposed so the two new packages can be built and verified on their own
+      # (`nix build .#sekaipop`, `nix build .#google-sans-flex`) without going
+      # through a whole home-manager generation. The overlay attrs would
+      # otherwise only be reachable from inside the home profiles.
+      packages.${system} = {
+        inherit (pkgs) sekaipop google-sans-flex;
+      };
+
       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
         inherit system;
         specialArgs = {
@@ -98,7 +118,7 @@
         inherit pkgs;
         extraSpecialArgs = {
           inherit inputs;
-          ryokuSession = false;
+          hyprlandSession = false;
         };
         modules = [
          ./home/home.nix
@@ -110,13 +130,10 @@
         ];
       };
 
-      # Ryoku (Hyprland desktop) separate config, boots as its own
-      # generation. Your `nixos` config above is not imported here, so
-      # nothing about Niri/Noctalia is touched. Switch to it with:
-      #   sudo nixos-rebuild switch --flake .#ryoku
-      # Switch back to your normal setup any time with:
-      #   sudo nixos-rebuild switch --flake .#nixos
-      nixosConfigurations.ryoku = nixpkgs.lib.nixosSystem {
+      # SekaiPop (Quickshell desktop shell) as its own generation. The Niri /
+      # Noctalia configuration above is not touched by it: `programs.niri.enable`
+      # is forced off here and nothing else is shared.
+      nixosConfigurations.sekaipop = nixpkgs.lib.nixosSystem {
         inherit system;
         specialArgs = {
           inherit inputs;
@@ -125,34 +142,39 @@
           ./system/configuration.nix
           niri-flake.nixosModules.niri
           sops-nix.nixosModules.sops
-          ryoku.nixosModules.default
           silentSDDM.nixosModules.default
-          # Activate the Ryoku desktop and strip the Niri/Plasma setup that
-          # system/modules/desktop.nix applies to the normal `nixos` config.
-          # `mkForce` is needed because desktop.nix sets both unconditionally.
+          ./system/modules/hyprland-session.nix
+
+          # Strip what the shared desktop module applies to the normal `nixos`
+          # config. `mkForce` is needed because desktop.nix sets both
+          # unconditionally.
           ({ lib, ... }: {
-            programs.ryoku.enable = true;
             programs.niri.enable = lib.mkForce false;
             services.desktopManager.plasma6.enable = lib.mkForce false;
-            # system/configs/services/services.nix hardcodes XDG_CURRENT_DESKTOP=niri,
-            # but this generation runs Hyprland/Ryoku, so force the correct value.
+            # system/configs/services/services.nix hardcodes
+            # XDG_CURRENT_DESKTOP=niri, but this generation runs Hyprland.
             environment.sessionVariables.XDG_CURRENT_DESKTOP = lib.mkForce "Hyprland";
           })
         ];
       };
 
-      homeConfigurations.thedreamdev-ryoku = home-manager.lib.homeManagerConfiguration {
+      # SekaiPop (Quickshell desktop shell) as its own generation. The Niri /
+      # Noctalia configuration above is not touched by it. Switch with:
+      #   sudo nixos-rebuild switch --flake .#sekaipop
+      # Switch back with:
+      #   sudo nixos-rebuild switch --flake .#nixos
+      homeConfigurations.thedreamdev-sekaipop = home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
         extraSpecialArgs = {
           inherit inputs;
-          # Tells modules/apps.nix to skip importing the Rose Pine GTK/Qt6
-          # theme files, so Ryoku's own theming is what applies instead.
-          # Passed via extraSpecialArgs rather than `_module.args` to avoid
-          # an infinite recursion when the argument is read in `imports`.
-          ryokuSession = true;
+          # Same role as hyprlandSession: tells modules/apps.nix to skip the Rose
+          # Pine GTK/Qt files, which are Niri-session theming. SekaiPop themes
+          # via matugen instead. Passed via extraSpecialArgs rather than
+          # _module.args to avoid infinite recursion when read in `imports`.
+          hyprlandSession = true;
         };
         modules = [
-          ./home/home-ryoku.nix
+          ./home/home-sekaipop.nix
           catppuccin.homeModules.catppuccin
           nixvim.homeModules.nixvim
           sops-nix.homeManagerModules.sops

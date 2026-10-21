@@ -1,3 +1,3 @@
-# Version 26.10.10.1
+# Version 26.10.21.1
 
-- Replaced the hamburger menu with a collapsable sidebar. This is still WIP and will be improved
+- Replaced Ryoku config with Sekaipop hyprland config
