@@ -1,0 +1,221 @@
+diff -ruN a/sekaipop/modules/common/functions/QuickTiles.js b/sekaipop/modules/common/functions/QuickTiles.js
+--- a/sekaipop/modules/common/functions/QuickTiles.js	1970-01-01 05:00:01.000000000 +0500
++++ b/sekaipop/modules/common/functions/QuickTiles.js	2026-10-22 23:36:08.457988282 +0500
+@@ -28,6 +28,11 @@
+                "darkMode", "easyEffects", "warp", "screenSnip", "colorPicker",
+                "keyboard", "powerProfile", "musicRecognition", "antiFlashbang"]
+ 
++// Tiles that need Hyprland: night light is hyprsunset, anti-flashbang is a
++// decoration.screen_shader. Filtered out of the panel and the add tray when
++// NiriWorkspaces.running (QuickSource.qml, QuickPanelFace.qml).
++var hyprOnly = ["nightLight", "antiFlashbang"]
++
+ // Buttons that do something once and have no on/off of their own (Screen
+ // Snip, Color Picker): a click closes the panel first, then runs.
+ function isAction(id) {
+diff -ruN a/sekaipop/modules/sekai/quickPanel/GammaBrightnessSlider.qml b/sekaipop/modules/sekai/quickPanel/GammaBrightnessSlider.qml
+--- a/sekaipop/modules/sekai/quickPanel/GammaBrightnessSlider.qml	1970-01-01 05:00:01.000000000 +0500
++++ b/sekaipop/modules/sekai/quickPanel/GammaBrightnessSlider.qml	2026-10-22 23:36:23.772971326 +0500
+@@ -28,8 +28,11 @@
+ 
+     // Total footprint (same as the Brightness slider it replaces).
+     property real sliderWidth: 514
++    // Niri has no gamma control at all, so the gamma half disappears there and
++    // brightness takes the whole track.
++    property bool gammaEnabled: true
+     // How much of the track is gamma.
+-    property real gammaWidth: 176
++    property real gammaWidth: gammaEnabled ? 176 : 0
+ 
+     signal gammaMoved(real value)
+     signal brightnessMoved(real value)
+@@ -57,6 +60,7 @@
+     // ===== headers =====
+     Item {
+         id: gammaHead
++        visible: root.gammaEnabled
+         x: root.edge
+         width: root.gammaWidth - 12
+         height: 32
+@@ -85,7 +89,7 @@
+ 
+     Item {
+         id: brightHead
+-        x: root.edge + root.gammaWidth + 12
++        x: root.edge + root.gammaWidth + (root.gammaEnabled ? 12 : 0)
+         width: root.brightnessWidth - 12
+         height: 32
+ 
+@@ -159,6 +163,7 @@
+ 
+         // where gamma ends and brightness begins
+         Rectangle {
++            visible: root.gammaEnabled
+             x: root.gammaWidth - 1.5
+             y: -3
+             width: 3
+diff -ruN a/sekaipop/modules/sekai/quickPanel/QuickPanelFace.qml b/sekaipop/modules/sekai/quickPanel/QuickPanelFace.qml
+--- a/sekaipop/modules/sekai/quickPanel/QuickPanelFace.qml	1970-01-01 05:00:01.000000000 +0500
++++ b/sekaipop/modules/sekai/quickPanel/QuickPanelFace.qml	2026-10-22 23:36:19.908975520 +0500
+@@ -2,6 +2,7 @@
+ import QtQuick.Effects
+ import "../../common/functions/QuickTiles.js" as QT
+ import qs.modules.common
++import qs.services
+ import qs.modules.common.widgets
+ import qs.modules.sekai.phone
+ 
+@@ -890,7 +891,9 @@
+ 
+     // The catalog buttons that aren't on the panel right now, for the add
+     // tray in edit mode; and whether one more small button would still fit.
+-    readonly property var unplacedTiles: QT.catalog.filter(id => !face.tiles.some(t => t.id === id))
++    readonly property var unplacedTiles: QT.catalog.filter(
++        id => !face.tiles.some(t => t.id === id)
++            && !(NiriWorkspaces.running && QT.hyprOnly.includes(id)))
+     readonly property bool canAdd: QT.fits(face.tiles.concat([{ id: "_", size: "small" }]), face.tileColumns)
+ 
+     // Would the resize badge do anything for the button at `index`? (It
+@@ -1388,6 +1391,7 @@
+         x: 67
+         y: 570 + face.tileExtra
+         sliderWidth: 514
++        gammaEnabled: !NiriWorkspaces.running
+         gamma: face.gamma
+         brightness: face.brightness
+         onGammaMoved: value => face.gammaMoved(value)
+diff -ruN a/sekaipop/modules/sekai/quickPanel/QuickPanel.qml b/sekaipop/modules/sekai/quickPanel/QuickPanel.qml
+--- a/sekaipop/modules/sekai/quickPanel/QuickPanel.qml	1970-01-01 05:00:01.000000000 +0500
++++ b/sekaipop/modules/sekai/quickPanel/QuickPanel.qml	2026-10-22 23:36:19.413976061 +0500
+@@ -331,7 +331,8 @@
+     property double hotBlockedUntil: 0
+ 
+     function focusedScreen() {
+-        const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
++        const name = NiriWorkspaces.running ? NiriWorkspaces.focusedOutput
++            : (Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "")
+         for (const s of Quickshell.screens) {
+             if (s.name === name)
+                 return s
+@@ -1595,7 +1596,9 @@
+     // A transparent window over the whole screen, under the phone: any click on it
+     // closes the launcher (the click itself is used up). It sits on the Top layer and
+     // the phone's window is on Overlay while Apps is up, so the phone is always above it.
+-    readonly property bool useCatcher: open && launching
++    // On niri there is no dock or bar of ours behind the phone, and the Apps
++    // face is not the only one that should close on an outside click.
++    readonly property bool useCatcher: open && (launching || NiriWorkspaces.running)
+ 
+     PanelWindow {
+         id: catcher
+@@ -1638,6 +1641,9 @@
+             // 4 px; Bar.qml cuts that spot out of its input region (hotCut) so the
+             // pointer reaches this window there. The notification bell opens the panel too.
+             visible: root.hotEdge
++            // Noctalia's auto-hiding dock is also on the Top layer; two Top
++            // surfaces have no guaranteed order. Only the 4 px strip moves.
++            WlrLayershell.layer: NiriWorkspaces.running ? WlrLayer.Overlay : WlrLayer.Top
+             color: "transparent"
+             exclusionMode: ExclusionMode.Ignore
+             anchors {
+diff -ruN a/sekaipop/modules/sekai/settings/SettingsFace.qml b/sekaipop/modules/sekai/settings/SettingsFace.qml
+--- a/sekaipop/modules/sekai/settings/SettingsFace.qml	1970-01-01 05:00:01.000000000 +0500
++++ b/sekaipop/modules/sekai/settings/SettingsFace.qml	2026-10-22 23:36:20.813974533 +0500
+@@ -73,7 +73,7 @@
+         { id: "general", icon: "tune", label: "General", title: "General", sub: "How the shell behaves" },
+         { id: "bar", icon: "toast", label: "Bar", title: "Bar", sub: "Where it sits and what it carries" },
+         { id: "desktop", icon: "desktop_windows", label: "Desktop", title: "Desktop", sub: "Wallpaper, widgets and effects" },
+-        { id: "hyprland", icon: "grid_view", label: "Hyprland", title: "Hyprland", sub: "Windows, workspaces and input" },
++        { id: NiriWorkspaces.running ? "niri" : "hyprland", icon: "grid_view", label: NiriWorkspaces.running ? "Niri" : "Hyprland", title: NiriWorkspaces.running ? "Niri" : "Hyprland", sub: NiriWorkspaces.running ? "Displays, inputs and config" : "Windows, workspaces and input" },
+         { id: "keys", icon: "keyboard", label: "Keys", title: "Keys", sub: "What each shortcut does", headerSub: "Change what each shortcut does" },
+         { id: "about", icon: "info", label: "About", longLabel: "About / Update", title: "About / Update", sub: "Version, updates and credits" }
+     ]
+@@ -730,7 +730,7 @@
+                     : slot.index === 1 ? generalPage
+                     : slot.index === 2 ? barPage
+                     : slot.index === 3 ? desktopPage
+-                    : slot.index === 4 ? hyprlandPage
++                    : slot.index === 4 ? (NiriWorkspaces.running ? niriPage : hyprlandPage)
+                     : slot.index === 5 ? keysPage : aboutPage
+             }
+         }
+@@ -888,6 +888,15 @@
+             host: face
+             width: pageArea.width
+             height: pageArea.height
++        }
++    }
++
++    Component {
++        id: niriPage
++        SettingsPageNiri {
++            host: face
++            width: pageArea.width
++            height: pageArea.height
+         }
+     }
+ 
+diff -ruN a/sekaipop/services/LockState.qml b/sekaipop/services/LockState.qml
+--- a/sekaipop/services/LockState.qml	1970-01-01 05:00:01.000000000 +0500
++++ b/sekaipop/services/LockState.qml	2026-10-22 23:36:08.865987818 +0500
+@@ -72,6 +72,12 @@
+     property bool relockPending: false
+ 
+     function lock() {
++        // The phone-only shell does not instantiate Lockscreen.qml, so it has no
++        // WlSessionLock of its own. On niri the session lock is Noctalia's.
++        if (NiriWorkspaces.running) {
++            Quickshell.execDetached(["noctalia", "msg", "session", "lock"])
++            return
++        }
+         if (root.phase === "unlocking") {
+             root.relockPending = true
+             return
+diff -ruN a/sekaipop/services/NiriWorkspaces.qml b/sekaipop/services/NiriWorkspaces.qml
+--- a/sekaipop/services/NiriWorkspaces.qml	1970-01-01 05:00:01.000000000 +0500
++++ b/sekaipop/services/NiriWorkspaces.qml	2026-10-22 23:36:07.452989426 +0500
+@@ -28,6 +28,15 @@
+     // niri's own workspace objects, see NiriMath.js; empty until the stream sends them
+     property var workspaces: []
+ 
++    // The output whose workspace is focused, for QuickPanel.focusedScreen().
++    // Exactly one workspace has is_focused; empty until the first list arrives.
++    readonly property string focusedOutput: {
++        for (let i = 0; i < root.workspaces.length; i++)
++            if (root.workspaces[i].is_focused)
++                return root.workspaces[i].output
++        return ""
++    }
++
+     // the workspace id a click asked for, null when nothing waits for the request socket
+     property var pendingWorkspaceId: null
+ 
+diff -ruN a/sekaipop/services/QuickSource.qml b/sekaipop/services/QuickSource.qml
+--- a/sekaipop/services/QuickSource.qml	1970-01-01 05:00:01.000000000 +0500
++++ b/sekaipop/services/QuickSource.qml	2026-10-22 23:36:14.576981401 +0500
+@@ -1858,7 +1858,8 @@
+                         list.push({ id: parts[0], size: parts[1].trim() })
+                 }
+                 root.tileColumns = columns
+-                root.tiles = QT.sanitize(list, columns)
++                root.tiles = QT.sanitize(list, columns).filter(
++                    t => !(NiriWorkspaces.running && QT.hyprOnly.includes(t.id)))
+             }
+         }
+     }
+@@ -1919,6 +1920,15 @@
+     }
+ 
+     function lockThen(action) {
++        // Noctalia's lock is another process: there is no LockState phase to
++        // wait for, so give its ext-session-lock surface a fixed beat.
++        if (NiriWorkspaces.running) {
++            root.pendingAfterLock = action
++            root.lock()
++            settleTimer.interval = 1000
++            settleTimer.restart()
++            return
++        }
+         if (LockState.phase === "locked") {
+             root.pendingAfterLock = action
+             settleTimer.restart()

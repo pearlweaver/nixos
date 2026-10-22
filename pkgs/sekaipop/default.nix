@@ -20,6 +20,11 @@ stdenvNoCC.mkDerivation {
 
   dontBuild = true;
 
+  # Every hunk is gated on NiriWorkspaces.running (NIRI_SOCKET set), so the
+  # Hyprland sekaipop profile behaves exactly as before. A context change in
+  # upstream makes the build fail instead of silently shipping unpatched QML.
+  patches = [ ./phone-niri.patch ];
+
   installPhase = ''
     runHook preInstall
 
@@ -29,6 +34,11 @@ stdenvNoCC.mkDerivation {
     # shaders relative to the config dir.
     mkdir -p $out/share/sekaipop
     cp -a sekaipop hypr $out/share/sekaipop/
+
+    # The Niri settings page replaces SettingsPageHyprland at runtime
+    # (SettingsFace.qml picks by NiriWorkspaces.running); see phone-niri.patch.
+    install -Dm644 ${./SettingsPageNiri.qml} \
+      $out/share/sekaipop/sekaipop/modules/sekai/settings/SettingsPageNiri.qml
 
     # Upstream's own test suite; it needs a live Hyprland and asserts against
     # the Arch layout, so it has no business in the deployed config dir.
