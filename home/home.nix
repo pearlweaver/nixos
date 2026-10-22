@@ -2,6 +2,7 @@
   imports = [
     ./modules/niri.nix
     ./modules/noctalia.nix
+    ./modules/sekaipop-phone.nix
     ./modules/apps.nix
     ./modules/packages.nix
     ./modules/xdg.nix
