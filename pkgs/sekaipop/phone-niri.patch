@@ -192,8 +192,31 @@ diff -ruN a/sekaipop/services/NiriWorkspaces.qml b/sekaipop/services/NiriWorkspa
  
 diff -ruN a/sekaipop/services/QuickSource.qml b/sekaipop/services/QuickSource.qml
 --- a/sekaipop/services/QuickSource.qml	1970-01-01 05:00:01.000000000 +0500
-+++ b/sekaipop/services/QuickSource.qml	2026-10-22 23:36:14.576981401 +0500
-@@ -1858,7 +1858,8 @@
++++ b/sekaipop/services/QuickSource.qml	2026-10-23 01:25:22.174942109 +0500
+@@ -1112,7 +1112,11 @@
+     }
+ 
+     // ===== button layout =====
+-    property var tiles: QT.defaultTiles
++    // A fresh state file goes straight to these, never through the load path,
++    // so the niri filter has to apply here too.
++    property var tiles: NiriWorkspaces.running
++        ? QT.defaultTiles.filter(t => !QT.hyprOnly.includes(t.id))
++        : QT.defaultTiles
+     // Most buttons a row may hold, 1-5 (edit mode's Columns setting; 5 is
+     // the old width-only flow). Saved next to the list as an "@columns" pair.
+     property int tileColumns: QT.defaultColumns
+@@ -1140,6 +1144,9 @@
+     }
+ 
+     function setTiles(list) {
++        // Edit-mode changes and DesktopPresetService.wear() all land here.
++        if (NiriWorkspaces.running)
++            list = list.filter(t => !QT.hyprOnly.includes(t.id))
+         tiles = list
+         const args = ["sh", root.tilesScript, "save", "@columns", String(root.tileColumns)]
+         for (const t of list) {
+@@ -1858,7 +1865,8 @@
                          list.push({ id: parts[0], size: parts[1].trim() })
                  }
                  root.tileColumns = columns
@@ -203,7 +226,7 @@ diff -ruN a/sekaipop/services/QuickSource.qml b/sekaipop/services/QuickSource.qm
              }
          }
      }
-@@ -1919,6 +1920,15 @@
+@@ -1919,6 +1927,15 @@
      }
  
      function lockThen(action) {
