@@ -9,6 +9,9 @@ in {
       spawn-at-startup = [
         { command = [ "noctalia" ]; }
         { command = [ "xwayland-satellite" ]; }
+        # The SekaiPop phone: notifications, the hot-edge quick panel and the
+        # wallpaper. Noctalia keeps the bar and the lock.
+        { command = [ "qs" "-c" "sekaipop-phone" ]; }
       ];
 
       input = {
@@ -119,8 +122,8 @@ in {
         "Mod+M".action.spawn = [ "nocturne" ];
         "Mod+C".action.spawn = [ "codium" ];
         "Mod+W".action.spawn = [ "libreoffice" ];
-        "Mod+A".action.spawn = [ "noctalia" "msg" "panel-toggle" "wallpaper" ];
-        "Mod+Shift+A".action.spawn = [ "noctalia" "msg" "panel-toggle" "noctalia/mpvpaper:picker" ];
+        # The phone owns the wallpaper now (Noctalia's is disabled).
+        "Mod+A".action.spawn = [ "qs" "-c" "sekaipop-phone" "ipc" "call" "phone" "go" "wallpapers" ];
 
 				# Window Management
         "Mod+Q".action.close-window = {};
@@ -140,6 +143,7 @@ in {
         "Ctrl+Alt+Delete".action.spawn = noctalia "panel-toggle session";
         "Mod+Shift+S".action = { screenshot = {}; };
         "Mod+V".action.spawn = noctalia "panel-toggle clipboard";
+        "Mod+Space".action.spawn = [ "qs" "-c" "sekaipop-phone" "ipc" "call" "phone" "toggle" ];
 
         # Focus
         "Mod+Left".action.focus-column-left = {};
