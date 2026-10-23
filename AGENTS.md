@@ -17,6 +17,8 @@ system/configs/            grouped service clusters with their own imports/
 home/home.nix              home-manager root (Niri + Noctalia)
 home/home-ryoku.nix        home-manager root (Hyprland + Ryoku)
 home/modules/              aggregator/feature modules (perla.nix lives here)
+home/modules/sekaipop-phone.nix  SekaiPop's phone as a standalone shell on niri
+home/modules/sekaipop-phone/     its shell.qml
 home/configs/<app>/        per-app modules, each with a themes/ subdir
 pkgs/                      custom packages (overlaid onto pkgs)
 secrets/                   sops-encrypted YAML — committed
@@ -82,6 +84,22 @@ also set in both files, and their `permittedInsecurePackages` differ.
   `system/modules/desktop.nix` or `system/configs/services/services.nix` can
   break the `ryoku` generation silently. Some settings are also declared twice,
   once in each of those files.
+
+## The phone on niri
+
+`home/modules/sekaipop-phone.nix` runs SekaiPop's Quick Panel (the SekaiPop
+phone) as a **second, tiny Quickshell shell** (`qs -c sekaipop-phone`) on the
+Niri + Noctalia session. Noctalia keeps the bar, launcher, lock and session
+chrome; the phone owns `org.freedesktop.Notifications` and the wallpaper.
+
+- Its QML is `pkgs.sekaipop`'s tree, symlinked around `home/modules/sekaipop-phone/shell.qml`.
+- Every patch in `pkgs/sekaipop/phone-niri.patch` is gated on
+  `NiriWorkspaces.running`, so the Hyprland `sekaipop` profile is unchanged.
+  Do not add an ungated patch.
+- Disabling Noctalia's daemon/wallpaper happens in `home/modules/noctalia.nix`;
+  keep those three toggles in sync with this module.
+- Lock and sleep go through `noctalia msg session lock` (the phone has no lock
+  surface of its own).
 
 ## Secrets
 
