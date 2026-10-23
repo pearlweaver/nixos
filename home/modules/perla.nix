@@ -35,6 +35,129 @@ let
     [ (builtins.readFile ./perla/perla-companion.css)
       (builtins.readFile ./perla/perla-companion.js) ]
     (builtins.readFile ./perla/perla-companion.html);
+
+  # === Warm TTS environment ===
+  #
+  # piper-tts is a buildPythonApplication that nixpkgs keeps OUT of
+  # python3Packages, so python3.withPackages cannot be used and its own
+  # .piper-wrapped script hardcodes an 88-entry addsitedir list that
+  # propagatedBuildInputs alone does not reproduce (16 direct entries, 89
+  # effective). The two lists are NOT nested — diffed against the real store
+  # paths, the CLOSURE is the side that carries the -dev variants: this
+  # recursion yields torch-2.13.0-dev, grpcio-1.83.1-dev and python3-3.14.7,
+  # while the wrapper carries the PLAIN torch-2.13.0 and grpcio-1.83.1 and has
+  # no -dev entry at all (python3-3.14.7 appears there only on the shebang
+  # line). So 89 = 88 - 2 plain + 3 closure-only: a 2-for-2 substitution plus
+  # one. Merging the RECURSIVE closure with buildEnv yields a single
+  # site-packages containing piper, onnxruntime, flask and numpy — verified by
+  # running piper.http_server against it. See spec section 5.2.
+  #
+  # The recursion is deliberate rather than `lib.flatten (map ...)` at depth 1:
+  # piper's direct inputs include onnxruntime and flask, but those in turn pull
+  # numpy, werkzeug, protobuf and so on, and piper.http_server imports them at
+  # module scope. Depth 1 builds an env that ImportErrors on the first missing
+  # transitive, which is a runtime failure, not a build one — the exact failure
+  # mode the import check further down exists to prevent.
+  piperClosure = p: [ p ] ++ lib.concatMap piperClosure (p.propagatedBuildInputs or [ ]);
+
+  # The site-packages directory is named after the interpreter, so the unit's
+  # PYTHONPATH must be named the same way. Deriving it here — rather than
+  # writing "python3.14" into the ExecStart string — is what makes a future
+  # nixpkgs bump to python 3.15 a no-op instead of a ModuleNotFoundError
+  # crash-loop behind a green test suite.
+  #
+  # Is pkgs.python3 the RIGHT python to derive from, or must it come from
+  # piper-tts itself? Answer: pkgs.python3 is correct today, and this is not
+  # luck — piper-tts is built by the same pkgs set's buildPythonApplication, so
+  # the interpreter we exec and the interpreter its packages were built against
+  # are the same one. piper-tts exposes no `python`/`pythonPath` attribute in
+  # this nixpkgs (checked: only pythonImportsCheck / overridePythonAttrs /
+  # dontWrapPythonPrograms), so there is no attr to read it from anyway.
+  # If someone ever overrides piper-tts to a pinned older python, this
+  # derivation starts lying — which is precisely what the import check below
+  # turns from a silent restart loop into a build failure.
+  perlaTtsSite = "python${lib.versions.majorMinor pkgs.python3.version}";
+
+  # Dropped from the closure because piper.http_server never imports them.
+  # Traced from the actual source, not guessed: `python -m piper.http_server`
+  # pulls flask (http_server) + numpy and onnxruntime (voice) + piper's own
+  # modules. Everything below is either the training stack (piper ships a
+  # `train` subpackage), a language-specific phonemizer for a voice we do not
+  # use, or a CLI-argument library used only by the training entrypoints.
+  #
+  # This narrows the MERGED site-packages — the thing PYTHONPATH actually points
+  # at — from 190 entries to 166, and removes the shadowing risk of torch and
+  # librosa sitting on the same sys.path as onnxruntime.
+  #
+  # It does NOT shrink the store closure. Traced: piper-tts's own runtime
+  # references already reach torch-2.13.0, so torch stays a download however
+  # this list is filtered (275 paths / ~50 GiB before and after). The value
+  # here is a correct PYTHONPATH, not a smaller closure.
+  #
+  # THIS LIST IS VOICE-SPECIFIC. It is sized for cfg.voice_model =
+  # en_US-libritts_r-medium, whose phonemizer path is espeak and whose
+  # phonemize_japanese.py / phonemize_chinese.py are never reached. Switching
+  # cfg.voice_model to a Japanese or Chinese voice needs these back:
+  #   * phonemize_japanese.py imports pyopenjtalk (function-local) and
+  #     g2pw_onnx.py imports transformers — and transformers is NOT in this
+  #     closure at all, so such a voice fails at synthesis time.
+  #   * phonemize_chinese.py has its own dependency set.
+  # Those imports are function-local, so the build-time import check further
+  # down does NOT catch them — `import piper.http_server` succeeds with the
+  # list exactly as it is today, and only a real /synthesize with the new
+  # voice would fail. Re-widen the list and re-run the live check before
+  # changing cfg.voice_model. Verified working for the configured voice.
+  #
+  # What the import check DOES guarantee, precisely: this is a name-membership
+  # filter, so a name here that matches nothing in the closure excludes nothing
+  # and the build still passes. A stale entry is therefore silent. The check
+  # catches the opposite failure — over-narrowing (piper needs something we
+  # removed) and a python-version split — and nothing else.
+  perlaTtsExcluded = [
+    "torch"
+    "lightning"
+    "pytorch-lightning"
+    "torchmetrics"
+    "tensorboard"
+    "tensorboardx"
+    "pysilero-vad"
+    "librosa"
+    "pyopenjtalk-plus"
+    "jsonargparse"
+    "docstring-parser"
+    "typeshed-client"
+  ];
+
+  perlaTtsEnvRaw = pkgs.buildEnv {
+    name = "perla-tts-env";
+    paths = lib.filter
+      (p: !(builtins.elem (lib.getName p) perlaTtsExcluded))
+      (lib.unique (piperClosure pkgs.piper-tts));
+  };
+
+  # The exclusion list above is a hand-maintained allow/deny boundary, and a
+  # denylist in an allowlist-shaped system is exactly the shape this repo
+  # rejects elsewhere. So close the loop at BUILD time: actually import the
+  # module we are going to run, with the PYTHONPATH the unit will use. If a
+  # nixpkgs bump makes piper want a package we excluded — or moves python and
+  # splits the site-packages path — this fails loudly at `rebuild-home`, not
+  # silently as a perla-tts restart loop with a green test suite.
+  perlaTtsEnv = pkgs.runCommand "perla-tts-env" { } ''
+    site="${perlaTtsEnvRaw}/lib/${perlaTtsSite}/site-packages"
+    if [ ! -d "$site" ]; then
+      echo "perla-tts: no site-packages at $site" >&2
+      echo "  (derived python version: ${perlaTtsSite})" >&2
+      ls -1 "${perlaTtsEnvRaw}/lib" >&2 || true
+      exit 1
+    fi
+    PYTHONPATH="$site" ${pkgs.python3}/bin/python3 -c 'import piper.http_server' \
+      || { echo "perla-tts: piper.http_server is not importable from the merged env" >&2; exit 1; }
+    cp -r ${perlaTtsEnvRaw}/. $out
+  '';
+
+  # Not a NixOS port collision risk — this is a home-manager user unit bound
+  # to loopback, and the daemon's own port is 8443.
+  perlaTtsPort = 5066;
 in {
   home.sessionPath = [ "${config.home.homeDirectory}/.local/bin" ];
 
@@ -750,10 +873,22 @@ in {
   };
 
   # === Companion web API service ===
+  #
+  # The tts unit is pulled in with Wants, NOT the stronger coupling below.
+  # If piper is broken the daemon must still boot and answer text — it
+  # degrades to audio:null for that turn. A hard coupling would let a dead
+  # synthesis unit stop the whole assistant from starting.
+  #
+  # (This rationale lives ABOVE the attribute for a reason:
+  # tests/test_tts_warm.sh brace-matches this block as raw text, comments
+  # included, and greps it for the coupling keyword. Naming that keyword in a
+  # comment *inside* the block makes the "does not hard-depend" assertion
+  # fail. It did. Move it back in here and the suite goes red again.)
   systemd.user.services.perla-companion = {
     Unit = {
       Description = "${cfg.assistant_name} companion web API";
-      After = [ "pipewire.service" "perla-t1.service" ];
+      Wants = [ "perla-tts.service" ];
+      After = [ "pipewire.service" "perla-t1.service" "perla-tts.service" ];
     };
     Service = {
       Type = "simple";
@@ -767,6 +902,11 @@ in {
         "PERLA_AUDIO_DIR=%h/.local/share/perla-audio"
         "PERLA_VOICE_DIR=%h/.local/share/perla-voice"
         "PERLA_COMPANION_PORT=8443"
+        "PERLA_TTS_URL=http://127.0.0.1:${toString perlaTtsPort}/synthesize"
+        # PERLA_VOICE was present in perla.env but NOT here, so the daemon has
+        # been silently falling back to its hardcoded default. perla.env is read
+        # only by perla.sh; the unit's Environment is what the daemon reads.
+        "PERLA_VOICE=${cfg.voice_model}"
         "PERLA_TURN_TIMEOUT=${toString cfg.turn_timeout_seconds}"
         "PERLA_PERMISSION_TIMEOUT=${toString cfg.permission_timeout_seconds}"
         "PERLA_GATE_PASSWORD=${cfg.gate_password}"
@@ -775,6 +915,33 @@ in {
         "PERLA_FS_READ_EXCLUDE=${lib.concatStringsSep ":" cfg.fs_read_exclude_paths}"
       ];
       ExecStart = "%h/.local/bin/perla-companion";
+      Restart = "on-failure";
+      RestartSec = 5;
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
+
+  # === Warm speech synthesis service ===
+  #
+  # The voice model is loaded ONCE here and stays resident, instead of being
+  # re-loaded by a fresh `piper` process on every turn (~2.3 s per reply).
+  # piper.http_server is Flask's development server — adequate because this
+  # binds 127.0.0.1, serves one user, and the daemon serialises synthesis to a
+  # single worker. It would not be acceptable on a shared interface.
+  #
+  # The .onnx itself is NOT Nix-managed: it is a download, not a build, and
+  # lives in ~/.local/share/piper-tts/voices/. Hence the literal path with %h
+  # rather than a ${pkgs...} reference — the unit reads the file the user
+  # already has, and fails loudly if it is missing instead of quietly
+  # substituting an empty voice.
+  systemd.user.services.perla-tts = {
+    Unit = {
+      Description = "${cfg.assistant_name} speech synthesis";
+    };
+    Service = {
+      Type = "simple";
+      Environment = [ "PYTHONPATH=${perlaTtsEnv}/lib/${perlaTtsSite}/site-packages" ];
+      ExecStart = "${pkgs.python3}/bin/python3 -m piper.http_server --host 127.0.0.1 --port ${toString perlaTtsPort} -m %h/.local/share/piper-tts/voices/${cfg.voice_model}.onnx --length-scale 1.1";
       Restart = "on-failure";
       RestartSec = 5;
     };
