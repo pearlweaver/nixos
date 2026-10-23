@@ -15,13 +15,23 @@ import qs.modules.common
 SettingsPage {
     id: page
 
-    // Parsed JSON, refreshed on open, every 3 s while visible, and after
-    // every change (the reply has no output-event stream on this side).
+    // Parsed JSON, refreshed after every change and every 3 s while the
+    // Settings are open (the reply has no output-event stream on this side).
     property var outputs: ({})
+    property string lastOutputsJson: ""
     property var layoutNames: []
 
     function outputNames() {
-        return Object.keys(page.outputs)
+        return Object.keys(page.outputs).sort()
+    }
+
+    // Turning off the last enabled output would leave a black screen with no
+    // way back from this page.
+    function disableOutput(name) {
+        const enabled = page.outputNames().filter(n => page.outputs[n].logical)
+        if (enabled.length <= 1)
+            return
+        page.setOutput(name, ["off"])
     }
 
     // args is the rest of `niri msg output <name> ...`, e.g. ["scale", "1.25"]
@@ -54,7 +64,7 @@ SettingsPage {
     Timer {
         interval: 3000
         repeat: true
-        running: page.visible
+        running: page.visible && page.host && page.host.active
         onTriggered: outputsProcess.running = true
     }
 
@@ -63,10 +73,17 @@ SettingsPage {
         command: ["niri", "msg", "--json", "outputs"]
         stdout: StdioCollector {
             onStreamFinished: {
+                // niri rebuilds this reply from a hash map, so the key order differs
+                // between polls; sort in outputNames() and skip identical text so the
+                // Repeater is not torn down every 3 s.
+                if (text === page.lastOutputsJson)
+                    return
                 try {
                     page.outputs = JSON.parse(text)
+                    page.lastOutputsJson = text
                 } catch (e) {
-                    page.outputs = ({})
+                    // Keep the last good reply; a transient niri failure must not
+                    // blank the card.
                 }
             }
         }
@@ -113,8 +130,12 @@ SettingsPage {
                     label: outputColumn.modelData
                     detail: (outputColumn.output.make || "") + " " + (outputColumn.output.model || "")
                     checked: outputColumn.logical !== null
-                    onToggled: page.setOutput(outputColumn.modelData,
-                        [outputColumn.logical !== null ? "off" : "on"])
+                    onToggled: {
+                        if (outputColumn.logical !== null)
+                            page.disableOutput(outputColumn.modelData)
+                        else
+                            page.setOutput(outputColumn.modelData, ["on"])
+                    }
                 }
 
                 SettingChoice {
@@ -139,7 +160,7 @@ SettingsPage {
 
         Text {
             width: page.fullWidth
-            text: "These last until the session ends — niri does not write them to your config. To keep a mode or scale, edit home/modules/niri.nix and rebuild."
+            text: "These last until the session ends — niri does not write them to your config. To keep a mode or scale, edit home/modules/niri.nix and rebuild. The last enabled output cannot be switched off."
             color: Theme.pInkSub
             font.family: Theme.fontFamily
             font.pixelSize: 14

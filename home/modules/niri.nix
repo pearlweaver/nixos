@@ -89,7 +89,7 @@ in {
         {
           matches = [
             {
-              namespace = "noctalia-wallpaper";
+              namespace = "sekaipop-wallpaper";
             }
           ];
           place-within-backdrop = true;
