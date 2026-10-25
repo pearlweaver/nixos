@@ -15,22 +15,30 @@ import qs.modules.common
 SettingsPage {
     id: page
 
-    // Parsed JSON, refreshed after every change and every 3 s while the
-    // Settings are open (the reply has no output-event stream on this side).
+    // Parsed JSON, refreshed after a change and every 3 s while the Settings
+    // are open, skipping replies whose parsed state is unchanged (the reply has
+    // no output-event stream on this side).
     property var outputs: ({})
-    property string lastOutputsJson: ""
+    property string lastOutputsSignature: ""
+    property var pendingOff: ({})
     property var layoutNames: []
 
     function outputNames() {
         return Object.keys(page.outputs).sort()
     }
 
-    // Turning off the last enabled output would leave a black screen with no
-    // way back from this page.
+    function outputSignature(outputs) {
+        return JSON.stringify(Object.keys(outputs).sort().map(name => [name, outputs[name]]))
+    }
+
+    // Turning off the last enabled output would leave a black screen with no way
+    // back from this page. pendingOff closes the window before the next reply.
     function disableOutput(name) {
-        const enabled = page.outputNames().filter(n => page.outputs[n].logical)
+        const enabled = page.outputNames().filter(n =>
+            page.outputs[n].logical && !page.pendingOff[n])
         if (enabled.length <= 1)
             return
+        page.pendingOff[name] = true
         page.setOutput(name, ["off"])
     }
 
@@ -64,6 +72,7 @@ SettingsPage {
     Timer {
         interval: 3000
         repeat: true
+        triggeredOnStart: true
         running: page.visible && page.host && page.host.active
         onTriggered: outputsProcess.running = true
     }
@@ -73,18 +82,21 @@ SettingsPage {
         command: ["niri", "msg", "--json", "outputs"]
         stdout: StdioCollector {
             onStreamFinished: {
-                // niri rebuilds this reply from a hash map, so the key order differs
-                // between polls; sort in outputNames() and skip identical text so the
-                // Repeater is not torn down every 3 s.
-                if (text === page.lastOutputsJson)
-                    return
+                // niri rebuilds this reply from a hash map, so raw text is not stable.
+                // Compare a signature over sorted keys; treat every reply as the end of
+                // any pending off, even when the state did not change.
                 try {
-                    page.outputs = JSON.parse(text)
-                    page.lastOutputsJson = text
+                    var parsed = JSON.parse(text)
                 } catch (e) {
-                    // Keep the last good reply; a transient niri failure must not
-                    // blank the card.
+                    page.pendingOff = ({})
+                    return // keep the last good reply
                 }
+                page.pendingOff = ({})
+                const signature = page.outputSignature(parsed)
+                if (signature === page.lastOutputsSignature)
+                    return
+                page.outputs = parsed
+                page.lastOutputsSignature = signature
             }
         }
     }
