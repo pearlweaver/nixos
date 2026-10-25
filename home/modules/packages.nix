@@ -7,6 +7,8 @@
     discord
     obsidian
     spotify
+    antimicrox
+    evtest
     vesktop
     heroic
     libreoffice

@@ -1,3 +1,3 @@
-# Version 26.10.21.1
+# Version 26.10.26.1
 
-- Replaced Ryoku config with Sekaipop hyprland config
+- Importing the phone from sekaipop to niri config
