@@ -32,13 +32,16 @@ SettingsPage {
     }
 
     // Turning off the last enabled output would leave a black screen with no way
-    // back from this page. pendingOff closes the window before the next reply.
+    // back from this page. A name stays pending until a reply confirms it off
+    // (or the 5 s retry window expires), so a stale poll cannot reopen the guard.
     function disableOutput(name) {
+        const now = Date.now()
         const enabled = page.outputNames().filter(n =>
-            page.outputs[n].logical && !page.pendingOff[n])
+            page.outputs[n].logical &&
+            !(page.pendingOff[n] !== undefined && now - page.pendingOff[n] < 5000))
         if (enabled.length <= 1)
             return
-        page.pendingOff[name] = true
+        page.pendingOff[name] = now
         page.setOutput(name, ["off"])
     }
 
@@ -83,15 +86,16 @@ SettingsPage {
         stdout: StdioCollector {
             onStreamFinished: {
                 // niri rebuilds this reply from a hash map, so raw text is not stable.
-                // Compare a signature over sorted keys; treat every reply as the end of
-                // any pending off, even when the state did not change.
+                // Compare a signature over sorted keys; a name stays pending until a
+                // reply confirms it off.
                 try {
                     var parsed = JSON.parse(text)
                 } catch (e) {
-                    page.pendingOff = ({})
-                    return // keep the last good reply
+                    return // keep the last good reply; pending entries expire
                 }
-                page.pendingOff = ({})
+                for (const name of Object.keys(parsed))
+                    if (parsed[name].logical === null)
+                        delete page.pendingOff[name]
                 const signature = page.outputSignature(parsed)
                 if (signature === page.lastOutputsSignature)
                     return
