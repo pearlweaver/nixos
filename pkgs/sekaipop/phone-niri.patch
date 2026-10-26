@@ -1,21 +1,22 @@
 diff -ruN a/sekaipop/modules/common/functions/QuickTiles.js b/sekaipop/modules/common/functions/QuickTiles.js
 --- a/sekaipop/modules/common/functions/QuickTiles.js	1970-01-01 05:00:01.000000000 +0500
-+++ b/sekaipop/modules/common/functions/QuickTiles.js	2026-10-22 23:36:08.457988282 +0500
-@@ -28,6 +28,11 @@
++++ b/sekaipop/modules/common/functions/QuickTiles.js	2026-10-26 01:04:23.500973524 +0500
+@@ -28,6 +28,12 @@
                 "darkMode", "easyEffects", "warp", "screenSnip", "colorPicker",
                 "keyboard", "powerProfile", "musicRecognition", "antiFlashbang"]
  
 +// Tiles that need Hyprland: night light is hyprsunset, anti-flashbang is a
-+// decoration.screen_shader. Filtered out of the panel and the add tray when
-+// NiriWorkspaces.running (QuickSource.qml, QuickPanelFace.qml).
-+var hyprOnly = ["nightLight", "antiFlashbang"]
++// decoration.screen_shader, Game Mode runs a hyprctl script. Filtered out of
++// the panel and the add tray when NiriWorkspaces.running (QuickSource.qml,
++// QuickPanelFace.qml).
++var hyprOnly = ["nightLight", "antiFlashbang", "gameMode"]
 +
  // Buttons that do something once and have no on/off of their own (Screen
  // Snip, Color Picker): a click closes the panel first, then runs.
  function isAction(id) {
 diff -ruN a/sekaipop/modules/sekai/quickPanel/GammaBrightnessSlider.qml b/sekaipop/modules/sekai/quickPanel/GammaBrightnessSlider.qml
 --- a/sekaipop/modules/sekai/quickPanel/GammaBrightnessSlider.qml	1970-01-01 05:00:01.000000000 +0500
-+++ b/sekaipop/modules/sekai/quickPanel/GammaBrightnessSlider.qml	2026-10-22 23:36:23.772971326 +0500
++++ b/sekaipop/modules/sekai/quickPanel/GammaBrightnessSlider.qml	2026-10-26 01:04:23.498755307 +0500
 @@ -28,8 +28,11 @@
  
      // Total footprint (same as the Brightness slider it replaces).
@@ -56,7 +57,7 @@ diff -ruN a/sekaipop/modules/sekai/quickPanel/GammaBrightnessSlider.qml b/sekaip
              width: 3
 diff -ruN a/sekaipop/modules/sekai/quickPanel/QuickPanelFace.qml b/sekaipop/modules/sekai/quickPanel/QuickPanelFace.qml
 --- a/sekaipop/modules/sekai/quickPanel/QuickPanelFace.qml	1970-01-01 05:00:01.000000000 +0500
-+++ b/sekaipop/modules/sekai/quickPanel/QuickPanelFace.qml	2026-10-22 23:36:19.908975520 +0500
++++ b/sekaipop/modules/sekai/quickPanel/QuickPanelFace.qml	2026-10-26 01:04:23.498968158 +0500
 @@ -2,6 +2,7 @@
  import QtQuick.Effects
  import "../../common/functions/QuickTiles.js" as QT
@@ -86,7 +87,7 @@ diff -ruN a/sekaipop/modules/sekai/quickPanel/QuickPanelFace.qml b/sekaipop/modu
          onGammaMoved: value => face.gammaMoved(value)
 diff -ruN a/sekaipop/modules/sekai/quickPanel/QuickPanel.qml b/sekaipop/modules/sekai/quickPanel/QuickPanel.qml
 --- a/sekaipop/modules/sekai/quickPanel/QuickPanel.qml	1970-01-01 05:00:01.000000000 +0500
-+++ b/sekaipop/modules/sekai/quickPanel/QuickPanel.qml	2026-10-22 23:36:19.413976061 +0500
++++ b/sekaipop/modules/sekai/quickPanel/QuickPanel.qml	2026-10-26 01:04:23.499241595 +0500
 @@ -331,7 +331,8 @@
      property double hotBlockedUntil: 0
  
@@ -120,7 +121,7 @@ diff -ruN a/sekaipop/modules/sekai/quickPanel/QuickPanel.qml b/sekaipop/modules/
              anchors {
 diff -ruN a/sekaipop/modules/sekai/settings/SettingsFace.qml b/sekaipop/modules/sekai/settings/SettingsFace.qml
 --- a/sekaipop/modules/sekai/settings/SettingsFace.qml	1970-01-01 05:00:01.000000000 +0500
-+++ b/sekaipop/modules/sekai/settings/SettingsFace.qml	2026-10-22 23:36:20.813974533 +0500
++++ b/sekaipop/modules/sekai/settings/SettingsFace.qml	2026-10-26 01:04:23.499512488 +0500
 @@ -73,7 +73,7 @@
          { id: "general", icon: "tune", label: "General", title: "General", sub: "How the shell behaves" },
          { id: "bar", icon: "toast", label: "Bar", title: "Bar", sub: "Where it sits and what it carries" },
@@ -157,7 +158,7 @@ diff -ruN a/sekaipop/modules/sekai/settings/SettingsFace.qml b/sekaipop/modules/
  
 diff -ruN a/sekaipop/services/LockState.qml b/sekaipop/services/LockState.qml
 --- a/sekaipop/services/LockState.qml	1970-01-01 05:00:01.000000000 +0500
-+++ b/sekaipop/services/LockState.qml	2026-10-22 23:36:08.865987818 +0500
++++ b/sekaipop/services/LockState.qml	2026-10-26 01:04:23.499676379 +0500
 @@ -72,6 +72,12 @@
      property bool relockPending: false
  
@@ -173,7 +174,7 @@ diff -ruN a/sekaipop/services/LockState.qml b/sekaipop/services/LockState.qml
              return
 diff -ruN a/sekaipop/services/NiriWorkspaces.qml b/sekaipop/services/NiriWorkspaces.qml
 --- a/sekaipop/services/NiriWorkspaces.qml	1970-01-01 05:00:01.000000000 +0500
-+++ b/sekaipop/services/NiriWorkspaces.qml	2026-10-22 23:36:07.452989426 +0500
++++ b/sekaipop/services/NiriWorkspaces.qml	2026-10-26 01:04:23.499771117 +0500
 @@ -28,6 +28,15 @@
      // niri's own workspace objects, see NiriMath.js; empty until the stream sends them
      property var workspaces: []
@@ -192,8 +193,35 @@ diff -ruN a/sekaipop/services/NiriWorkspaces.qml b/sekaipop/services/NiriWorkspa
  
 diff -ruN a/sekaipop/services/QuickSource.qml b/sekaipop/services/QuickSource.qml
 --- a/sekaipop/services/QuickSource.qml	1970-01-01 05:00:01.000000000 +0500
-+++ b/sekaipop/services/QuickSource.qml	2026-10-23 01:25:22.174942109 +0500
-@@ -1112,7 +1112,11 @@
++++ b/sekaipop/services/QuickSource.qml	2026-10-26 01:04:23.501207670 +0500
+@@ -115,7 +115,13 @@
+     property var ddcMonitors: []
+     property bool ddcDetected: false
+ 
+-    readonly property bool keepAwakeOn: inhibitor.running
++    // On Niri, Noctalia's caffeine shortcut owns the session's one idle
++    // inhibitor. Mirror it instead of holding a second one, so the phone tile
++    // and the Noctalia control center can never disagree.
++    property bool noctaliaCaffeineOn: false
++    readonly property bool keepAwakeOn: NiriWorkspaces.running
++        ? root.noctaliaCaffeineOn
++        : inhibitor.running
+ 
+     // The Notifications tile: OFF is do-not-disturb. shell.qml hands it to
+     // NotificationSource, which then stops notifications taking over the
+@@ -622,6 +628,11 @@
+     }
+ 
+     function toggleKeepAwake() {
++        if (NiriWorkspaces.running) {
++            Quickshell.execDetached(["noctalia", "msg", "caffeine-toggle"])
++            caffeineRefresh.restart()
++            return
++        }
+         const want = !inhibitor.running
+         inhibitor.running = want
+         // Remember the choice so a shell reload can put it back (see the
+@@ -1112,7 +1123,11 @@
      }
  
      // ===== button layout =====
@@ -206,7 +234,7 @@ diff -ruN a/sekaipop/services/QuickSource.qml b/sekaipop/services/QuickSource.qm
      // Most buttons a row may hold, 1-5 (edit mode's Columns setting; 5 is
      // the old width-only flow). Saved next to the list as an "@columns" pair.
      property int tileColumns: QT.defaultColumns
-@@ -1140,6 +1144,9 @@
+@@ -1140,6 +1155,9 @@
      }
  
      function setTiles(list) {
@@ -216,7 +244,38 @@ diff -ruN a/sekaipop/services/QuickSource.qml b/sekaipop/services/QuickSource.qm
          tiles = list
          const args = ["sh", root.tilesScript, "save", "@columns", String(root.tileColumns)]
          for (const t of list) {
-@@ -1858,7 +1865,8 @@
+@@ -1832,6 +1850,30 @@
+                   "sh", "-c", "while kill -0 $PPID 2>/dev/null; do sleep 5; done # sekaipop-keep-awake"]
+     }
+ 
++    // Noctalia has no status command for caffeine; logind's inhibitor list is
++    // the truth. Only one exists at a time because this shell does not create
++    // a second one on Niri.
++    Process {
++        id: caffeineCheck
++        command: ["systemd-inhibit", "--list", "--no-pager"]
++        stdout: StdioCollector {
++            onStreamFinished: root.noctaliaCaffeineOn = text.includes("Caffeine")
++        }
++    }
++
++    Timer {
++        id: caffeineRefresh
++        interval: 300
++        onTriggered: caffeineCheck.running = true
++    }
++
++    Timer {
++        interval: 2000
++        repeat: true
++        running: root.active && NiriWorkspaces.running
++        onTriggered: caffeineCheck.running = true
++    }
++
+     readonly property string tilesScript: Directories.script("state/qp-tiles-state.sh")
+ 
+     // Runs once, at startup: the saved button layout. Nothing saved yet
+@@ -1858,14 +1900,17 @@
                          list.push({ id: parts[0], size: parts[1].trim() })
                  }
                  root.tileColumns = columns
@@ -226,7 +285,17 @@ diff -ruN a/sekaipop/services/QuickSource.qml b/sekaipop/services/QuickSource.qm
              }
          }
      }
-@@ -1919,6 +1927,15 @@
+ 
+     // Runs once, at startup: clear leftovers, then restore the saved state.
++    // Not on Niri: the saved choice belongs to this shell's own inhibitor, and
++    // there Keep Awake is Noctalia's caffeine.
+     Process {
+-        running: true
++        running: !NiriWorkspaces.running
+         command: ["sh", root.keepAwakeScript, "restore"]
+         stdout: StdioCollector {
+             onStreamFinished: {
+@@ -1919,6 +1964,15 @@
      }
  
      function lockThen(action) {

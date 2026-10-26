@@ -20,9 +20,10 @@ stdenvNoCC.mkDerivation {
 
   dontBuild = true;
 
-  # Every hunk is gated on NiriWorkspaces.running (NIRI_SOCKET set), so the
-  # Hyprland sekaipop profile behaves exactly as before. A context change in
-  # upstream makes the build fail instead of silently shipping unpatched QML.
+  # Every behavioural hunk is gated on NiriWorkspaces.running (NIRI_SOCKET
+  # set), so the Hyprland sekaipop profile behaves exactly as before. A context
+  # change in upstream makes the build fail instead of silently shipping
+  # unpatched QML.
   patches = [ ./phone-niri.patch ];
 
   installPhase = ''

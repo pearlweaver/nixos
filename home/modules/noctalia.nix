@@ -1477,13 +1477,13 @@
 
       # Off: the phone's NotificationSource owns org.freedesktop.Notifications.
       # Only one program may; Noctalia's panel/history will be empty by design.
-      notifications = {
+      # The table is [notification] singular; [notifications] is ignored, which
+      # is why Noctalia kept the bus name before. The duration_* keys are not
+      # in Noctalia v5's schema.
+      notification = {
         enable_daemon = false;
         position = "top_right";
         layer = "top"; # use 'overlay' if you want them to appear in fullscreen mode
-        duration_low = 3;
-        duration_normal = 8;
-        duration_critical = 15;
       };
 
       audio = {

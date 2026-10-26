@@ -9,6 +9,7 @@
 // (home/modules/sekaipop-phone.nix), so qs.* and Quickshell.shellDir resolve
 // exactly as upstream expects.
 import Quickshell
+import QtQuick
 import qs.services
 import qs.modules.sekai.background
 import qs.modules.sekai.notificationPopup
@@ -20,6 +21,27 @@ ShellRoot {
     Variants {
         model: Quickshell.screens
         WallpaperLayer {}
+    }
+
+    // Noctalia derives its palette from the wallpaper it is told about. The
+    // phone now owns the wallpaper, so hand Noctalia the same file: its layer
+    // stays off, only the colours are used.
+    // shortcut: video wallpapers do not update the palette; add a still
+    // extraction if their colours matter.
+    function syncNoctaliaWallpaper() {
+        const path = WallpaperService.currentPath
+        if (!NiriWorkspaces.running || !path || WallpaperService.isVideo(path))
+            return
+        Quickshell.execDetached(["noctalia", "msg", "wallpaper-set", path])
+    }
+
+    Component.onCompleted: syncNoctaliaWallpaper()
+
+    Connections {
+        target: WallpaperService
+        function onCurrentPathChanged() {
+            syncNoctaliaWallpaper()
+        }
     }
 
     // System side of the quick tiles, media and brightness. It polls only
