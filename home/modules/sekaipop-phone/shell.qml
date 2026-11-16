@@ -33,6 +33,15 @@ ShellRoot {
         if (!NiriWorkspaces.running || !path || WallpaperService.isVideo(path))
             return
         Quickshell.execDetached(["noctalia", "msg", "wallpaper-set", path])
+        // Noctalia's lock screen falls back to getWallpaperPath() only while
+        // [wallpaper] is enabled in its config, which it is not here — so
+        // without an explicit [lockscreen] wallpaper it paints opaque black.
+        // Feed it the pick instead: the phone's lock pick when "Separate
+        // Lockscreen Wallpaper" is on, else the desktop's. Same folder.
+        const lockPath = WallpaperService.lockPathFor(WallpaperService.themeScreen)
+        if (lockPath && !WallpaperService.isVideo(lockPath))
+            Quickshell.execDetached(["noctalia", "msg", "config-set", "lockscreen.wallpaper",
+                                     JSON.stringify(lockPath)])
     }
 
     Component.onCompleted: syncNoctaliaWallpaper()
@@ -40,6 +49,10 @@ ShellRoot {
     Connections {
         target: WallpaperService
         function onCurrentPathChanged() {
+            syncNoctaliaWallpaper()
+        }
+        // A pick on the lockscreen tab alone must also reach Noctalia.
+        function onLockCurrentPathChanged() {
             syncNoctaliaWallpaper()
         }
     }
@@ -78,5 +91,13 @@ ShellRoot {
         source: quickState
         notificationSource: notificationState
         appSource: appState
+        // The Hyprland profile intentionally leaves the phone's bottom under
+        // the screen edge (its peek). This is the session's only phone, so let
+        // all of it show.
+        peek: 0
+        // No bottom-edge hot strip: it overlaps the dock and would open the
+        // phone on any pointer brushing the bottom of the screen. Opening is
+        // the keybind / `qs -c sekaipop-phone ipc call phone toggle` only.
+        hotEdge: false
     }
 }

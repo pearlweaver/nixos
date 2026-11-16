@@ -25,6 +25,11 @@
     # `programs.niri` configures the session but does not put the CLI in PATH.
     niri
 
+    # The phone's "Wallpaper (matugen)" theme shells out to this. Without it
+    # ThemeService keeps whatever palette is already in ~/.cache and cannot
+    # follow the wallpaper.
+    matugen
+
     # The brightness half of the Quick slider.
     brightnessctl
     ddcutil
@@ -36,6 +41,16 @@
     wl-clipboard
     wtype
     imagemagick
+
+    # The avatar/banner picker (scripts/images/pick-image.sh) tries
+    # kdialog, zenity and yad; none were installed, so the picker did
+    # nothing. zenity is the smallest of the three.
+    zenity
+
+    # Music Recognition (scripts/musicRecognition/music-recognize.sh):
+    # songrec is the Shazam client, ffmpeg records the sink monitor.
+    songrec
+    ffmpeg
   ];
 
   # Our shell.qml, with upstream's whole QML tree linked beside it so

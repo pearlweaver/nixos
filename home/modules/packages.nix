@@ -18,10 +18,13 @@
     (prismlauncher.override {
       additionalLibs = with pkgs; [ libxrender libxtst libxi libx11 libxext ];
     })
+    stockfish
     nwg-look
+    bazel-buildtools
     adw-gtk3
     komikku
     stremio-linux-shell
+    rojo
     foliate
     zathura
     pinta

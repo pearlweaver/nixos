@@ -50,14 +50,15 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # SekaiPop: a full Quickshell-based Hyprland desktop shell. Pinned so
-    # `nix flake update` moves it deliberately rather than on every fetch.
+    # SekaiPop: a full Quickshell-based Hyprland desktop shell. Pinned to a
+    # commit, not the default branch, so `nix flake update` cannot move it;
+    # bump this rev by hand when you deliberately want a new version.
     # The Arch installers are unusable here (they hard-exit on a missing
     # pacman), so pkgs/sekaipop stages the config tree instead.
     # `flake = false` because the repo is not a flake -- without it nix looks
     # for a flake.nix that does not exist and the input fails to resolve.
     sekaipop = {
-      url = "github:Blapples/SekaiPop";
+      url = "github:Blapples/SekaiPop/9b606805f6ca0dd855ba5d2b4a274be620fa6a58";
       flake = false;
     };
   };
@@ -212,6 +213,8 @@
               scikit-learn
               inquirerpy
               tqdm
+              chess
+              kivy
             ]))
           ];
         };

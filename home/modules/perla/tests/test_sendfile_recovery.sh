@@ -85,30 +85,32 @@ PY
   fi
 }
 
-# Case 1: the REAL shape OpenCode returns today — final step only, no tool
-# part. The model got a real id from send_file, and the daemon staged the file
-# in-process, so the parser must recover it via the fallback.
-run_case "recovers the file from a final-step-only response (no tool part)" \
-  '{"parts":[{"type":"step-start"},{"type":"text","text":"Sent. id: abc123"},{"type":"step-finish"}]}' \
+# Case 1: the REAL shape OpenCode v2 returns today — an assistant message
+# whose content list has no tool part (the model got a real id from
+# send_file, and the daemon staged the file in-process, so the parser must
+# recover it via the fallback).
+run_case "recovers the file from a content-only response (no tool part)" \
+  '{"content":[{"type":"text","text":"Sent. id: abc123"}]}' \
   yes FILE
 
-# Case 2: a genuine tool part with the JSON result inline still works via the
-# primary path (this is the case the old code was built around).
+# Case 2: a genuine v2 tool content item with the JSON result in its
+# state.content text still works via the primary path (this is the case the
+# old code was built around).
 run_case "still uses the primary path when a tool part IS present" \
-  '{"parts":[{"type":"tool","tool":"file_send_file","state":{"status":"completed","output":"{\"ok\": true, \"id\": \"abc123\", \"filename\": \"probe.txt\"}"}}]}' \
+  '{"content":[{"type":"tool","name":"file_send_file","state":{"status":"completed","content":[{"type":"text","text":"{\"ok\": true, \"id\": \"abc123\", \"filename\": \"probe.txt\"}"}]}}]}' \
   yes FILE
 
 # Case 3: send_file found nothing, so the daemon staged nothing. The fallback
 # must not invent a file out of nothing — this is what stops the relaxed gate
 # from attaching a bogus download to an unrelated reply.
 run_case "does not invent a file when nothing was staged" \
-  '{"parts":[{"type":"step-start"},{"type":"text","text":"I could not find that file."},{"type":"step-finish"}]}' \
+  '{"content":[{"type":"text","text":"I could not find that file."}]}' \
   no NONE
 
 # Case 4: a prior turn's staged file must not leak into this turn's reply.
 # The record is popped on use, so a second parse of the same turn finds none.
 run_case "a popped record does not leak into a later turn" \
-  '{"parts":[{"type":"step-start"},{"type":"text","text":"Second turn."},{"type":"step-finish"}]}' \
+  '{"content":[{"type":"text","text":"Second turn."}]}' \
   no NONE
 
 echo
