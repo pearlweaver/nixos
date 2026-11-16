@@ -4,6 +4,7 @@
   home.packages = with pkgs; [
     # Apps
     brave-origin
+    horizon-launcher
     discord
     obsidian
     spotify

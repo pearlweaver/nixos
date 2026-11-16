@@ -84,6 +84,8 @@
             # store so home-manager can link them. Carries no binaries of its
             # own; the shell itself is quickshell, which is pinned per-output.
             sekaipop = final.callPackage ./pkgs/sekaipop { src = inputs.sekaipop; };
+            # Horizon game launcher (prebuilt binary from latest downloaded tarball).
+            horizon-launcher = final.callPackage ./pkgs/horizon-launcher { };
             # nixpkgs' flutter lags upstream stable; this rebuilds it from a
             # vendored data.json. See pkgs/flutter/default.nix.
             flutter = final.callPackage ./pkgs/flutter { };
@@ -99,7 +101,7 @@
       # through a whole home-manager generation. The overlay attrs would
       # otherwise only be reachable from inside the home profiles.
       packages.${system} = {
-        inherit (pkgs) sekaipop google-sans-flex;
+        inherit (pkgs) sekaipop google-sans-flex horizon-launcher;
       };
 
       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
