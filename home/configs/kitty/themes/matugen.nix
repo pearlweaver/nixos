@@ -1,5 +1,5 @@
-{ lib, ... }: {
-  imports = [ ./noctalia.nix ];
+{ ... }: {
+  imports = [ ./base.nix ];
 
-  programs.kitty.extraConfig = lib.mkForce "include themes/matugen.conf";
+  programs.kitty.extraConfig = "include themes/matugen.conf";
 }
