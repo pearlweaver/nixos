@@ -25,6 +25,19 @@ in {
     settings = {
       clockFormat = "HH:mm";
       maxWorkspaces = 6;
+      # Only real pill widgets, in the same order as Noctalia's bar. Launcher,
+      # media, notifications, clipboard, control-center and session are
+      # separate panels here and stay on their existing binds.
+      pillModules = [
+        "workspaces"
+        "audioVisualizer"
+        "clock"
+        "network"
+        "bluetooth"
+        "volume"
+        "brightness"
+        "battery"
+      ];
       screenLockAppCommand = "chillpill-lock";
       defaultTerminal = "kitty";
       textFontFamily = "Monocraft";
