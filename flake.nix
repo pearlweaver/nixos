@@ -61,6 +61,16 @@
       url = "github:Blapples/SekaiPop/9b606805f6ca0dd855ba5d2b4a274be620fa6a58";
       flake = false;
     };
+
+    # ChillPill-Shell: the user's fork of a Quickshell pill bar for niri.
+    # Consumed as a flake so the local checkout at ~/Dev/ChillPill-Shell is
+    # never touched. The lock pins the exact rev; `nix flake update chillpill`
+    # moves it deliberately.
+    chillpill = {
+      url = "github:pearlweaver/ChillPill-Shell";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.home-manager.follows = "home-manager";
+    };
   };
 
   # nixConfig = {
@@ -102,6 +112,7 @@
       # otherwise only be reachable from inside the home profiles.
       packages.${system} = {
         inherit (pkgs) sekaipop google-sans-flex horizon-launcher;
+        chillpill = inputs.chillpill.packages.${system}.default;
       };
 
       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
@@ -181,6 +192,34 @@
           catppuccin.homeModules.catppuccin
           nixvim.homeModules.nixvim
           sops-nix.homeManagerModules.sops
+        ];
+      };
+
+      # Niri + ChillPill as its own home generation. The system side is the
+      # same niri session as `nixos`, so only home-manager changes. Switch with
+      #   home-manager switch --flake .#thedreamdev-chillpill
+      # and back with
+      #   home-manager switch --flake .#thedreamdev
+      homeConfigurations.thedreamdev-chillpill = home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        extraSpecialArgs = {
+          inherit inputs;
+          # Niri session, not Hyprland. The flag is this repo's "use the
+          # static Rose Pine theme, not Noctalia's runtime-generated one"
+          # switch; the ChillPill profile keeps the normal niri path.
+          hyprlandSession = false;
+        };
+        modules = [
+          ./home/home-chillpill.nix
+          catppuccin.homeModules.catppuccin
+          # Declares programs.noctalia.* so perla.nix's launcher entry
+          # evaluates. This is NOT home/modules/noctalia.nix: enable stays
+          # false, so no daemon and no template generation.
+          noctalia.homeModules.default
+          niri-flake.homeModules.niri
+          nixvim.homeModules.nixvim
+          sops-nix.homeManagerModules.sops
+          inputs.chillpill.homeManagerModules.default
         ];
       };
 
