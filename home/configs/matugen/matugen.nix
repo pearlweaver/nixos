@@ -1,11 +1,45 @@
 # ChillPill-only theming: the wallpaper drives GTK/Qt/KDE colours via matugen.
 # Kept out of the shared gtk.nix/qt6.nix modules so the Noctalia and SekaiPop
 # home generations keep their own static/runtime theming unchanged.
-{ pkgs, lib, ... }: {
+{ pkgs, lib, ... }:
+let
+  # Substitute the absolute template path into matugen's TOML config. matugen
+  # does not expand $HOME, and this repo already hardcodes /home/thedreamdev.
+  # This nixpkgs has no substituteAll; replaceVars is its checked replacement.
+  matugenConfig = pkgs.replaceVars ./matugen-config.toml {
+    template = "${./chillpill-theme.json.tmpl}";
+  };
+
+  # The shell's own wrapper PATH excludes ~/.nix-profile/bin, so every tool the
+  # hook needs is either substituted as a store path or put on PATH explicitly.
+  # replaceVarsWith writes the script itself (and marks it executable); using
+  # writeShellScriptBin with the derivation as `text` would only embed its path.
+  matugenScript = pkgs.replaceVarsWith {
+    src = ./chillpill-matugen.sh;
+    name = "chillpill-matugen";
+    dir = "bin";
+    isExecutable = true;
+    replacements = {
+      awww = "${pkgs.awww}/bin/awww";
+      matugen = "${pkgs.matugen}/bin/matugen";
+      matugen_config = "${matugenConfig}";
+      system_theme = "${pkgs.sekaipop}/share/sekaipop/sekaipop/scripts/theming/system-theme.sh";
+      # system-theme.sh calls matugen and a handful of coreutils/grep/awk tools
+      # by name; glib/dconf provide its gsettings/dconf steps.
+      path_value = lib.makeBinPath (with pkgs; [ coreutils findutils gnugrep gnused gawk matugen glib dconf ]);
+    };
+  };
+in {
   # The GTK icon theme is set explicitly below; don't let catppuccin override it.
   catppuccin.gtk.icon.enable = false;
 
+  # Both gtk.css files already exist as leftover regular files from earlier
+  # switches; without force, checkLinkTargets refuses to replace them.
+  xdg.configFile."gtk-3.0/gtk.css".force = true;
+  xdg.configFile."gtk-4.0/gtk.css".force = true;
+
   home.packages = with pkgs; [
+    matugenScript
     matugen
     # system-theme.sh calls gsettings/gdbus/dconf for a few of its steps.
     glib
@@ -76,4 +110,27 @@ fixed=@Variant(\0\0\0\x87\0Latos-Regular,10,-1,5,50,0,0,0,0,0)General=@Variant(\
 EOF
     fi
   '';
+
+  # ChillPill writes last_wallpaper on every wallpaper pick (Mod+A, cliphist
+  # drops). Watching that file avoids wrapping awww: its wrapper PATH is built
+  # into the flake package and does not include ~/.nix-profile/bin.
+  systemd.user.services."chillpill-matugen" = {
+    Unit.Description = "Theme ChillPill and GTK/Qt/KDE apps from the wallpaper";
+    Service = {
+      Type = "oneshot";
+      ExecStart = "${matugenScript}/bin/chillpill-matugen";
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
+  systemd.user.paths."chillpill-matugen" = {
+    Unit.Description = "Re-theme when ChillPill changes the wallpaper";
+    Path = {
+      PathChanged = "%h/.cache/chillpill-shell/last_wallpaper";
+      # systemd would default to this from the unit name; be explicit so the
+      # link between the watcher and the one-shot service is visible.
+      Unit = "chillpill-matugen.service";
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
 }
