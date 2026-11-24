@@ -121,6 +121,10 @@ EOF
       ${pkgs.coreutils}/bin/mkdir -p "$HOME/.config/kitty/themes"
       ${pkgs.coreutils}/bin/cp ${./kitty-matugen-fallback.conf} "$kitty_theme"
     fi
+    # cp preserves the read-only mode of the Nix store source; matugen must be
+    # able to rewrite the file on every wallpaper change, including after an
+    # upgrade that seeded it in an earlier switch.
+    ${pkgs.coreutils}/bin/chmod u+w "$kitty_theme"
   '';
 
   # ChillPill writes last_wallpaper on every wallpaper pick (Mod+A, cliphist
