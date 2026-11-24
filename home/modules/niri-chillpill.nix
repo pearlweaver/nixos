@@ -88,8 +88,10 @@ in {
   '';
 
   # home.packages fonts do not refresh fontconfig on a profile change; without
-  # this "JetBrainsMono Nerd Font Propo" resolves to a blank glyph.
+  # this "JetBrainsMono Nerd Font Propo" resolves to a blank glyph. Activation
+  # PATH is minimal (home.emptyActivationPath), so call fontconfig by store
+  # path instead of relying on `fc-cache` being on PATH.
   home.activation.chillpillFontCache = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-    fc-cache -f >/dev/null 2>&1 || true
+    ${pkgs.fontconfig}/bin/fc-cache -f >/dev/null 2>&1 || true
   '';
 }
