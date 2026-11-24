@@ -13,6 +13,12 @@ in {
   # untouched, so the Noctalia profile keeps its exact configuration.
   imports = [ ./niri.nix ];
 
+  # The manual ChillPill setup left a regular config.jsonc at this path, so
+  # home-manager's checkLinkTargets refuses to replace the generated one.
+  # Nix owns this file in the profile (the GUI config app cannot save to a
+  # store symlink anyway), hence the same force used for the other dotfiles.
+  xdg.configFile."chillpill-shell/config.jsonc".force = true;
+
   programs.chillpill-shell = {
     enable = true;
     package = chillpill;
