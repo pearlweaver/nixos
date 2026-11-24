@@ -8,6 +8,7 @@ let
   # This nixpkgs has no substituteAll; replaceVars is its checked replacement.
   matugenConfig = pkgs.replaceVars ./matugen-config.toml {
     template = "${./chillpill-theme.json.tmpl}";
+    template_kitty = "${./kitty-theme.conf.tmpl}";
   };
 
   # The shell's own wrapper PATH excludes ~/.nix-profile/bin, so every tool the
@@ -108,6 +109,17 @@ standard_dialogs=default
 [Fonts]
 fixed=@Variant(\0\0\0\x87\0Latos-Regular,10,-1,5,50,0,0,0,0,0)General=@Variant(\0\0\0\x87\0Space Grotesk,11,-1,5,50,0,0,0,0,0)
 EOF
+    fi
+  '';
+
+  # Seed the matugen kitty include once. Home-manager must not manage this
+  # file: the wallpaper hook rewrites it, so a later switch would otherwise
+  # replace the generated palette with a read-only store symlink.
+  home.activation.matugenKittyConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    kitty_theme="$HOME/.config/kitty/themes/matugen.conf"
+    if [ ! -e "$kitty_theme" ]; then
+      ${pkgs.coreutils}/bin/mkdir -p "$HOME/.config/kitty/themes"
+      ${pkgs.coreutils}/bin/cp ${./kitty-matugen-fallback.conf} "$kitty_theme"
     fi
   '';
 

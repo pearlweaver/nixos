@@ -3,3 +3,7 @@
 [templates.chillpill-matugen]
 input_path = '@template@'
 output_path = '/home/thedreamdev/.cache/chillpill-shell/themes/matugen.json'
+
+[templates.chillpill-kitty]
+input_path = '@template_kitty@'
+output_path = '/home/thedreamdev/.config/kitty/themes/matugen.conf'
