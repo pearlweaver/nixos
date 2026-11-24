@@ -24,6 +24,11 @@
       rebuild-home = "cd ~/nixos-config && home-manager switch --flake .#thedreamdev";
       rebuild-sekaipop = "cd ~/nixos-config && sudo nixos-rebuild switch --flake .#sekaipop";
       rebuild-home-sekaipop = "cd ~/nixos-config && home-manager switch --flake .#thedreamdev-sekaipop";
+      # ChillPill and Noctalia are two home generations of the same niri
+      # session, so switching between them is home-manager only — no sudo and
+      # no nixos-rebuild. `rebuild-noctalia` is the plain niri profile.
+      rebuild-chillpill = "cd ~/nixos-config && home-manager switch --flake .#thedreamdev-chillpill";
+      rebuild-noctalia = "cd ~/nixos-config && home-manager switch --flake .#thedreamdev";
     };
 
     functions = {
