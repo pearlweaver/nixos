@@ -50,6 +50,18 @@ in {
   # Noctalia and the SekaiPop phone are deliberately absent: both claim the
   # notification bus and the wallpaper.
   programs.niri.settings = {
+    # Since niri 25.05 background layer surfaces move with their workspace.
+    # awww's wallpaper would slide on every workspace switch; placing it in
+    # the backdrop keeps one static image behind all workspaces. The base
+    # config does the same for sekaipop-wallpaper and mpvpaper; this list
+    # entry is additive, so those rules stay intact.
+    layer-rules = [
+      {
+        matches = [ { namespace = "^awww-daemon$"; } ];
+        place-within-backdrop = true;
+      }
+    ];
+
     spawn-at-startup = lib.mkForce [
       { command = [ "chillpill-shell" ]; }
       { command = [ "xwayland-satellite" ]; }
