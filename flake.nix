@@ -102,6 +102,11 @@
             # aseprite uses fmt::format via `fmt/core.h`, which fmt >= 12.2.0
             # no longer pulls in (it includes only fmt/base.h). Pin an older fmt.
             aseprite = prev.aseprite.override { fmt = prev.fmt_11; };
+            # ChillPill needs its lockscreen script installed and wrapped;
+            # pkgs/chillpill adds that to the upstream flake package.
+            chillpill = final.callPackage ./pkgs/chillpill {
+              upstream = inputs.chillpill.packages.${system}.default;
+            };
           })
         ];
       };
@@ -111,8 +116,7 @@
       # through a whole home-manager generation. The overlay attrs would
       # otherwise only be reachable from inside the home profiles.
       packages.${system} = {
-        inherit (pkgs) sekaipop google-sans-flex horizon-launcher;
-        chillpill = inputs.chillpill.packages.${system}.default;
+        inherit (pkgs) sekaipop google-sans-flex horizon-launcher chillpill;
       };
 
       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {

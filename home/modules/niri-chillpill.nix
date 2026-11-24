@@ -1,31 +1,9 @@
-{ config, pkgs, inputs, lib, ... }:
+{ config, pkgs, lib, ... }:
 
 let
-  system = pkgs.stdenv.hostPlatform.system;
-  upstream = inputs.chillpill.packages.${system}.default;
-
-  # default.nix installs chillpill-shell and chillpill-shell-ipc only. The
-  # lockscreen script is in the source tree but not in the install phase, and
-  # its hardcoded /usr/share path does not exist on NixOS. Add the binary and
-  # give it the same Qt/QML environment the main wrapper gets.
-  qtModules = with pkgs.qt6; [ qtbase qtdeclarative qtmultimedia ];
-  qtQmlPath = lib.concatMapStringsSep ":" (m: "${m}/lib/qt-6/qml") qtModules;
-  qtPluginPath = lib.concatMapStringsSep ":" (m: "${m}/lib/qt-6/plugins") qtModules;
-
-  chillpill = upstream.overrideAttrs (old: {
-    installPhase = old.installPhase + ''
-      install -Dm755 $src/lockscreen.sh $out/bin/chillpill-lock
-      substituteInPlace $out/bin/chillpill-lock \
-        --replace /usr/share/chillpill-shell $out/share/chillpill-shell
-    '';
-    postFixup = old.postFixup + ''
-      wrapProgram $out/bin/chillpill-lock \
-        --set QML_IMPORT_PATH "$out/share/chillpill-shell:$out/lib/qt6/qml:${qtQmlPath}" \
-        --set QT_PLUGIN_PATH "${qtPluginPath}" \
-        --set LD_LIBRARY_PATH "$out/lib/qt6/qml/PillBackend" \
-        --prefix PATH : ${lib.makeBinPath [ pkgs.quickshell ]}
-    '';
-  });
+  # pkgs/chillpill is the upstream flake package plus the lockscreen binary;
+  # the flake's `packages.chillpill` output is the same derivation.
+  chillpill = pkgs.chillpill;
 
   # Fixed IPC state names from the shell's IpcHandler blocks.
   ipc = target: [ "chillpill-shell-ipc" "call" target "toggle" ];
