@@ -38,9 +38,9 @@ in {
         "brightness"
         "battery"
       ];
-      # 9 px above matches the visual top gap; 30 px below reserves enough
+      # 4 px above matches the requested top gap; 30 px below reserves enough
       # exclusive zone so the pill does not overlap maximized/tiled windows.
-      pillTopMargin = 9;
+      pillTopMargin = 4;
       pillBottomMargin = 30;
       screenLockAppCommand = "chillpill-lock";
       defaultTerminal = "kitty";
