@@ -29,6 +29,12 @@ in {
       defaultTerminal = "kitty";
       textFontFamily = "Monocraft";
       nerdFontFamily = "JetBrainsMono Nerd Font Propo";
+      weatherLocation = "Lahore";
+      # The calendar's holiday dots, coloured day numbers and next-holiday
+      # line all hang off Config.holidaysUsable(); switching this off removes
+      # every marking without touching the country/weather settings.
+      holidaysEnabled = false;
+      wallpapersDir = "~/Pictures/Wallpapers";
     };
   };
 
