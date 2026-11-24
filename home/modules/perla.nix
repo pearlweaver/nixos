@@ -778,6 +778,10 @@ in {
         touch "$config_home/.synced"
       fi
       export XDG_CONFIG_HOME="$config_home"
+      # OpenCode v2 requires basic auth on every route; one fixed password,
+      # shared with the companion daemon (PERLA_OPENCODE_PASSWORD), so it
+      # doesn't have to scrape a random per-start password out of the journal.
+      export OPENCODE_SERVER_PASSWORD="${cfg.opencode_password}"
       exec opencode serve --port 13101
     '';
   };
@@ -808,6 +812,9 @@ in {
         touch "$config_home/.synced"
       fi
       export XDG_CONFIG_HOME="$config_home"
+      # Same fixed v2 basic-auth password shared with the daemon — see the
+      # t1 server above.
+      export OPENCODE_SERVER_PASSWORD="${cfg.opencode_password}"
       exec opencode serve --port "$port"
     '';
   };
@@ -909,6 +916,7 @@ in {
         "PERLA_VOICE=${cfg.voice_model}"
         "PERLA_TURN_TIMEOUT=${toString cfg.turn_timeout_seconds}"
         "PERLA_PERMISSION_TIMEOUT=${toString cfg.permission_timeout_seconds}"
+        "PERLA_OPENCODE_PASSWORD=${cfg.opencode_password}"
         "PERLA_GATE_PASSWORD=${cfg.gate_password}"
         "PERLA_FILES_DIR=${cfg.files_dir}"
         "PERLA_EXTRA_SEARCH_DIRS=${lib.concatStringsSep ":" cfg.extra_search_dirs}"

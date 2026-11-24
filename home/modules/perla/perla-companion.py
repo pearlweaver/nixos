@@ -163,6 +163,12 @@ MAX_SEND_FILE_BYTES = 50 * 1024 * 1024
 MAX_FUZZY_CANDIDATES = 8
 SERVER_PORT_T1 = int(os.environ.get("PERLA_SERVER_PORT_T1", "13101"))
 SERVER_PORT_T2 = int(os.environ.get("PERLA_SERVER_PORT_T2", "13102"))
+# OpenCode v2 servers answer every route only with HTTP basic auth (fixed
+# username, password shared in perla.nix by both server wrappers and this
+# daemon). Without it every curl call gets a 401 and the JSON parses fail.
+OPENCODE_USERNAME = os.environ.get("PERLA_OPENCODE_USERNAME", "opencode")
+OPENCODE_PASSWORD = os.environ.get("PERLA_OPENCODE_PASSWORD", "")
+OPENCODE_AUTH = ["-u", f"{OPENCODE_USERNAME}:{OPENCODE_PASSWORD}"] if OPENCODE_PASSWORD else []
 ELEVATION_DURATION = int(os.environ.get("PERLA_ELEVATION_DURATION", "300"))  # 5 minutes
 GATE_PASSWORD = os.environ.get("PERLA_GATE_PASSWORD", "")
 
@@ -287,8 +293,8 @@ class SessionManager:
         port = self._server_port(tier)
         try:
             result = subprocess.run(
-                ["curl", "-sf", "--connect-timeout", "2", "-m", "3",
-                 f"http://127.0.0.1:{port}/global/health"],
+                ["curl", "-sf", "--connect-timeout", "2", "-m", "3", *OPENCODE_AUTH,
+                 f"http://127.0.0.1:{port}/api/info"],
                 capture_output=True, timeout=5
             )
             return result.returncode == 0
@@ -338,8 +344,8 @@ class SessionManager:
         port = self._server_port(tier)
         try:
             result = subprocess.run(
-                ["curl", "-sf", "--connect-timeout", "3", "-m", "5",
-                 f"http://127.0.0.1:{port}/session/{sid}"],
+                ["curl", "-sf", "--connect-timeout", "3", "-m", "5", *OPENCODE_AUTH,
+                 f"http://127.0.0.1:{port}/api/session/{sid}"],
                 capture_output=True, timeout=10
             )
             return result.returncode == 0
@@ -365,13 +371,15 @@ class SessionManager:
         want = self._session_title(tier)
         try:
             result = subprocess.run(
-                ["curl", "-sf", "--connect-timeout", "3", "-m", "10",
-                 f"http://127.0.0.1:{port}/session"],
+                ["curl", "-sf", "--connect-timeout", "3", "-m", "10", *OPENCODE_AUTH,
+                 f"http://127.0.0.1:{port}/api/session"],
                 capture_output=True, text=True, timeout=15
             )
             if result.returncode != 0:
                 return None
             data = json.loads(result.stdout)
+            if isinstance(data, dict) and isinstance(data.get("data"), list):
+                data = data["data"]
         except Exception as e:
             print(f"WARNING: session resume scan failed (tier {tier}): {e}", flush=True)
             return None
@@ -404,26 +412,34 @@ class SessionManager:
         port = self._server_port(tier)
         try:
             result = subprocess.run(
-                ["curl", "-sf", "--connect-timeout", "3", "-m", "8",
-                 f"http://127.0.0.1:{port}/question"],
+                ["curl", "-sf", "--connect-timeout", "3", "-m", "8", *OPENCODE_AUTH,
+                 f"http://127.0.0.1:{port}/api/form"],
                 capture_output=True, text=True, timeout=12
             )
             if result.returncode != 0:
                 return
-            for q in json.loads(result.stdout):
-                if not isinstance(q, dict) or q.get("sessionID") != sid:
-                    continue
-                rid = q.get("id")
-                if not rid:
-                    continue
+            payload = json.loads(result.stdout)
+        except Exception as e:
+            print(f"WARNING: could not scan for stale questions: {e}", flush=True)
+            return
+        pending = payload.get("data") if isinstance(payload, dict) else payload
+        if not isinstance(pending, list):
+            return
+        for q in pending:
+            if not isinstance(q, dict) or q.get("sessionID") != sid:
+                continue
+            rid = q.get("id")
+            if not rid:
+                continue
+            try:
                 subprocess.run(
-                    ["curl", "-sf", "-m", "10", "-X", "POST",
-                     f"http://127.0.0.1:{port}/question/{rid}/reject"],
+                    ["curl", "-sf", "-m", "10", *OPENCODE_AUTH, "-X", "DELETE",
+                     f"http://127.0.0.1:{port}/api/session/{sid}/form/{rid}"],
                     capture_output=True, timeout=15
                 )
                 print(f"INFO: rejected stale question {rid} left on resumed session", flush=True)
-        except Exception as e:
-            print(f"WARNING: could not clear stale questions on resume: {e}", flush=True)
+            except Exception as e:
+                print(f"WARNING: stale question {rid} reject failed: {e}", flush=True)
 
     def _clear_pending_permissions(self, tier, sid):
         """Reject permission prompts left blocking on a session being resumed.
@@ -436,54 +452,36 @@ class SessionManager:
         port = self._server_port(tier)
         try:
             result = subprocess.run(
-                ["curl", "-sf", "--connect-timeout", "3", "-m", "8",
-                 f"http://127.0.0.1:{port}/permission"],
+                ["curl", "-sf", "--connect-timeout", "3", "-m", "8", *OPENCODE_AUTH,
+                 f"http://127.0.0.1:{port}/api/session/{sid}/permission"],
                 capture_output=True, text=True, timeout=12
             )
             if result.returncode != 0:
                 return
-            pending = json.loads(result.stdout)
+            payload = json.loads(result.stdout)
         except Exception as e:
             print(f"WARNING: could not scan for stale permissions: {e}", flush=True)
             return
+        pending = payload.get("data") if isinstance(payload, dict) else payload
         if not isinstance(pending, list):
             return
-        directory = None
         for entry in pending:
             if not isinstance(entry, dict) or entry.get("sessionID") != sid:
                 continue
             request_id = entry.get("id")
             if not request_id:
                 continue
-            if not directory:
-                directory = self._session_directory(tier, sid)
-            url = f"http://127.0.0.1:{port}/permission/{request_id}/reply"
-            if directory:
-                url += "?directory=" + urllib.parse.quote(directory, safe="")
             try:
                 subprocess.run(
-                    ["curl", "-sf", "-m", "10", "-X", "POST",
+                    ["curl", "-sf", "-m", "10", *OPENCODE_AUTH, "-X", "POST",
                      "-H", "Content-Type: application/json",
-                     "-d", json.dumps({"reply": "reject", "message": "stale after restart"}),
-                     url],
+                     "-d", json.dumps({"decision": "reject", "message": "stale after restart"}),
+                     f"http://127.0.0.1:{port}/api/session/{sid}/permission/{request_id}/reply"],
                     capture_output=True, timeout=15
                 )
                 print(f"INFO: rejected stale permission {request_id} on resumed session", flush=True)
             except Exception as e:
                 print(f"WARNING: stale permission {request_id} reject failed: {e}", flush=True)
-
-    def _session_directory(self, tier, sid):
-        try:
-            result = subprocess.run(
-                ["curl", "-sf", "--connect-timeout", "3", "-m", "8",
-                 f"http://127.0.0.1:{self._server_port(tier)}/session/{sid}"],
-                capture_output=True, text=True, timeout=12
-            )
-            if result.returncode == 0:
-                return (json.loads(result.stdout) or {}).get("directory")
-        except Exception:
-            pass
-        return None
 
     def _resume_session(self, tier):
         """Reattach to the previous conversation instead of starting a new one.
@@ -514,13 +512,15 @@ class SessionManager:
         title = self._session_title(tier)
         try:
             result = subprocess.run(
-                ["curl", "-sf", "--connect-timeout", "3", "-m", "10",
-                 "-X", "POST", f"http://127.0.0.1:{port}/session",
+                ["curl", "-sf", "--connect-timeout", "3", "-m", "10", *OPENCODE_AUTH,
+                 "-X", "POST", f"http://127.0.0.1:{port}/api/session",
                  "-H", "Content-Type: application/json",
                  "-d", json.dumps({"title": title})],
                 capture_output=True, text=True, timeout=15
             )
             data = json.loads(result.stdout)
+            if isinstance(data, dict) and isinstance(data.get("data"), dict):
+                data = data["data"]
             print(f"INFO: started new tier {tier} session {data['id']} ({title})", flush=True)
             return data["id"]
         except Exception as e:
@@ -576,21 +576,25 @@ class SessionManager:
     def _session_has_persona(self, tier, sid, marker):
         port = self._server_port(tier)
         result = subprocess.run(
-            ["curl", "-sf", "--connect-timeout", "3", "-m", "10",
-             f"http://127.0.0.1:{port}/session/{sid}/message"],
+            ["curl", "-sf", "--connect-timeout", "3", "-m", "10", *OPENCODE_AUTH,
+             f"http://127.0.0.1:{port}/api/session/{sid}/message"],
             capture_output=True, text=True, timeout=15
         )
         if result.returncode != 0:
             return False
         data = json.loads(result.stdout)
-        items = data if isinstance(data, list) else (data.get("data") or data.get("messages") or [])
-        for m in items:
+        items = data.get("data") if isinstance(data, dict) and isinstance(data.get("data"), list) else data
+        for m in items or []:
             if not isinstance(m, dict):
                 continue
-            for part in (m.get("parts") or []):
-                if isinstance(part, dict) and part.get("type") == "text" \
-                        and marker in (part.get("text") or ""):
-                    return True
+            # v2 shapes: user messages carry plain text, assistant ones a
+            # content list of typed parts — scan both.
+            texts = [m.get("text")]
+            for c in (m.get("content") or []):
+                if isinstance(c, dict) and c.get("type") == "text":
+                    texts.append(c.get("text"))
+            if any(t and marker in t for t in texts):
+                return True
         return False
 
 
@@ -679,7 +683,6 @@ class _Turn:
         self.question = None  # type: dict | None
         self.permission = None  # type: dict | None
         self.answered_request_ids = set()
-        self.permission_directory = None  # workspace dir, needed to answer a permission
         self.dismiss_timer = None
         # Separate slot from dismiss_timer on purpose: a turn can be parked on
         # a question and later on a permission, and reusing one slot would let
@@ -699,30 +702,39 @@ class _Turn:
 
 
 def _worker_run_turn(turn):
-    """Runs one message POST to completion in the background and records the
-    parsed outcome on the turn. Question events are not consumed here — the
-    waiting handler discovers them by polling GET /question."""
+    """Posts ONE prompt turn and drives it to completion in the background,
+    recording the parsed outcome on the turn. Question events are not consumed
+    here — the waiting handler discovers them by polling GET /api/form.
+
+    OpenCode v2 turned the message POST async: POST /api/session/{sid}/prompt
+    returns immediately with the user's own inbox entry, and the turn is done
+    when a `type:"idle"` message entry (with a succeeded/failed outcome)
+    appears at the head of GET /api/session/{sid}/message. That entry, and the
+    newest assistant message in the same listing, are the reply."""
     try:
         with turn.cond:
             if turn.interrupted:
                 turn.result = (INTERRUPTED_REPLY, False, False, False, None)
         if not turn.interrupted:
+            # Note the short -m: the prompt endpoint answers instantly with the
+            # inbox entry; the (long) waiting happens in the polling loop below.
             result = subprocess.run(
-                ["curl", "-sf", "--connect-timeout", "5", "-m", str(TURN_TIMEOUT_SECONDS),
-                 "-X", "POST", f"http://127.0.0.1:{turn.port}/session/{turn.sid}/message",
+                ["curl", "-sf", "--connect-timeout", "5", "-m", "30", *OPENCODE_AUTH,
+                 "-X", "POST", f"http://127.0.0.1:{turn.port}/api/session/{turn.sid}/prompt",
                  "-H", "Content-Type: application/json",
                  "-d", "@-"],
-                input=turn.body, capture_output=True, text=True, timeout=TURN_TIMEOUT_SECONDS + 10
+                input=turn.body, capture_output=True, text=True, timeout=45
             )
-            with turn.cond:
-                interrupted = turn.interrupted
-            if interrupted:
-                turn.result = (INTERRUPTED_REPLY, False, False, False, None)
-            elif result.returncode != 0:
+            if result.returncode != 0:
                 turn.result = ("OpenCode server error — try again.", False, False, False, None)
             else:
-                data = json.loads(result.stdout)
-                turn.result = _parse_message_response(data, turn.tier)
+                with turn.cond:
+                    interrupted = turn.interrupted
+                if interrupted:
+                    turn.result = (INTERRUPTED_REPLY, False, False, False, None)
+                else:
+                    user_msg = json.loads(result.stdout).get("data", {})
+                    turn.result = _await_turn_reply(turn, user_msg)
     except subprocess.TimeoutExpired:
         turn.result = ("Request timed out — the AI took too long to respond.", False, False, False, None)
     except Exception as e:
@@ -733,6 +745,70 @@ def _worker_run_turn(turn):
     with turn.cond:
         turn.finished = True
         turn.cond.notify_all()
+
+
+def _fetch_messages_once(turn):
+    result = subprocess.run(
+        ["curl", "-sf", "--connect-timeout", "3", "-m", "10", *OPENCODE_AUTH,
+         f"http://127.0.0.1:{turn.port}/api/session/{turn.sid}/message"],
+        capture_output=True, text=True, timeout=15
+    )
+    if result.returncode != 0:
+        return None
+    data = json.loads(result.stdout)
+    items = data.get("data") if isinstance(data, dict) and isinstance(data.get("data"), list) else data
+    return items if isinstance(items, list) else []
+
+
+def _await_turn_reply(turn, user_msg):
+    """Polls the session's message list until the turn started by user_msg
+    runs down (an idle entry), then parses the assistant reply that follows
+    it. Honors turn.interrupted each poll; the hard cap is the turn timeout.
+
+    Attribution is by list order, not wall clock: the list is newest-first,
+    so everything ahead of our own user message is newer than this turn. An
+    idle with outcome "interrupted" belongs to a run WE aborted — the turn
+    object already reports that via turn.interrupted before polling — so it
+    is never this turn's end. Matching one (same-second wall clock) made a
+    superseding message report "Stopped." while its own run was still going."""
+    user_created = user_msg.get("time", {}).get("created") or 0
+    user_id = user_msg.get("id")
+    deadline = time.time() + TURN_TIMEOUT_SECONDS
+    while time.time() < deadline:
+        with turn.cond:
+            interrupted = turn.interrupted
+        if interrupted:
+            _abort_session(turn)
+            return (INTERRUPTED_REPLY, False, False, False, None)
+        try:
+            items = _fetch_messages_once(turn)
+        except Exception as e:
+            print(f"WARNING: message poll failed: {e}", flush=True)
+            items = None
+        if items:
+            idx = next((i for i, m in enumerate(items)
+                        if isinstance(m, dict) and m.get("id") == user_id), None)
+            if idx is not None:
+                newer = items[:idx]
+            else:
+                # Our posted entry isn't listed yet: fall back to the old
+                # same-second window, which can't attribute by position.
+                newer = [m for m in items if isinstance(m, dict)
+                         and (m.get("time", {}).get("created") or 0) >= user_created - 500]
+            superseded = any(isinstance(m, dict) and m.get("type") == "user"
+                             and m.get("id") != user_id for m in newer)
+            idle = next((m for m in newer if isinstance(m, dict) and m.get("type") == "idle"
+                         and m.get("outcome") != "interrupted" and not superseded), None)
+            if idle:
+                # With a newer user message in play this turn's own idle is
+                # unknowable, so keep polling until our supersession resolves.
+                assistant = next((m for m in newer if isinstance(m, dict)
+                                  and m.get("type") == "assistant"), None)  # newest first
+                if assistant is None:
+                    return ("(no response)", False, False, False, None)
+                return _parse_message_response(assistant, turn.tier)
+        time.sleep(1.0)
+    return ("Request timed out — the AI took too long to respond.", False, False, False, None)
 
 
 def _finalize_turn(turn):
@@ -770,43 +846,51 @@ def _delete_paths(paths):
 
 
 def _poll_pending_question(turn):
-    """Returns {"request_id":..., "questions":[...]} for THIS session's first
-    pending question, or None."""
+    """Returns {"request_id":..., "questions":[...], "form": <raw>} for THIS
+    session's first pending question, or None. OpenCode v2 turned the old
+    /question tool endpoints into forms: the model's question tool creates a
+    form whose fields ARE the questions (key/title/options/custom), answered
+    per field key via the form reply endpoint."""
     try:
         result = subprocess.run(
-            ["curl", "-sf", "--connect-timeout", "3", "-m", "8",
-             f"http://127.0.0.1:{turn.port}/question"],
+            ["curl", "-sf", "--connect-timeout", "3", "-m", "8", *OPENCODE_AUTH,
+             f"http://127.0.0.1:{turn.port}/api/form"],
             capture_output=True, text=True, timeout=12
         )
         if result.returncode != 0:
             return None
-        for q in json.loads(result.stdout):
-            if q.get("sessionID") == turn.sid and q.get("id") and q.get("questions"):
-                return {"request_id": q["id"], "questions": q["questions"]}
+        pending = json.loads(result.stdout)
+        # The global form listing is {"location":..., "data":[Form.Info]} and
+        # spans every session; keep only this one's forms. A form fields array
+        # — not "questions" — is the filter: a session with NO unanswered
+        # question has no forms at all.
+        forms = pending.get("data") if isinstance(pending, dict) else pending
+        for q in forms or []:
+            if not isinstance(q, dict) or q.get("sessionID") != turn.sid:
+                continue
+            fid = q.get("id")
+            fields = q.get("fields") or []
+            if not fid or not fields or fid in turn.answered_request_ids:
+                continue
+            questions = []
+            for f in fields:
+                questions.append({
+                    "key": f.get("key"),
+                    "question": f.get("title") or f.get("key") or "Question",
+                    "description": f.get("description") or "",
+                    "options": [
+                        {"label": o.get("label"), "description": o.get("description")}
+                        for o in (f.get("options") or [])
+                    ],
+                    "multiple": f.get("type") == "multiselect",
+                    # Forms default to allowing a typed answer unless the
+                    # field explicitly closes it (same default the old
+                    # question tool had).
+                    "custom": f.get("custom") is not False,
+                })
+            return {"request_id": fid, "questions": questions, "form": q}
     except Exception as e:
         print(f"WARNING: question poll failed: {e}", flush=True)
-    return None
-
-
-def _session_directory(turn):
-    """The session's working directory. Needed as ?directory= when answering
-    a permission request — without it the reply 200s but silently does
-    nothing, leaving the tool blocked forever. Cached on the turn."""
-    if turn.permission_directory:
-        return turn.permission_directory
-    try:
-        result = subprocess.run(
-            ["curl", "-sf", "--connect-timeout", "3", "-m", "8",
-             f"http://127.0.0.1:{turn.port}/session/{turn.sid}"],
-            capture_output=True, text=True, timeout=12
-        )
-        if result.returncode == 0:
-            directory = (json.loads(result.stdout) or {}).get("directory")
-            if directory:
-                turn.permission_directory = directory
-                return directory
-    except Exception:
-        pass
     return None
 
 
@@ -820,16 +904,22 @@ def _poll_pending_permission(turn):
     is nothing to answer it, so the tool sits at status=running forever and
     the user's turn hangs until the 900s timeout. Polling here is what turns
     that silent hang into a card the user can actually answer.
+
+    v2 permissions are session-scoped: GET /api/session/{sid}/permission. The
+    entry's v1 display vocabulary is kept — "permission" (the action name,
+    v2: "action"), "patterns" (v2 "resources" list) and "metadata".command —
+    so the web UI's card renderer is untouched.
     """
     try:
         result = subprocess.run(
-            ["curl", "-sf", "--connect-timeout", "3", "-m", "8",
-             f"http://127.0.0.1:{turn.port}/permission"],
+            ["curl", "-sf", "--connect-timeout", "3", "-m", "8", *OPENCODE_AUTH,
+             f"http://127.0.0.1:{turn.port}/api/session/{turn.sid}/permission"],
             capture_output=True, text=True, timeout=12
         )
         if result.returncode != 0:
             return None
         pending = json.loads(result.stdout)
+        pending = pending.get("data") if isinstance(pending, dict) else pending
     except Exception as e:
         print(f"WARNING: permission poll failed: {e}", flush=True)
         return None
@@ -843,27 +933,41 @@ def _poll_pending_permission(turn):
         request_id = entry.get("id")
         if not request_id or request_id in turn.answered_request_ids:
             continue
+        if entry.get("permission") is None:
+            entry["permission"] = entry.get("action")
+        if entry.get("patterns") is None:
+            entry["patterns"] = entry.get("resources") or []
         return entry
     return None
 
 
+def _permission_payload(entry, tier):
+    """Shapes an OpenCode v2 permission entry into the payload the web UI's
+    card renderer reads (request_id, permission, patterns, command,
+    directories). v2 names the card's fields differently (action/resources)
+    and carries the command in metadata, so the mapping lives here once."""
+    meta = entry.get("metadata") or {}
+    return {
+        "permission_required": True,
+        "request_id": entry.get("id"),
+        "permission": entry.get("permission") or entry.get("action"),
+        "patterns": entry.get("patterns") or entry.get("resources") or [],
+        "command": meta.get("command") or (entry.get("message") or None),
+        "directories": meta.get("directories") or [],
+        "tier": tier,
+    }
+
+
 def _resolve_permission(turn, request_id, reply, message=None):
     """Answers a pending permission request: "once" | "always" | "reject".
-
-    The ?directory= query param is required — OpenCode replies 200 without
-    acting on it, so the tool would stay blocked. Returns True when the
-    request was actually resolved.
+    v2 needs no ?directory= workaround — the session is in the path. Returns
+    True when the request was actually resolved.
     """
-    directory = _session_directory(turn)
-    if not directory:
-        print("WARNING: could not resolve permission — no session directory", flush=True)
-        return False
     command = [
-        "curl", "-sf", "--connect-timeout", "3", "-m", "12", "-X", "POST",
-        "-H", "Content-Type: application/json",
-        "-d", json.dumps({"reply": reply, "message": message or ""}),
-        f"http://127.0.0.1:{turn.port}/permission/{request_id}/reply"
-        f"?directory={urllib.parse.quote(directory, safe='')}",
+        "curl", "-sf", "--connect-timeout", "3", "-m", "12", *OPENCODE_AUTH,
+        "-X", "POST", "-H", "Content-Type: application/json",
+        "-d", json.dumps({"decision": reply, "message": message or ""}),
+        f"http://127.0.0.1:{turn.port}/api/session/{turn.sid}/permission/{request_id}/reply",
     ]
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=18)
@@ -911,8 +1015,8 @@ def _autodismiss(turn):
         request_id = turn.question["request_id"]
     try:
         subprocess.run(
-            ["curl", "-sf", "-m", "10", "-X", "POST",
-             f"http://127.0.0.1:{turn.port}/question/{request_id}/reject"],
+            ["curl", "-sf", "-m", "10", *OPENCODE_AUTH, "-X", "DELETE",
+             f"http://127.0.0.1:{turn.port}/api/session/{turn.sid}/form/{request_id}"],
             capture_output=True, timeout=15
         )
         print(f"INFO: auto-dismissed unanswered question {request_id}", flush=True)
@@ -986,12 +1090,12 @@ def _wait_session_idle(turn, timeout=IDLE_WAIT_TIMEOUT):
     while time.time() < deadline:
         try:
             result = subprocess.run(
-                ["curl", "-sf", "--connect-timeout", "3", "-m", "5",
-                 f"http://127.0.0.1:{turn.port}/session/status"],
+                ["curl", "-sf", "--connect-timeout", "3", "-m", "5", *OPENCODE_AUTH,
+                 f"http://127.0.0.1:{turn.port}/api/session/active"],
                 capture_output=True, text=True, timeout=8
             )
             if result.returncode == 0:
-                status_map = json.loads(result.stdout)
+                status_map = json.loads(result.stdout).get("data") or {}
                 if turn.sid not in status_map:
                     return True
         except Exception:
@@ -1059,15 +1163,37 @@ def _wait_previous_turn(tier):
 
 
 def _resolve_question(turn, request_id, answers=None, dismiss=False):
-    """Forwards an answer (or a rejection) to the OpenCode question endpoint.
-    Returns True on a successful forward (question now resolved)."""
-    command = ["curl", "-sf", "-m", "15", "-X", "POST",
-               f"http://127.0.0.1:{turn.port}/question/{request_id}/" + ("reject" if dismiss else "reply")]
+    """Forwards an answer (or a rejection/dismissal) to the OpenCode form that
+    backs this question. Returns True on a successful forward.
+
+    The form fields (key/title/options, kept on the turn's question dict) are
+    the answer scheme: the UI's per-question answer arrays map back onto the
+    field keys in order, option labels are matched to their values, a custom
+    typed answer is passed through verbatim, and multi-select fields get the
+    whole list."""
+    form = (turn.question or {}).get("form") or {}
+    fields = form.get("fields") or []
+    session_id = form.get("sessionID") or turn.sid
     if dismiss:
-        pass
+        command = ["curl", "-sf", "-m", "15", *OPENCODE_AUTH, "-X", "DELETE",
+                   f"http://127.0.0.1:{turn.port}/api/session/{session_id}/form/{request_id}"]
     else:
-        command += ["-H", "Content-Type: application/json",
-                    "-d", json.dumps({"answers": answers})]
+        values = {}
+        for i, field in enumerate(fields):
+            picks = (answers or [])[i] if answers and i < len(answers) else []
+            by_label = {o.get("label"): o.get("value") for o in (field.get("options") or [])}
+            mapped = [by_label.get(p, p) for p in picks if p]
+            if field.get("type") == "multiselect":
+                value = mapped
+            elif mapped:
+                value = mapped[0]
+            else:
+                value = ""
+            values[field.get("key")] = value
+        command = ["curl", "-sf", "-m", "15", *OPENCODE_AUTH, "-X", "POST",
+                   "-H", "Content-Type: application/json",
+                   "-d", json.dumps({"answer": values}),
+                   f"http://127.0.0.1:{turn.port}/api/session/{session_id}/form/{request_id}/reply"]
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=20)
         if result.returncode != 0:
@@ -1103,13 +1229,15 @@ def _dismiss_turn_question(turn):
 
 def _abort_session(turn):
     """Tells the OpenCode server to stop the generation this turn started.
-    The server aborts its in-flight message POST, which makes the turn's
-    worker thread return (usually with a non-zero curl status, since the
-    response is cut short) — _worker_run_turn records the interruption."""
+    (
+    v2: the abort endpoint became /api/session/{id}/interrupt; unlike the v1
+    abort, the prompt is now async, so interrupting ends the model's run
+    server-side — the worker's polling loop notices turn.interrupted one way
+    or the other."""
     try:
         subprocess.run(
-            ["curl", "-sf", "--connect-timeout", "3", "-m", "10", "-X", "POST",
-             f"http://127.0.0.1:{turn.port}/session/{turn.sid}/abort"],
+            ["curl", "-sf", "--connect-timeout", "3", "-m", "10", *OPENCODE_AUTH,
+             "-X", "POST", f"http://127.0.0.1:{turn.port}/api/session/{turn.sid}/interrupt"],
             capture_output=True, timeout=15
         )
     except Exception as e:
@@ -2518,11 +2646,6 @@ def _persona_marker():
     ).hexdigest()[:12]
 
 
-def model_part():
-    provider, model = PERLA_MODEL.split("/", 1)
-    return {"providerID": provider, "modelID": model}
-
-
 MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_IMAGES_PER_MESSAGE = 6  # MiMo-V2.5 has no documented hard per-request
 # image cap — images are tokenized into the 1M-token context window like
@@ -3053,7 +3176,7 @@ def build_opencode_body(text, tier, image_path=None):
         )
         session_mgr.mark_persona_injected(tier)
 
-    parts = [{"type": "text", "text": text}]
+    files = []
 
     if image_path:
         image_paths = [image_path] if isinstance(image_path, str) else list(image_path)
@@ -3063,11 +3186,9 @@ def build_opencode_body(text, tier, image_path=None):
                     encoded = base64.b64encode(f.read()).decode("ascii")
                 ext = os.path.splitext(path)[1].lower()
                 mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(ext, "image/png")
-                parts.append({
-                    "type": "file",
-                    "mime": mime,
-                    "filename": os.path.basename(path),
-                    "url": f"data:{mime};base64,{encoded}",
+                files.append({
+                    "uri": f"data:{mime};base64,{encoded}",
+                    "name": os.path.basename(path),
                 })
             except Exception as e:
                 print(f"ERROR: failed to read image for OpenCode: {e}", flush=True)
@@ -3075,10 +3196,10 @@ def build_opencode_body(text, tier, image_path=None):
                 # request — Perla will just not have that particular
                 # image to look at, but still sees the rest plus the text.
 
-    return json.dumps({
-        "parts": parts,
-        "model": model_part()
-    })
+    # v2 prompt bodies carry plain text plus file attachments (data: URIs;
+    # verified live that the model receives them). The per-message model key
+    # is gone — each tier's model is fixed by its opencode.json config.
+    return json.dumps({"text": text, "files": files})
 
 
 def _parse_message_response(data, tier):
@@ -3087,30 +3208,33 @@ def _parse_message_response(data, tier):
         sent_file_ref) that process_message and the web UI consume. Also
         surfaces OpenCode's embedded provider-error envelope so the real
         reason reaches the user instead of a silent "(no response)"
-        placeholder."""
+        placeholder.
+        (v2: `data` is the newest assistant message — a content list of
+        typed parts, not v1's top-level `parts` array.)"""
+        content = [c for c in (data.get("content") or []) if isinstance(c, dict)]
         response_text = " ".join(
-            p.get("text", "") for p in data.get("parts", []) if p.get("type") == "text"
+            c.get("text", "") for c in content if c.get("type") == "text"
         )
 
         # If the server answered but produced no response text AND carried an
         # embedded provider error (e.g. OpenCode's zen-gate 403 FreeTierError,
-        # which comes back as info.error with empty parts), surface that error
+        # which arrives as the assistant message's structured `error`),
+        # surface that error
         # to the user instead of the silent "(no response)" fallback — the
         # daemon previously swallowed the real reason and left the phone
         # staring at a placeholder. A real (partial) reply always wins over
         # the error, so we only fill the gap when there is no text at all.
         if not response_text:
-            error = (data.get("info") or {}).get("error") or data.get("error")
+            error = data.get("error")
             if isinstance(error, dict):
-                err_data = error.get("data")
-                detail = (err_data or {}).get("message") or error.get("message") or ""
-                status = err_data.get("statusCode") if isinstance(err_data, dict) else None
+                detail = error.get("message") or ""
+                status = error.get("status")
                 if isinstance(detail, str) and detail.strip():
                     response_text = f"Model error: {detail.strip()}"
                     if status is not None:
                         response_text += f" (HTTP {status})"
 
-        tool_used = any(p.get("type") == "tool" for p in data.get("parts", []))
+        tool_used = any(c.get("type") == "tool" for c in content)
 
         obsidian_writes = {
             "obsidian_write_note", "obsidian_patch_note", "obsidian_append_to_note",
@@ -3119,8 +3243,8 @@ def _parse_message_response(data, tier):
             "create_reminder", "cancel_reminder",
         }
         obsidian_write = any(
-            p.get("tool", "") in obsidian_writes
-            for p in data.get("parts", []) if p.get("type") == "tool"
+            c.get("name", "") in obsidian_writes
+            for c in content if c.get("type") == "tool"
         )
 
         # The view_screen MCP tool returns the screenshot to the MODEL as an
@@ -3131,12 +3255,9 @@ def _parse_message_response(data, tier):
         # just perla's text description of it. OpenCode names MCP tools as
         # "<server>_<tool>", so the view-screen server's tool shows up as
         # "view-screen_view_screen" — match on the ending to cover that and
-        # any bare "view_screen". Matched case-insensitively and against
-        # both "tool" and "toolName" (seen used interchangeably across
-        # OpenCode server versions) since a naming-scheme mismatch here
-        # silently drops the image with no error anywhere in the pipeline.
-        tool_parts = [p for p in data.get("parts", []) if p.get("type") == "tool"]
-        tool_names = [p.get("tool") or p.get("toolName") or "" for p in tool_parts]
+        # any bare "view_screen". Matched case-insensitively.
+        tool_parts = [c for c in content if c.get("type") == "tool"]
+        tool_names = [c.get("name") or "" for c in tool_parts]
         view_screen_used = any(
             name.lower().endswith("view_screen") for name in tool_names
         )
@@ -3148,12 +3269,11 @@ def _parse_message_response(data, tier):
         # threaded back to process_message so it can attach a download
         # link to the response.
         #
-        # OpenCode's exact field name for a completed tool call's return
-        # value isn't pinned down here the way "tool"/"toolName" is for
-        # the name (that pairing is documented/observed elsewhere in this
-        # file) — different server versions have been seen using
-        # "result", "output", or nesting it under "state"/"metadata".
-        # Rather than betting on one field silently, every plausible spot
+        # v2 puts a completed tool call's own return value in its
+        # state.content list (of typed text items); older versions scattered
+        # theirs (result/output/state/metadata), so those spots are still
+        # checked before declaring a mismatch. Rather than betting on one
+        # field silently, every plausible spot
         # is checked, and if send_file demonstrably ran (by name) but no
         # parseable {"ok": true, "id": ...} payload turns up anywhere, that
         # mismatch is logged loudly — a silently-dropped file send is a
@@ -3172,15 +3292,19 @@ def _parse_message_response(data, tier):
 
         sent_file_ref = None
         for p in tool_parts:
-            name = (p.get("tool") or p.get("toolName") or "").lower()
+            name = (p.get("name") or p.get("tool") or p.get("toolName") or "").lower()
             if not name.endswith("send_file"):
                 continue
 
+            state = p.get("state") if isinstance(p.get("state"), dict) else {}
             candidates = [
+                t.get("text") for t in (state.get("content") or [])
+                if isinstance(t, dict) and t.get("type") == "text"
+            ] + [
                 p.get("result"),
                 p.get("output"),
-                p.get("state", {}).get("output") if isinstance(p.get("state"), dict) else None,
-                p.get("state", {}).get("result") if isinstance(p.get("state"), dict) else None,
+                state.get("output"),
+                state.get("result"),
                 p.get("metadata", {}).get("output") if isinstance(p.get("metadata"), dict) else None,
             ]
 
@@ -4208,15 +4332,9 @@ def process_message(message, tier, source, confirm=False, user_image_paths=None,
         # no UI to answer it, so without this the tool stays parked until the
         # 900s timeout. Surface it as a card; /api/permission answers it and
         # the same turn then continues on to its final reply.
-        _perm_meta = outcome["permission"].get("metadata") or {}
         return (
             None, False, False, None, None, None,
-            {"permission_required": True,
-             "request_id": outcome["permission"]["id"],
-             "permission": outcome["permission"].get("permission"),
-             "patterns": outcome["permission"].get("patterns") or [],
-             "command": _perm_meta.get("command"),
-             "directories": _perm_meta.get("directories") or []},
+            _permission_payload(outcome["permission"], tier),
         )
 
     if outcome["kind"] == "question":
@@ -4776,15 +4894,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
         source = turn.source or "remote"
         outcome = _wait_for_turn_outcome(turn)
         if outcome["kind"] == "permission":
-            self.send_json(200, {
-                "permission_required": True,
-                "request_id": outcome["permission"]["id"],
-                "permission": outcome["permission"].get("permission"),
-                "patterns": outcome["permission"].get("patterns") or [],
-                "command": (outcome["permission"].get("metadata") or {}).get("command"),
-                "directories": (outcome["permission"].get("metadata") or {}).get("directories") or [],
-                "tier": tier,
-            })
+            self.send_json(200, _permission_payload(outcome["permission"], tier))
             return
 
         if outcome["kind"] == "question":
@@ -4916,15 +5026,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
         source = turn.source or "remote"
         outcome = _wait_for_turn_outcome(turn)
         if outcome["kind"] == "permission":
-            self.send_json(200, {
-                "permission_required": True,
-                "request_id": outcome["permission"]["id"],
-                "permission": outcome["permission"].get("permission"),
-                "patterns": outcome["permission"].get("patterns") or [],
-                "command": (outcome["permission"].get("metadata") or {}).get("command"),
-                "directories": (outcome["permission"].get("metadata") or {}).get("directories") or [],
-                "tier": tier,
-            })
+            self.send_json(200, _permission_payload(outcome["permission"], tier))
             return
 
         if outcome["kind"] == "question":

@@ -28,6 +28,15 @@
     opencode_model = "opencode/deepseek-v4.1-flash-free";
     ollama_model = "qwen2.5:3b";
 
+    # OpenCode v2 servers answer only after HTTP basic auth (username fixed
+    # to "opencode"); with no OPENCODE_SERVER_PASSWORD set they generate a
+    # fresh random one at every start — which the daemon can't know. One
+    # constant here is shared by both server wrappers and the companion
+    # daemon (exported as OPENCODE_SERVER_PASSWORD, read as
+    # PERLA_OPENCODE_PASSWORD). Only a localhost-only constant, not a secret:
+    # both servers bind 127.0.0.1 and Perla's own auth still guards its API.
+    opencode_password = "perla-local";
+
     # Hard cap on how long a single message turn may run before the daemon
     # gives up (guards against a stuck turn tying up the session). Perla
     # tasks legitimately need more than the old flat 5 minutes.

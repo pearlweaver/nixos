@@ -1456,8 +1456,11 @@
         view_mode = "list";
       };
 
+      # Off: the SekaiPop phone's WallpaperLayer is the session's only
+      # background (home/modules/sekaipop-phone.nix). Two background surfaces
+      # would stack in an undefined order.
       wallpaper = {
-        enabled = true;
+        enabled = false;
         fill_mode = "crop";
         transition = ["fade" "wipe" "disc" "stripes" "zoom" "honeycomb"];
         transition_duration = 1500;
@@ -1472,13 +1475,15 @@
         auto_locate = false;
       };
 
-      notifications = {
-        enable_daemon = true;
+      # Off: the phone's NotificationSource owns org.freedesktop.Notifications.
+      # Only one program may; Noctalia's panel/history will be empty by design.
+      # The table is [notification] singular; [notifications] is ignored, which
+      # is why Noctalia kept the bus name before. The duration_* keys are not
+      # in Noctalia v5's schema.
+      notification = {
+        enable_daemon = false;
         position = "top_right";
         layer = "top"; # use 'overlay' if you want them to appear in fullscreen mode
-        duration_low = 3;
-        duration_normal = 8;
-        duration_critical = 15;
       };
 
       audio = {
@@ -1515,7 +1520,9 @@
       };
 
       plugins = {
-        enabled = [ "noctalia/mpvpaper" ];
+        # The phone's WallpaperLayer drives mpvpaper itself now. The settings
+        # below are kept as documentation of the old setup and are inert.
+        enabled = [ ];
         settings."noctalia/mpvpaper" = {
           video_directory = "/home/thedreamdev/Pictures/Wallpapers";
           mute = true;

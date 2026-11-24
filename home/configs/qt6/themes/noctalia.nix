@@ -9,6 +9,7 @@
   };
 
   xdg.configFile = {
+    "qt6ct/qt6ct.conf".force = true;
     "qt6ct/qt6ct.conf".text = ''
       [Appearance]
       custom_palette=true
