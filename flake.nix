@@ -217,6 +217,7 @@
               tqdm
               chess
               kivy
+              tkinter
             ]))
           ];
         };

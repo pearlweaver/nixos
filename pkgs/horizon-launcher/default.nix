@@ -29,7 +29,7 @@ stdenv.mkDerivation {
   pname = "horizon-launcher";
   version = "latest";
 
-  src = /home/thedreamdev/Downloads/horizon-launcher-linux-x86_64.tar.gz;
+  src = ./horizon-launcher-linux-x86_64.tar.gz;
 
   sourceRoot = ".";
 
@@ -52,7 +52,20 @@ stdenv.mkDerivation {
 
   installPhase = ''
     runHook preInstall
-    install -Dm755 horizon-launcher $out/bin/horizon-launcher
+    install -Dm755 horizon-launcher $out/bin/.horizon-launcher-unwrapped
+    makeWrapper $out/bin/.horizon-launcher-unwrapped $out/bin/horizon-launcher \
+      --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [
+        libxkbcommon
+        libxcb
+        libX11
+        libXcursor
+        libXi
+        libXrandr
+        libGL
+        vulkan-loader
+        wayland
+        stdenv.cc.cc.lib
+      ]}
     runHook postInstall
   '';
 
