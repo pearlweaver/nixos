@@ -38,6 +38,10 @@ in {
         "brightness"
         "battery"
       ];
+      # Upstream defaults leave 9 px above the pill and 26 px reserved below
+      # it, so the bar looks off-centre in the top strip. Keep both equal.
+      pillTopMargin = 9;
+      pillBottomMargin = 9;
       screenLockAppCommand = "chillpill-lock";
       defaultTerminal = "kitty";
       textFontFamily = "Monocraft";
