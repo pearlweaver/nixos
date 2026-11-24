@@ -101,6 +101,9 @@ in {
       # and playerctl-previous.
       "Mod+Ctrl+B".action.spawn = ipc "dashboard";
       "Mod+Shift+W".action.spawn = ipc "wifiState";
+      # Upstream pairs Bluetooth with Mod+Shift+B, but that stays playerctl
+      # previous here; Shift+C is free and sits next to the Wi-Fi bind.
+      "Mod+Shift+C".action.spawn = ipc "bluetoothState";
     };
   };
 
