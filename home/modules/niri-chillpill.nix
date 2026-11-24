@@ -1,0 +1,117 @@
+{ config, pkgs, inputs, lib, ... }:
+
+let
+  system = pkgs.stdenv.hostPlatform.system;
+  upstream = inputs.chillpill.packages.${system}.default;
+
+  # default.nix installs chillpill-shell and chillpill-shell-ipc only. The
+  # lockscreen script is in the source tree but not in the install phase, and
+  # its hardcoded /usr/share path does not exist on NixOS. Add the binary and
+  # give it the same Qt/QML environment the main wrapper gets.
+  qtModules = with pkgs.qt6; [ qtbase qtdeclarative qtmultimedia ];
+  qtQmlPath = lib.concatMapStringsSep ":" (m: "${m}/lib/qt-6/qml") qtModules;
+  qtPluginPath = lib.concatMapStringsSep ":" (m: "${m}/lib/qt-6/plugins") qtModules;
+
+  chillpill = upstream.overrideAttrs (old: {
+    installPhase = old.installPhase + ''
+      install -Dm755 $src/lockscreen.sh $out/bin/chillpill-lock
+      substituteInPlace $out/bin/chillpill-lock \
+        --replace /usr/share/chillpill-shell $out/share/chillpill-shell
+    '';
+    postFixup = old.postFixup + ''
+      wrapProgram $out/bin/chillpill-lock \
+        --set QML_IMPORT_PATH "$out/share/chillpill-shell:$out/lib/qt6/qml:${qtQmlPath}" \
+        --set QT_PLUGIN_PATH "${qtPluginPath}" \
+        --set LD_LIBRARY_PATH "$out/lib/qt6/qml/PillBackend" \
+        --prefix PATH : ${lib.makeBinPath [ pkgs.quickshell ]}
+    '';
+  });
+
+  # Fixed IPC state names from the shell's IpcHandler blocks.
+  ipc = target: [ "chillpill-shell-ipc" "call" target "toggle" ];
+in {
+  # Reuse the whole niri settings block (input, outputs, layout, rules, every
+  # bind) and override only what the shell change requires. niri.nix itself is
+  # untouched, so the Noctalia profile keeps its exact configuration.
+  imports = [ ./niri.nix ];
+
+  programs.chillpill-shell = {
+    enable = true;
+    package = chillpill;
+    settings = {
+      clockFormat = "HH:mm";
+      maxWorkspaces = 6;
+      screenLockAppCommand = "chillpill-lock";
+      defaultTerminal = "kitty";
+      textFontFamily = "Monocraft";
+      nerdFontFamily = "JetBrainsMono Nerd Font Propo";
+    };
+  };
+
+  # Runtime companions the upstream module does not install. The package's own
+  # wrapper has cliphist/brightnessctl/awww, but niri binds and
+  # spawn-at-startup run from the user PATH.
+  home.packages = with pkgs; [
+    awww
+    brightnessctl
+    nerd-fonts.jetbrains-mono
+  ];
+
+  # Noctalia and the SekaiPop phone are deliberately absent: both claim the
+  # notification bus and the wallpaper.
+  programs.niri.settings = {
+    spawn-at-startup = lib.mkForce [
+      { command = [ "chillpill-shell" ]; }
+      { command = [ "xwayland-satellite" ]; }
+      { command = [ "awww-daemon" ]; }
+      # awww-daemon may still be starting; retry briefly, then give up. A
+      # missing last_wallpaper is normal on the first run (pick one with Mod+A).
+      { command = [ "sh" "-c" ''
+        wp="$HOME/.cache/chillpill-shell/last_wallpaper"
+        [ -s "$wp" ] || exit 0
+        for _ in 1 2 3 4 5; do
+          awww img "$(cat "$wp")" && exit 0
+          sleep 0.5
+        done
+      '' ]; }
+    ];
+
+    # The user's keys stay. Shell features move onto the key that already did
+    # the same job in the Noctalia profile; shell defaults that collide with an
+    # existing app bind are not added.
+    binds = {
+      "Alt+Space" = lib.mkForce { action.spawn = ipc "spotlight"; };
+      "Mod+V" = lib.mkForce { action.spawn = ipc "cliphist"; };
+      "Mod+Space" = lib.mkForce { action.spawn = ipc "controlCenter"; };
+      "Mod+A" = lib.mkForce { action.spawn = ipc "wallpaperSwitcher"; };
+      "Mod+L" = lib.mkForce { action.spawn = [ "chillpill-lock" ]; };
+      "Ctrl+Alt+Delete" = lib.mkForce { action.spawn = ipc "powerMenu"; };
+
+      "XF86AudioRaiseVolume" = lib.mkForce { action.spawn = [ "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%+" ]; };
+      "XF86AudioLowerVolume" = lib.mkForce { action.spawn = [ "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%-" ]; };
+      "XF86AudioMute" = lib.mkForce { action.spawn = [ "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle" ]; };
+      "XF86AudioMicMute" = lib.mkForce { action.spawn = [ "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "toggle" ]; };
+      "XF86MonBrightnessUp" = lib.mkForce { action.spawn = [ "brightnessctl" "set" "5%+" ]; };
+      "XF86MonBrightnessDown" = lib.mkForce { action.spawn = [ "brightnessctl" "set" "5%-" ]; };
+
+      # States with no equivalent in the current setup. Mod+D, Mod+W and
+      # Mod+Shift+B are intentionally absent: they keep Vesktop, LibreOffice
+      # and playerctl-previous.
+      "Mod+Ctrl+B".action.spawn = ipc "dashboard";
+      "Mod+Shift+W".action.spawn = ipc "wifiState";
+    };
+  };
+
+  # Theme presets live in the runtime cache, not the store. -n preserves any
+  # theme the user drops in later.
+  home.activation.chillpillThemes = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    run mkdir -p "$HOME/.cache/chillpill-shell/themes"
+    run cp -n ${chillpill}/share/chillpill-shell/share/themes/*.json "$HOME/.cache/chillpill-shell/themes/" 2>/dev/null || true
+  '';
+
+  # home.packages fonts do not refresh fontconfig on a profile change; without
+  # this "JetBrainsMono Nerd Font Propo" resolves to a blank glyph.
+  home.activation.chillpillFontCache = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+    fc-cache -f >/dev/null 2>&1 || true
+  '';
+}

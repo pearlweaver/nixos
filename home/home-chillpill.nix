@@ -1,5 +1,6 @@
 { config, pkgs, inputs, ... }: {
   imports = [
+    ./modules/niri-chillpill.nix
     ./modules/apps.nix
     ./modules/packages.nix
     ./modules/xdg.nix
