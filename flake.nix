@@ -137,6 +137,9 @@
         extraSpecialArgs = {
           inherit inputs;
           hyprlandSession = false;
+          # apps.nix reads this flag while building `imports`; it must be
+          # supplied explicitly or the module system recurses via _module.args.
+          matugenTheme = false;
         };
         modules = [
          ./home/home.nix
@@ -190,6 +193,7 @@
           # via matugen instead. Passed via extraSpecialArgs rather than
           # _module.args to avoid infinite recursion when read in `imports`.
           hyprlandSession = true;
+          matugenTheme = false;
         };
         modules = [
           ./home/home-sekaipop.nix
@@ -212,6 +216,11 @@
           # static Rose Pine theme, not Noctalia's runtime-generated one"
           # switch; the ChillPill profile keeps the normal niri path.
           hyprlandSession = false;
+          # ChillPill replaces the static GTK/Qt files with wallpaper-derived
+          # matugen theming; see home/configs/matugen/matugen.nix. Plain
+          # extraSpecialArgs, like hyprlandSession, so imports can read it
+          # without recursing through _module.args.
+          matugenTheme = true;
         };
         modules = [
           ./home/home-chillpill.nix
